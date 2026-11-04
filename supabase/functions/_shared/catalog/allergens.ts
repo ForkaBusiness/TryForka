@@ -12,6 +12,19 @@ export const ALLERGEN_LABELS: Record<Allergen, string> = {
   soy: 'Soy', fish: 'Fish', shellfish: 'Shellfish', sesame: 'Sesame',
 };
 
+// What people call the families in their own words (lowercase, singular). "nut" covers
+// peanuts too: someone who writes "nuts" as an allergy means both.
+export const ALLERGEN_ALIASES: Record<string, Allergen[]> = {
+  dairy: ['dairy'], milk: ['dairy'], lactose: ['dairy'],
+  egg: ['egg'],
+  gluten: ['gluten'], wheat: ['gluten'],
+  peanut: ['peanut'], groundnut: ['peanut'],
+  'tree nut': ['tree_nut'], nut: ['peanut', 'tree_nut'],
+  soy: ['soy'], soya: ['soy'], soybean: ['soy'],
+  fish: ['fish'], shellfish: ['shellfish'], seafood: ['fish', 'shellfish'],
+  sesame: ['sesame'],
+};
+
 export const DIETS = ['vegetarian', 'vegan', 'pescatarian'] as const;
 export type Diet = typeof DIETS[number];
 
