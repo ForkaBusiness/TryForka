@@ -140,6 +140,65 @@ test('dislikes: also matched against the recipe name', () => {
   assert.equal(checkRecipe(r, { allergies: [], skip_ingredients: ['mushrooms'] }).allowed, false);
 });
 
+const dislikes = (term: string, name: string) => !checkRecipe(recipe([name]), { allergies: [], skip_ingredients: [term] }).allowed;
+
+test('meat groups: pork covers cured and processed pork', () => {
+  for (const name of ['pork chops', 'ground pork', 'bacon', 'streaky bacon', 'smoked ham', 'parma ham', 'prosciutto', 'pancetta', 'chorizo',
+    'sour pork sausage', 'sausages', 'italian fennel sausages', 'kielbasa', 'gammon', 'lardons']) {
+    assert.equal(dislikes('pork', name), true, name);
+  }
+  for (const name of ['turkey ham', 'turkey bacon', 'vegan sausage', 'chicken thighs', 'hamburger buns', 'champagne']) {
+    assert.equal(dislikes('pork', name), false, name);
+  }
+});
+
+test('meat groups: beef covers steak, ground beef and brisket', () => {
+  for (const name of ['beef', 'sirloin steak', 'flank steak', 'fillet of steak', 'ground beef', 'minced beef', 'beef brisket', 'brisket', 'corned beef', 'beef stock', 'oxtail', 'chuck roast']) {
+    assert.equal(dislikes('beef', name), true, name);
+  }
+  for (const name of ['beef tomatoes', 'pork shoulder steaks', 'tuna steak', 'salmon steaks', 'lamb steaks', 'chicken breast']) {
+    assert.equal(dislikes('beef', name), false, name);
+  }
+});
+
+test('meat groups: chicken covers every cut', () => {
+  for (const name of ['chicken', 'chicken thighs', 'chicken breasts', 'chicken wings', 'chicken drumsticks', 'chicken stock']) {
+    assert.equal(dislikes('chicken', name), true, name);
+  }
+  assert.equal(dislikes('chicken', 'chickpeas'), false);
+  assert.equal(dislikes('chicken', 'ground turkey'), false);
+});
+
+test('meat groups: lamb covers mutton, not lamb\'s lettuce', () => {
+  for (const name of ['lamb', 'lamb leg', 'lamb shanks', 'ground lamb', 'lamb mince', 'mutton']) {
+    assert.equal(dislikes('lamb', name), true, name);
+  }
+  assert.equal(dislikes('lamb', "lamb's lettuce"), false);
+  assert.equal(dislikes('lamb', 'lambs lettuce'), false);
+});
+
+test('meat groups: plurals, avoid-if-possible and the recipe name all work', () => {
+  assert.equal(dislikes('Pork', 'Bacon'), true);
+  assert.equal(checkRecipe(recipe(['rice'], { name: 'Bacon and egg pie' }), { allergies: [], skip_ingredients: ['pork'] }).allowed, false);
+  const soft = checkRecipe(recipe(['bacon']), { allergies: [], skip_ingredients: [], avoid_ingredients: ['pork'] });
+  assert.deepEqual(soft, { allowed: true, blockedBy: [], avoids: ['pork'] });
+  // Picking a single cut stays specific.
+  assert.equal(dislikes('bacon', 'ham'), false);
+  assert.equal(dislikes('steak', 'ground beef'), false);
+});
+
+test('phrase exceptions: "cherry" is not "cherry tomato"', () => {
+  assert.equal(dislikes('cherry', 'cherry tomatoes'), false);
+  assert.equal(dislikes('cherries', 'Cherry Tomatoes'), false);
+  assert.equal(dislikes('cherry', 'glace cherry'), true);
+  assert.equal(dislikes('cherry', 'dried cherries'), true);
+  assert.equal(checkRecipe(recipe(['cherry tomatoes']), { allergies: [], skip_ingredients: ['cherry tomato'] }).allowed, false);
+  assert.equal(checkRecipe(recipe(['cherry tomatoes', 'dried cherries']), { allergies: [], skip_ingredients: ['cherry'] }).allowed, false);
+  assert.equal(checkRecipe(recipe(['salt'], { name: 'Cherry tomato salad' }), { allergies: [], skip_ingredients: ['cherry'] }).allowed, true);
+  // An allergy is never softened by a phrase exception.
+  assert.equal(checkRecipe(recipe(['cherry tomatoes']), { allergies: ['cherry'], skip_ingredients: [] }).allowed, false);
+});
+
 test('"avoid if possible" keeps the recipe but ranks it last', () => {
   const prefs = { allergies: [], skip_ingredients: [], avoid_ingredients: ['olives'] };
   const withOlives = { ...recipe(['olives']), id: 1 };

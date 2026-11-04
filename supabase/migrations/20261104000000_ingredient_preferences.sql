@@ -8,8 +8,11 @@ alter table public.user_preferences
 
 -- allergies can now hold ingredient names ("mustard") beside the 9 keys; those names are
 -- matched like skipped ingredients. Terms are whole words with an optional plural, so "tea"
--- no longer hides "steak" or "egg" hide "eggplant". Disliking olives doesn't reach olive oil,
--- which alone would hide a third of the catalog. Punctuation in a term is escaped because
+-- no longer hides "steak" or "egg" hide "eggplant". The lookahead keeps this no stricter than
+-- the filter: olives aren't olive oil (a third of the catalog), cherries aren't cherry
+-- tomatoes, beef isn't beef tomatoes, lamb isn't lamb's lettuce. Meat groups (pork also
+-- meaning bacon) are only in the filter; SQL can be looser than it, never stricter.
+-- Punctuation in a term is escaped because
 -- users can add custom terms, and one bad pattern would otherwise break every recipe list.
 -- A dislike that is a family key standing for a group ("dairy") uses the allergens column.
 create or replace function public.safe_recipes()
@@ -23,7 +26,7 @@ as $$
     select allergies || array(select s from unnest(skip_ingredients) s where s = any (array['dairy', 'gluten', 'fish', 'shellfish', 'tree_nut'])) as allergens,
            diet,
            array(
-             select '\m' || regexp_replace(regexp_replace(t, '(es|s)$', ''), '([^[:alnum:][:space:]])', '\\\1', 'g') || 'e?s?\M(?! oil)'
+             select '\m' || regexp_replace(regexp_replace(t, '(es|s)$', ''), '([^[:alnum:][:space:]])', '\\\1', 'g') || 'e?s?\M(?! oil| tomato| lettuce)'
              from (
                select lower(trim(s)) as t from unnest(skip_ingredients) s
                union all

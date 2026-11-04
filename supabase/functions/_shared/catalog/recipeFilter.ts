@@ -117,12 +117,31 @@ function dislikeFamilies(name: string): Allergen[] {
   return DISLIKE_GROUPS.includes(name) ? ALLERGEN_ALIASES[name] : [];
 }
 
-interface Term { label: string; name: string; families: Allergen[] }
+// Dislikes that mean more than their own word, and phrases that only look like them.
+// Normalized names. The catalog's category can't stand in for these: it files Vegetable
+// Shepherd's Pie under Beef.
+const DISLIKE_WORDS: Record<string, { words?: string[]; except: string[] }> = {
+  pork: {
+    words: ['pork', 'bacon', 'ham', 'prosciutto', 'pancetta', 'chorizo', 'sausage', 'gammon', 'lardon', 'jamon', 'kielbasa', 'salami', 'pepperoni', 'guanciale'],
+    except: ['turkey ham', 'turkey bacon', 'turkey sausage', 'chicken sausage', 'vegan sausage', 'vegetarian sausage', 'veggie sausage'],
+  },
+  beef: {
+    words: ['beef', 'steak', 'brisket', 'sirloin', 'ribeye', 'rib eye', 'oxtail', 'chuck roast'],
+    except: ['beef tomato', 'pork steak', 'pork shoulder steak', 'gammon steak', 'lamb steak', 'turkey steak', 'chicken steak', 'tuna steak', 'salmon steak', 'cauliflower steak'],
+  },
+  chicken: { except: [] },
+  lamb: { words: ['lamb', 'mutton'], except: ['lamb lettuce'] },
+  cherry: { except: ['cherry tomato'] },
+};
+
+interface Term { label: string; name: string; words: string[]; except: string[]; families: Allergen[] }
 
 function dislikeTerms(values: readonly string[] | undefined): Term[] {
   return (values ?? []).map(v => ({ v, name: normalizeIngredient(v) })).filter(t => t.name.length >= 2)
-    .map(({ v, name }) => ({ label: v, name, families: dislikeFamilies(name) }));
+    .map(({ v, name }) => ({ label: v, name, words: DISLIKE_WORDS[name]?.words ?? [name], except: DISLIKE_WORDS[name]?.except ?? [], families: dislikeFamilies(name) }));
 }
+
+const withoutPhrases = (text: string, phrases: string[]) => phrases.reduce((t, p) => ` ${t} `.split(` ${p} `).join(' ').trim(), text);
 
 /** Prepares the household's settings once, then checks any number of recipes. */
 export function recipeChecker(prefs: FoodPrefs): (recipe: FilterableRecipe) => Verdict {
@@ -147,7 +166,10 @@ export function recipeChecker(prefs: FoodPrefs): (recipe: FilterableRecipe) => V
     // The stored column can lag behind the map until the next sync, so ask the map too.
     for (const n of names) for (const a of memoAllergens(n)) families.add(a);
 
-    const matches = (t: Term) => texts.some(x => hasDislike(x, t.name)) || t.families.some(f => families.has(f));
+    const matches = (t: Term) => t.families.some(f => families.has(f)) || texts.some(x => {
+      const rest = withoutPhrases(x, t.except);
+      return t.words.some(w => hasDislike(rest, w));
+    });
     const blockedBy: string[] = [];
     if (diet && !(recipe.diets ?? []).includes(diet)) blockedBy.push(`not ${diet}`);
     for (const [family, label] of allergyFamiliesWanted) if (families.has(family)) blockedBy.push(label);
