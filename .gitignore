@@ -30,3 +30,6 @@ dist-ssr
 
 # Supabase CLI cache (machine specific)
 supabase/.temp/
+
+# Vercel CLI link
+.vercel
