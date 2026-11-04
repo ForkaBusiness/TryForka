@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSITE_LOGIN, WEBSITE_RESET_PASSWORD } from './lib/supabase';
 import { useMediaQuery } from './lib/useMediaQuery';
-import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, savePreferences, type Preferences, type Profile } from './lib/preferences';
+import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, foodSettings, savePreferences, type FoodSettings, type Preferences, type Profile } from './lib/preferences';
 import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
 import { fetchGroceryList, rebuildGroceryList } from './lib/groceries';
 import { AppContext, type AppState, type FavoriteEntry, type Screen, type SuggestionsTarget } from './app/AppContext';
@@ -59,6 +59,8 @@ function SignedIn({ session }: { session: Session }) {
   const mainRef = useRef<HTMLElement>(null);
   const planRef = useRef<SavedWeekPlan | null | undefined>(undefined);
   planRef.current = weekPlan;
+  /** The settings the plan last passed; null until the first check. */
+  const checkedFood = useRef<FoodSettings | null>(null);
   const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
 
   useEffect(() => {
@@ -96,6 +98,8 @@ function SignedIn({ session }: { session: Session }) {
     const saved = await saveWeekPlan(userId, plan, planRef.current ?? null, fresh);
     planRef.current = saved;
     setWeekPlan(saved);
+    // Any edit to the plan means Undo would no longer restore what the household sees.
+    setPlanReview(r => (r.undo ? { ...r, undo: undefined } : r));
     // Build the grocery list now so it's ready when they open it (the Groceries screen
     // also rebuilds if it finds the list out of date).
     fetchGroceryList(userId).then(prev => rebuildGroceryList(userId, saved, prev)).catch(err => console.error('[groceries] rebuild failed:', err));
@@ -106,17 +110,31 @@ function SignedIn({ session }: { session: Session }) {
   // it again when it loads (before it's shown) and whenever the settings change. The short
   // wait after a change means a mis-tapped allergy doesn't cost the household a planned meal.
   const planLoaded = weekPlan !== undefined;
+  const foodKey = prefs ? JSON.stringify(foodSettings(prefs)) : null;
   useEffect(() => {
     if (!prefs || !planLoaded) return;
-    const current = planRef.current;
-    if (!current) { setPlanChecked(true); return; }
+    const food = foodSettings(prefs);
+    const before = checkedFood.current;
     let cancelled = false;
     const id = window.setTimeout(() => {
+      const current = planRef.current;
+      if (!current) { checkedFood.current = food; setPlanChecked(true); return; }
       enforcePlan(current.plan, prefs)
         .then(async result => {
-          if (cancelled || !result.changed) return;
-          setPlanReview({ notice: planNotice(result.replaced, result.blocked.length), blocked: result.blocked });
+          if (cancelled) return;
+          checkedFood.current = food;
+          if (!result.changed) {
+            // Settings moved on, so Undo would also take back this newer change (it could be
+            // an allergy). Changing them back by hand still leaves Undo for the meals.
+            setPlanReview(r => (r.undo && JSON.stringify(r.undo.food) !== foodKey ? { ...r, undo: undefined } : r));
+            return;
+          }
           await saveWeek(result.plan, false).catch(() => setWeekPlan({ ...current, plan: result.plan }));
+          // Nothing to go back to on the first check: the change came from another session.
+          setPlanReview({
+            notice: planNotice(result.replaced, result.blocked.length), blocked: result.blocked,
+            undo: before ? { plan: current.plan, food: before } : undefined,
+          });
         })
         .catch(err => console.error('[plan] check failed:', err))
         .finally(() => { if (!cancelled) setPlanChecked(true); });
@@ -124,7 +142,17 @@ function SignedIn({ session }: { session: Session }) {
     return () => { cancelled = true; window.clearTimeout(id); };
     // planChecked only picks the delay; a change to it must not start another check.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs, planLoaded, saveWeek]);
+  }, [foodKey, planLoaded, saveWeek]);
+
+  // Settings first: if that save fails, nothing has changed and the meals stay safe.
+  const undoPlanReview = useCallback(async () => {
+    const { undo } = planReview;
+    if (!undo) return;
+    await savePreferences(userId, undo.food);
+    setPrefs(p => ({ ...(p ?? DEFAULT_PREFERENCES), ...undo.food }));
+    await saveWeek(undo.plan, false);
+    setPlanReview({ notice: null, blocked: [] });
+  }, [planReview, saveWeek, userId]);
 
   const toggleFavorite = useCallback(async (entry: FavoriteEntry) => {
     const has = favorites.has(entry.id);
@@ -140,10 +168,10 @@ function SignedIn({ session }: { session: Session }) {
 
   const ctx: AppState | null = useMemo(() => (prefs ? {
     session, userId, prefs, updatePrefs, profile, setProfile, favorites, toggleFavorite, go, replace, back, isPhone,
-    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planReview, setPlanReview,
+    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planReview, setPlanReview, undoPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, updatePrefs, profile, weekPlan, planChecked, saveWeek, planReview, favorites, toggleFavorite, go, replace, back, isPhone]);
+  } : null), [session, userId, prefs, updatePrefs, profile, weekPlan, planChecked, saveWeek, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
   if (prefs === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {

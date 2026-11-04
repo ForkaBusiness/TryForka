@@ -24,6 +24,12 @@ export interface Preferences {
   onboarded_at: string | null;
 }
 
+/** The settings that decide which recipes can be shown. */
+export type FoodSettings = Pick<Preferences, 'diet' | 'allergies' | 'skip_ingredients' | 'avoid_ingredients'>;
+
+export const foodSettings = ({ diet, allergies, skip_ingredients, avoid_ingredients }: Preferences): FoodSettings =>
+  ({ diet, allergies, skip_ingredients, avoid_ingredients });
+
 export const DEFAULT_PREFERENCES: Preferences = {
   diet: 'none', allergies: [], skip_ingredients: [], avoid_ingredients: [], plan_breakfast: false, plan_lunch: false, plan_dinner: true,
   max_weeknight_minutes: null, units: 'us', onboarded_at: null,

@@ -104,12 +104,13 @@ function Thumb({ src }: { src?: string | null }) {
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, planReview, setPlanReview, go, openSuggestions } = useApp();
+  const { weekPlan, prefs, saveWeek, planReview, setPlanReview, undoPlanReview, go, openSuggestions } = useApp();
   const today = todayKey();
   const [day, setDay] = useState<Day>(today);
   const [planning, setPlanning] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState(false);
   const entries = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
   const cards = useCards(entries);
 
@@ -129,6 +130,26 @@ export function MealPlan() {
     }
   };
   const newWeek = () => (weekPlan ? setConfirmReplace(true) : void planWeek());
+
+  const undo = async () => {
+    setError(null);
+    setUndoing(true);
+    try {
+      await undoPlanReview();
+    } catch {
+      setError("Couldn't undo that. Check your connection and try again.");
+    } finally {
+      setUndoing(false);
+    }
+  };
+  const notice = planReview.notice && (
+    <div role="status" className="flex items-center justify-between gap-3 text-sm text-ink-muted">
+      <p className="min-w-0">{planReview.notice}</p>
+      {planReview.undo && (
+        <Button size="sm" variant="quiet" loading={undoing} onClick={undo} aria-label="Undo: put back the previous meals and setting">Undo</Button>
+      )}
+    </div>
+  );
 
   const actions = (
     <>
@@ -162,7 +183,7 @@ export function MealPlan() {
           {planning ? 'Picking dinners that fit your household. This takes a few seconds.' : "We'll pick a week of dinners that fit your household, and make the grocery list."}
         </EmptyState>
         {error && <p role="alert" className="mt-4 text-sm text-alert">{error}</p>}
-        {planReview.notice && <p role="status" className="mt-4 text-sm text-ink-muted">{planReview.notice}</p>}
+        {notice && <div className="mt-4">{notice}</div>}
       </PageContainer>
     );
   }
@@ -177,7 +198,7 @@ export function MealPlan() {
     <PageContainer title="This week" actions={actions} intro={`Planned ${plannedOn(weekPlan.createdAt)}`}>
       <WeekStrip selected={day} onSelect={setDay} today={today} />
       {error && <p role="alert" className="mb-4 text-sm text-alert">{error}</p>}
-      {planReview.notice && <p role="status" className="mb-4 text-sm text-ink-muted">{planReview.notice}</p>}
+      {notice && <div className="mb-4">{notice}</div>}
 
       <DinnerHero
         day={day}

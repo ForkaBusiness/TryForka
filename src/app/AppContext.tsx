@@ -37,6 +37,8 @@ export interface AppState {
   /** What the recipe filter last changed in the plan, and which slots it left empty. */
   planReview: PlanReview;
   setPlanReview: (review: PlanReview) => void;
+  /** Puts back the meals and settings from before the last automatic replacement. */
+  undoPlanReview: () => Promise<void>;
   favorites: Map<number, FavoriteEntry>;
   toggleFavorite: (entry: FavoriteEntry) => Promise<void>;
   go: (screen: Screen) => void;

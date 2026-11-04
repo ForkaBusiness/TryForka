@@ -97,7 +97,7 @@ Secrets: `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`, `SYNC_SECRET`, `MEALDB_A
 
 Allergies are a hard filter at every point a recipe can reach the user: browse, search, week plans, suggestions, swaps and photo results. They all read from `safe_recipes()`, then pass through the recipe filter (`supabase/functions/_shared/catalog/recipeFilter.ts`), which is the source of truth. The Edge Functions and the app run the same filter; Claude's prompt lists the exclusions too, but nothing relies on it.
 
-Saved plans are checked again when they load and when settings change. A recipe that no longer fits is replaced with the same kind of meal, or the slot stays empty with a message if nothing fits.
+Saved plans are checked again when they load and when settings change. A recipe that no longer fits is replaced with the same kind of meal, or the slot stays empty with a message if nothing fits. After a settings change, the notice offers Undo, which restores the meals and the setting. Undo goes away once the plan is edited or a newer setting is saved, so it can't take back an allergy added later.
 
 Matching over-flags on purpose: ingredient names, the recipe name and the instructions are all checked. A single recipe still opens from a favorite even after an allergy is added, with a warning in the alert color.
 

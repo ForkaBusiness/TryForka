@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { getCards, recheckRecipes, similarRecipes, type RecipeCard } from './catalog';
-import type { Preferences } from './preferences';
+import type { FoodSettings, Preferences } from './preferences';
 import { pickReplacement, recipeChecker, REPLACEMENT_TRIES } from './recipeFilter';
 
 // The household's week plan (one row per user in week_plans) and the calls to the
@@ -97,6 +97,8 @@ export interface PlanReview {
   notice: string | null;
   /** slotKey()s left empty because no recipe fits. */
   blocked: string[];
+  /** Set when a settings change caused this: the meals and settings from just before. */
+  undo?: { plan: WeekPlan; food: FoodSettings };
 }
 
 export function planNotice(replaced: number, blocked: number): string | null {
