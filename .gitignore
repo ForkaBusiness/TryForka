@@ -33,3 +33,6 @@ supabase/.temp/
 
 # Vercel CLI link
 .vercel
+
+# Deploy secrets, filled in by hand
+.env.deploy

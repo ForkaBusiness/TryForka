@@ -124,7 +124,7 @@ What's left needs you: Google and Facebook sign-in need accounts only you can cr
    - `forka.qa.signup.1791254653906`
    - `forka.qa.final1280.1791469442121`
    - `forka.qa.final390.1791469498983`
-   - `forka.qa.build.1792121464616` (password `BuildCheck-12345`)
+   - `forka.qa.build.1792121464616`
 10. **Push** when you're happy. The work is on local branch `master`, which isn't pushed.
 
 There are no migrations waiting. The three migrations from this pass are applied, and the functions are deployed: `ai-suggestions`, `analyze-dish`, `delete-account` and `sync-recipes`.
