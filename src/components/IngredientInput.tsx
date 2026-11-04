@@ -18,6 +18,8 @@ export interface IngredientChip {
   custom?: boolean;
   /** Extra control inside the chip. */
   action?: ReactNode;
+  /** A short line under the chip. */
+  note?: string | null;
 }
 
 export interface IngredientInputProps {
@@ -146,18 +148,21 @@ export function IngredientInput({ label, placeholder, options, chips, onAdd, onR
       {chips.length > 0 && (
         <ul aria-label={label} className="mt-3 flex flex-wrap gap-2">
           {chips.map(c => (
-            <li key={c.value} className={cx('inline-flex h-9 max-w-full items-center gap-1 rounded-full border bg-surface pr-1 pl-3 text-base', c.custom ? 'border-dashed border-ink-muted text-ink-muted' : 'border-line text-ink')}>
-              <span className="truncate">{c.label}</span>
-              {c.custom && <span className="sr-only">(custom, may not match recipes)</span>}
-              {c.action}
-              <button
-                type="button"
-                onClick={() => onRemove(c.value)}
-                aria-label={`Remove ${c.label}`}
-                className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-muted hover:bg-canvas hover:text-ink"
-              >
-                <X size={16} strokeWidth={1.75} aria-hidden />
-              </button>
+            <li key={c.value} className="max-w-full">
+              <span className={cx('inline-flex h-9 max-w-full items-center gap-1 rounded-full border bg-surface pr-1 pl-3 text-base', c.custom ? 'border-dashed border-ink-muted text-ink-muted' : 'border-line text-ink')}>
+                <span className="truncate">{c.label}</span>
+                {c.custom && <span className="sr-only">(custom, may not match recipes)</span>}
+                {c.action}
+                <button
+                  type="button"
+                  onClick={() => onRemove(c.value)}
+                  aria-label={`Remove ${c.label}`}
+                  className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-muted hover:bg-canvas hover:text-ink"
+                >
+                  <X size={16} strokeWidth={1.75} aria-hidden />
+                </button>
+              </span>
+              {c.note && <p className="mt-1 pl-3 text-sm text-ink-muted">{c.note}</p>}
             </li>
           ))}
         </ul>

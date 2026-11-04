@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ingredientIndex } from '../lib/catalog';
 import { ALLERGEN_OPTIONS, allergyOptions, dislikeOptions, exactOption, type IngredientOption } from '../lib/ingredientSearch';
 import type { DietChoice, Preferences } from '../lib/preferences';
-import { canonicalAllergy } from '../lib/recipeFilter';
+import { allergyExpansionNote, canonicalAllergy } from '../lib/recipeFilter';
 import { Checkbox, ChipButton, cx, ToggleChip } from './ds';
 import { IngredientInput } from './IngredientInput';
 
@@ -58,7 +58,7 @@ export function AllergyPicker({ value, onChange }: { value: string[]; onChange: 
   const options = useMemo(() => allergyOptions(index ?? []), [index]);
   const add = (a: string) => onChange([...value, canonicalAllergy(a)]);
   const family = (v: string) => ALLERGEN_OPTIONS.find(o => o.value === v);
-  const chips = value.map(v => (family(v) ? { value: v, label: family(v)!.label } : ingredientChip(v, index)));
+  const chips = value.map(v => (family(v) ? { value: v, label: family(v)!.label } : { ...ingredientChip(v, index), note: allergyExpansionNote(v) }));
   const common = ALLERGEN_OPTIONS.filter(o => !value.includes(o.value));
   return (
     <div>

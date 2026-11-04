@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  allergyFamilies, canonicalAllergy, checkRecipe, filterRecipes, isDislikeGroup, normalizeIngredient, pickReplacement, recipeChecker, REPLACEMENT_TRIES,
+  allergyExpansionNote, allergyFamilies, canonicalAllergy, checkRecipe, filterRecipes, isDislikeGroup, normalizeIngredient, pickReplacement, recipeChecker, REPLACEMENT_TRIES,
 } from '../supabase/functions/_shared/catalog/recipeFilter.ts';
 import { ingredientAllergens } from '../supabase/functions/_shared/catalog/allergens.ts';
 
@@ -87,6 +87,18 @@ test('allergies: free words and ingredients map to the family', () => {
   assert.equal(canonicalAllergy('Mustard'), 'mustard');
   // An allergy to one nut hides recipes with the family.
   assert.equal(checkRecipe(recipe(['walnuts']), { allergies: ['almond'], skip_ingredients: [] }).allowed, false);
+});
+
+test('allergies: the note says what else an ingredient hides', () => {
+  assert.equal(allergyExpansionNote('almond'), 'Also hides other tree nuts.');
+  assert.equal(allergyExpansionNote('peanut butter'), 'Also hides other peanut foods.');
+  assert.equal(allergyExpansionNote('butter'), 'Also hides other dairy foods.');
+  assert.equal(allergyExpansionNote('shrimp'), 'Also hides other shellfish.');
+  assert.equal(allergyExpansionNote('salmon'), 'Also hides other fish.');
+  assert.equal(allergyExpansionNote('soy sauce'), 'Also hides other gluten foods and soy foods.');
+  // A family is already the whole group, and "mustard" hides only itself.
+  assert.equal(allergyExpansionNote('tree_nut'), null);
+  assert.equal(allergyExpansionNote('mustard'), null);
 });
 
 test('allergies: an ingredient with no family still removes recipes, broadly', () => {

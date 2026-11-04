@@ -104,6 +104,18 @@ export function canonicalAllergy(term: string): string {
   return aliased?.length === 1 ? aliased[0] : name;
 }
 
+const FAMILY_NOUNS: Record<Allergen, string> = {
+  dairy: 'dairy foods', egg: 'egg foods', gluten: 'gluten foods', peanut: 'peanut foods', tree_nut: 'tree nuts',
+  soy: 'soy foods', fish: 'fish', shellfish: 'shellfish', sesame: 'sesame foods',
+};
+
+/** What else an ingredient allergy hides: "Also hides other tree nuts." Null when it's only itself. */
+export function allergyExpansionNote(term: string): string | null {
+  if (isAllergen(term)) return null;
+  const families = allergyFamilies(term);
+  return families.length ? `Also hides other ${families.map(f => FAMILY_NOUNS[f]).join(' and ')}.` : null;
+}
+
 /** "Peanut" for a family key, "mustard" for an ingredient. */
 export const allergyLabel = (term: string) => (isAllergen(term) ? ALLERGEN_LABELS[term] : term);
 
