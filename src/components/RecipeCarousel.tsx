@@ -10,8 +10,12 @@ import { cx, IconButton } from './ds';
 // button chooses it. Only flex values animate, so a drag never touches layout.
 // Every recipe passed in must already have passed the recipe filter.
 
+/** Past this, a drag advances at any speed. */
 const SWIPE_PX = 40;
-const FLICK_PX_PER_MS = 0.3;
+// A shorter move is a flick if its last moments were fast. Only the end of the gesture
+// counts, so resting a thumb on the card before flicking still flicks.
+const FLICK_WINDOW_MS = 200;
+const FLICK_PX_PER_MS = 0.1;
 const FLICK_MIN_PX = 12;
 /** Movement under this is a tap, not a drag. */
 const TAP_SLOP_PX = 8;
@@ -36,7 +40,7 @@ export interface RecipeCarouselProps {
   label?: string;
 }
 
-interface Gesture { x: number; y: number; t: number; axis: 'x' | 'y' | null }
+interface Gesture { x: number; y: number; axis: 'x' | 'y' | null; recent: Array<{ x: number; t: number }> }
 
 export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption, label = 'Recipe options' }: RecipeCarouselProps) {
   const count = recipes.length;
@@ -71,7 +75,7 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     moved.current = false;
-    gesture.current = { x: e.clientX, y: e.clientY, t: e.timeStamp, axis: null };
+    gesture.current = { x: e.clientX, y: e.clientY, axis: null, recent: [] };
     if (row.current) row.current.style.transition = '';
   };
 
@@ -79,6 +83,8 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
     const g = gesture.current;
     if (!g) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    g.recent.push({ x: e.clientX, t: e.timeStamp });
+    while (g.recent[0].t < e.timeStamp - FLICK_WINDOW_MS) g.recent.shift();
     if (!g.axis) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < TAP_SLOP_PX) return;
       moved.current = true;
@@ -94,10 +100,13 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
     const g = gesture.current;
     if (!g) return;
     const dx = e.clientX - g.x;
-    const speed = Math.abs(dx) / Math.max(1, e.timeStamp - g.t);
-    const swiped = g.axis === 'x' && (Math.abs(dx) >= SWIPE_PX || (speed >= FLICK_PX_PER_MS && Math.abs(dx) >= FLICK_MIN_PX));
+    const from = g.recent[0];
+    const flick = from ? e.clientX - from.x : 0;
+    const flicked = Math.abs(flick) >= FLICK_MIN_PX && Math.abs(flick) / Math.max(1, e.timeStamp - from.t) >= FLICK_PX_PER_MS;
+    const dragged = Math.abs(dx) >= SWIPE_PX;
+    const horizontal = g.axis === 'x';
     settle();
-    if (swiped) moveTo(active + (dx < 0 ? 1 : -1));
+    if (horizontal && (dragged || flicked)) moveTo(active + ((dragged ? dx : flick) < 0 ? 1 : -1));
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
