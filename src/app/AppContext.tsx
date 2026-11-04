@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Preferences, Profile } from '../lib/preferences';
-import type { Day, SavedWeekPlan, Slot, WeekPlan } from '../lib/plan';
+import type { Day, PlanReview, SavedWeekPlan, Slot, WeekPlan } from '../lib/plan';
 
 // Shared state for the signed-in app. Navigation is still the currentScreen state
 // machine (App.tsx); `go` pushes a screen, `back` pops, tabs reset the stack.
@@ -34,6 +34,9 @@ export interface AppState {
   weekPlan: SavedWeekPlan | null | undefined;
   /** Saves the plan; `fresh` = a newly planned week. Rebuilds the grocery list in the background. */
   saveWeek: (plan: WeekPlan, fresh: boolean) => Promise<SavedWeekPlan>;
+  /** What the recipe filter last changed in the plan, and which slots it left empty. */
+  planReview: PlanReview;
+  setPlanReview: (review: PlanReview) => void;
   favorites: Map<number, FavoriteEntry>;
   toggleFavorite: (entry: FavoriteEntry) => Promise<void>;
   go: (screen: Screen) => void;

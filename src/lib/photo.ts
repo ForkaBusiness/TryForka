@@ -1,5 +1,6 @@
 import { callFunction } from './plan';
-import type { RecipeCard } from './catalog';
+import { recheckRecipes, type RecipeCard } from './catalog';
+import type { FoodPrefs } from './recipeFilter';
 
 // Photo prep for "Find meals like this": decode (converting HEIC when the browser
 // can't), shrink to 1024px on the long edge, re-encode as JPEG ~0.8.
@@ -64,6 +65,7 @@ export async function preparePhoto(file: File): Promise<{ dataUrl: string; base6
   return { dataUrl, base64: dataUrl.slice(dataUrl.indexOf(',') + 1) };
 }
 
-export async function findSimilar(base64: string, context: string): Promise<{ dish_name: string; recipes: RecipeCard[] }> {
-  return callFunction('analyze-dish', { image: base64, mediaType: 'image/jpeg', context });
+export async function findSimilar(base64: string, context: string, prefs: FoodPrefs): Promise<{ dish_name: string; recipes: RecipeCard[] }> {
+  const { dish_name, recipes } = await callFunction<{ dish_name: string; recipes: RecipeCard[] }>('analyze-dish', { image: base64, mediaType: 'image/jpeg', context });
+  return { dish_name, recipes: await recheckRecipes(recipes.map(r => r.id), prefs) };
 }

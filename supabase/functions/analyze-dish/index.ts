@@ -1,5 +1,6 @@
 import { askTool } from '../_shared/claude.ts';
 import { AppError, claimRequest, serve, userClient } from '../_shared/http.ts';
+import { filterRecipes } from '../_shared/catalog/recipeFilter.ts';
 
 // "Find meals like this": a photo (plus optional words) -> what the dish is -> the closest
 // recipes in the household's safe catalog.
@@ -106,16 +107,19 @@ serve(async (body, req) => {
   if (!dish.is_food || (!context && !(dish.confidence >= 0.5))) throw new AppError(NOT_FOUND, 422);
 
   // Score the household's safe recipes (allergens, diet and skipped ingredients are
-  // already filtered out by safe_recipes()).
+  // already filtered out by safe_recipes() and the recipe filter).
   const role = ['main', 'breakfast', 'side', 'dessert'].includes(dish.meal_role) ? dish.meal_role : 'main';
-  const [{ data: rows, error }, { data: plan }, { data: favs }, { data: rated }] = await Promise.all([
+  const [{ data: rows, error }, { data: prefs }, { data: plan }, { data: favs }, { data: rated }] = await Promise.all([
     db.rpc('safe_recipes').select(CARD_COLUMNS).eq('meal_role', role),
+    db.from('user_preferences').select('diet, allergies, skip_ingredients, avoid_ingredients').maybeSingle(),
     db.from('week_plans').select('plan').maybeSingle(),
     db.from('favorites').select('recipe_id'),
     db.from('recipe_ratings').select('recipe_id').gte('rating', 4),
   ]);
   if (error) throw new AppError("Couldn't load recipes. Try again.", 502);
-  const candidates = (rows ?? []) as Row[];
+  const candidates = filterRecipes((rows ?? []) as Row[], {
+    diet: prefs?.diet ?? 'none', allergies: prefs?.allergies ?? [], skip_ingredients: prefs?.skip_ingredients ?? [], avoid_ingredients: prefs?.avoid_ingredients ?? [],
+  });
   const planned = new Set<number>();
   for (const day of Object.values((plan?.plan ?? {}) as Record<string, Record<string, { id: number } | null>>)) {
     for (const entry of Object.values(day ?? {})) if (entry?.id) planned.add(entry.id);

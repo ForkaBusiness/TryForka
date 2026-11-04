@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftRight, BookOpen, CalendarPlus, ChefHat, ShoppingBasket } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { getCards, minutesLabel, photo, recipeMeta, recipeTitle, type RecipeCard } from '../lib/catalog';
-import { DAYS, DAY_LONG, DAY_SHORT, generateWeekPlan, planEntries, SLOT_LABEL, todayKey, type Day, type PlanEntry, type Slot } from '../lib/plan';
+import { DAYS, DAY_LONG, DAY_SHORT, generateWeekPlan, planEntries, slotKey, SLOT_LABEL, todayKey, type Day, type PlanEntry, type Slot } from '../lib/plan';
 import { Button, cx, EmptyState, ListRow, PageContainer, Sheet, Skeleton, Tag } from '../components/ds';
 
 // Home: answers "what's for dinner tonight" first. Week strip, then the selected day's
@@ -18,6 +18,8 @@ function useCards(entries: PlanEntry[]): Map<number, RecipeCard> {
   }, [ids]);
   return cards;
 }
+
+const NO_SAFE_RECIPE = 'No recipe fits your settings for this meal';
 
 const plannedOn = (iso: string) => new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
@@ -49,8 +51,8 @@ function WeekStrip({ selected, onSelect, today }: { selected: Day; onSelect: (d:
   );
 }
 
-function DinnerHero({ day, entry, card, isToday, onOpen, onCook, onSwap }: {
-  day: Day; entry: PlanEntry | null; card?: RecipeCard; isToday: boolean;
+function DinnerHero({ day, entry, card, isToday, blocked, onOpen, onCook, onSwap }: {
+  day: Day; entry: PlanEntry | null; card?: RecipeCard; isToday: boolean; blocked: boolean;
   onOpen: () => void; onCook: () => void; onSwap: () => void;
 }) {
   const label = isToday ? 'Tonight' : `${DAY_LONG[day]} dinner`;
@@ -58,7 +60,7 @@ function DinnerHero({ day, entry, card, isToday, onOpen, onCook, onSwap }: {
     return (
       <section aria-label={label} className="mb-8 border-y border-line py-8">
         <p className="text-sm font-semibold text-ink-muted">{label}</p>
-        <h2 className="mt-1 text-xl text-ink">Nothing planned yet</h2>
+        <h2 className="mt-1 text-xl text-ink">{blocked ? NO_SAFE_RECIPE : 'Nothing planned yet'}</h2>
         <Button className="mt-4" variant="secondary" icon={ArrowLeftRight} onClick={onSwap}>Find a dinner</Button>
       </section>
     );
@@ -102,13 +104,12 @@ function Thumb({ src }: { src?: string | null }) {
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, go, openSuggestions } = useApp();
+  const { weekPlan, prefs, saveWeek, planReview, setPlanReview, go, openSuggestions } = useApp();
   const today = todayKey();
   const [day, setDay] = useState<Day>(today);
   const [planning, setPlanning] = useState(false);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const entries = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
   const cards = useCards(entries);
 
@@ -117,9 +118,9 @@ export function MealPlan() {
     setError(null);
     setPlanning(true);
     try {
-      const week = await generateWeekPlan();
+      const week = await generateWeekPlan(prefs);
       await saveWeek(week.plan, true);
-      setNotice(week.notice);
+      setPlanReview({ notice: week.notice, blocked: week.blocked });
       setDay(today);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't plan your week. Try again.");
@@ -161,6 +162,7 @@ export function MealPlan() {
           {planning ? 'Picking dinners that fit your household. This takes a few seconds.' : "We'll pick a week of dinners that fit your household, and make the grocery list."}
         </EmptyState>
         {error && <p role="alert" className="mt-4 text-sm text-alert">{error}</p>}
+        {planReview.notice && <p role="status" className="mt-4 text-sm text-ink-muted">{planReview.notice}</p>}
       </PageContainer>
     );
   }
@@ -169,18 +171,20 @@ export function MealPlan() {
   const otherSlots: Slot[] = (['breakfast', 'lunch'] as const).filter(s => plan[day][s] || (s === 'breakfast' ? prefs.plan_breakfast : prefs.plan_lunch));
   const later = DAYS.slice(DAYS.indexOf(day) + 1);
   const open = (id: number) => go({ name: 'recipe', id });
+  const isBlocked = (d: Day, s: Slot) => planReview.blocked.includes(slotKey(d, s));
 
   return (
     <PageContainer title="This week" actions={actions} intro={`Planned ${plannedOn(weekPlan.createdAt)}`}>
       <WeekStrip selected={day} onSelect={setDay} today={today} />
       {error && <p role="alert" className="mb-4 text-sm text-alert">{error}</p>}
-      {notice && <p role="status" className="mb-4 text-sm text-ink-muted">{notice}</p>}
+      {planReview.notice && <p role="status" className="mb-4 text-sm text-ink-muted">{planReview.notice}</p>}
 
       <DinnerHero
         day={day}
         entry={plan[day].dinner}
         card={plan[day].dinner ? cards.get(plan[day].dinner!.id) : undefined}
         isToday={day === today}
+        blocked={isBlocked(day, 'dinner')}
         onOpen={() => plan[day].dinner && open(plan[day].dinner!.id)}
         onCook={() => plan[day].dinner && go({ name: 'cooking', id: plan[day].dinner!.id })}
         onSwap={() => openSuggestions({ day, slot: 'dinner' })}
@@ -195,7 +199,7 @@ export function MealPlan() {
               <ListRow key={slot} leading={<Thumb src={card?.thumb_url ?? entry.image} />} title={card ? recipeTitle(card) : entry.title}
                 subtitle={SLOT_LABEL[slot]} chevron onClick={() => open(entry.id)} />
             ) : (
-              <ListRow key={slot} leading={<Thumb />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`} subtitle="Nothing planned"
+              <ListRow key={slot} leading={<Thumb />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`} subtitle={isBlocked(day, slot) ? NO_SAFE_RECIPE : 'Nothing planned'}
                 chevron onClick={() => openSuggestions({ day, slot })} />
             );
           })}
@@ -218,7 +222,7 @@ export function MealPlan() {
                     <Thumb src={card?.thumb_url ?? dinner?.image} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-display text-md font-semibold tracking-[-0.01em] text-ink">
-                        {dinner ? (card ? recipeTitle(card) : dinner.title) : 'No dinner planned'}
+                        {dinner ? (card ? recipeTitle(card) : dinner.title) : isBlocked(d, 'dinner') ? NO_SAFE_RECIPE : 'No dinner planned'}
                       </span>
                       {others.length > 0 && <span className="block truncate text-sm text-ink-muted">{others.map(o => cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title).join(', ')}</span>}
                     </span>

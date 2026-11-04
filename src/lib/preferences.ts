@@ -1,16 +1,20 @@
 import { supabase } from './supabase';
-import { ALLERGENS, type Allergen } from '../../supabase/functions/_shared/catalog/allergens.ts';
+import { canonicalAllergy } from './recipeFilter';
 import type { UnitSystem } from '../../supabase/functions/_shared/catalog/units.ts';
 
 // The household's food settings (user_preferences) and profile (users). Onboarding and
-// Settings write the same fields; safe_recipes() reads them to filter every recipe list.
+// Settings write the same fields; safe_recipes() and the recipe filter read them.
 
 export type DietChoice = 'none' | 'vegetarian' | 'vegan' | 'pescatarian';
 
 export interface Preferences {
   diet: DietChoice;
-  allergies: Allergen[];
+  /** Allergen keys ("tree_nut") or normalized ingredient names ("mustard"). */
+  allergies: string[];
+  /** Dislikes set to "never show". */
   skip_ingredients: string[];
+  /** Dislikes set to "avoid if possible": still shown, but last. */
+  avoid_ingredients: string[];
   plan_breakfast: boolean;
   plan_lunch: boolean;
   plan_dinner: boolean;
@@ -21,11 +25,11 @@ export interface Preferences {
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  diet: 'none', allergies: [], skip_ingredients: [], plan_breakfast: false, plan_lunch: false, plan_dinner: true,
+  diet: 'none', allergies: [], skip_ingredients: [], avoid_ingredients: [], plan_breakfast: false, plan_lunch: false, plan_dinner: true,
   max_weeknight_minutes: null, units: 'us', onboarded_at: null,
 };
 
-const COLUMNS = 'diet, allergies, skip_ingredients, plan_breakfast, plan_lunch, plan_dinner, max_weeknight_minutes, units, onboarded_at';
+const COLUMNS = 'diet, allergies, skip_ingredients, avoid_ingredients, plan_breakfast, plan_lunch, plan_dinner, max_weeknight_minutes, units, onboarded_at';
 
 export async function fetchPreferences(userId: string): Promise<Preferences> {
   const { data, error } = await supabase.from('user_preferences').select(COLUMNS).eq('user_id', userId).maybeSingle();
@@ -34,7 +38,7 @@ export async function fetchPreferences(userId: string): Promise<Preferences> {
   return {
     ...DEFAULT_PREFERENCES,
     ...data,
-    allergies: ((data.allergies as string[]) ?? []).filter((a): a is Allergen => (ALLERGENS as readonly string[]).includes(a)),
+    allergies: [...new Set(((data.allergies as string[]) ?? []).map(canonicalAllergy))],
   } as Preferences;
 }
 

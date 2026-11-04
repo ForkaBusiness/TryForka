@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
-import type { RecipeCard } from './catalog';
+import { getCards, recheckRecipes, similarRecipes, type RecipeCard } from './catalog';
+import type { Preferences } from './preferences';
+import { pickReplacement, recipeChecker, REPLACEMENT_TRIES } from './recipeFilter';
 
 // The household's week plan (one row per user in week_plans) and the calls to the
 // suggestions Edge Function that fill it. Days are weekdays, not dates: the plan is
@@ -86,6 +88,65 @@ export function findInPlan(plan: WeekPlan, id: number): { day: Day; slot: Slot }
   return null;
 }
 
+// ── Keeping a plan safe ────────────────────────────────────────────────────
+
+export const slotKey = (day: Day, slot: Slot) => `${day}:${slot}`;
+
+export interface PlanReview {
+  /** What changed, in plain words. */
+  notice: string | null;
+  /** slotKey()s left empty because no recipe fits. */
+  blocked: string[];
+}
+
+export function planNotice(replaced: number, blocked: number): string | null {
+  const meals = (n: number) => (n === 1 ? '1 meal' : `${n} meals`);
+  const notes: string[] = [];
+  if (replaced) notes.push(`We replaced ${meals(replaced)} that didn't fit your allergies or preferences.`);
+  if (blocked) notes.push(`We couldn't find a recipe that fits your settings for ${meals(blocked)}, so ${blocked === 1 ? 'it stays' : 'they stay'} empty.`);
+  return notes.join(' ') || null;
+}
+
+/**
+ * Runs every recipe in a plan through the filter. One that fails is replaced from the
+ * catalog with the same kind of meal; with no safe replacement the slot goes empty.
+ * Used on new plans and on saved plans, which were only checked against the settings of
+ * the day they were made.
+ */
+export async function enforcePlan(plan: WeekPlan, prefs: Preferences): Promise<{ plan: WeekPlan; changed: boolean; replaced: number; blocked: string[] }> {
+  const entries = planEntries(plan);
+  const cards = await getCards(entries.map(e => e.entry.id));
+  const check = recipeChecker(prefs);
+  const failed = entries.filter(({ entry }) => {
+    const card = cards.get(entry.id);
+    return !card || !check(card).allowed;
+  });
+  if (!failed.length) return { plan, changed: false, replaced: 0, blocked: [] };
+
+  const used = new Set(entries.map(e => e.entry.id));
+  const options = (role: 'breakfast' | 'main') => (failed.some(f => (f.slot === 'breakfast') === (role === 'breakfast'))
+    ? similarRecipes(null, role, [], prefs, REPLACEMENT_TRIES * 2) : Promise.resolve([]));
+  const [mains, breakfasts] = await Promise.all([options('main'), options('breakfast')]);
+
+  let next = plan;
+  let replaced = 0;
+  const blocked: string[] = [];
+  for (const { day, slot } of failed) {
+    // Same rule as the week planner: a breakfast may repeat, a main may not.
+    const pick = slot === 'breakfast'
+      ? pickReplacement(breakfasts, check, used) ?? pickReplacement(breakfasts, check, new Set())
+      : pickReplacement(mains, check, used);
+    if (pick) { used.add(pick.id); replaced++; } else blocked.push(slotKey(day, slot));
+    next = withSlot(next, day, slot, pick ? entryFromCard(pick) : null);
+  }
+  return { plan: next, changed: true, replaced, blocked };
+}
+
+const plannedSlots = (prefs: Preferences): Slot[] => {
+  const slots = SLOTS.filter(s => (s === 'breakfast' ? prefs.plan_breakfast : s === 'lunch' ? prefs.plan_lunch : prefs.plan_dinner));
+  return slots.length ? slots : ['dinner'];
+};
+
 // ── Suggestions Edge Function ──────────────────────────────────────────────
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -111,13 +172,21 @@ export async function callFunction<T>(name: string, body: unknown): Promise<T> {
 
 export interface SuggestionPick { recipe: RecipeCard; reason: string }
 
-export async function getSuggestions(prompt: string, opts: { slot?: Slot; exclude?: number[] } = {}): Promise<{ picks: SuggestionPick[]; note: string | null }> {
+export async function getSuggestions(prompt: string, prefs: Preferences, opts: { slot?: Slot; exclude?: number[] } = {}): Promise<{ picks: SuggestionPick[]; note: string | null }> {
   const { picks, note } = await callFunction<{ picks: SuggestionPick[]; note?: string | null }>('ai-suggestions', { mode: 'suggestions', prompt, ...opts });
-  return { picks, note: note ?? null };
+  const reasons = new Map(picks.map(p => [p.recipe.id, p.reason]));
+  const safe = await recheckRecipes(picks.map(p => p.recipe.id), prefs);
+  return { picks: safe.map(recipe => ({ recipe, reason: reasons.get(recipe.id) ?? '' })), note: note ?? null };
 }
 
-/** A new week, plus a plain note when the household's settings left too few recipes. */
-export async function generateWeekPlan(): Promise<{ plan: WeekPlan; notice: string | null }> {
+/** A new week, checked by the filter, plus a plain note when the household's settings left too few recipes. */
+export async function generateWeekPlan(prefs: Preferences): Promise<PlanReview & { plan: WeekPlan }> {
   const { plan, notice } = await callFunction<{ plan: WeekPlan; notice?: string | null }>('ai-suggestions', { mode: 'week' });
-  return { plan: normalize(plan), notice: notice ?? null };
+  const checked = await enforcePlan(normalize(plan), prefs);
+  const blocked = DAYS.flatMap(d => plannedSlots(prefs).filter(s => !checked.plan[d][s]).map(s => slotKey(d, s)));
+  return {
+    plan: checked.plan,
+    notice: [notice, planNotice(checked.replaced, blocked.length)].filter(Boolean).join(' ') || null,
+    blocked,
+  };
 }

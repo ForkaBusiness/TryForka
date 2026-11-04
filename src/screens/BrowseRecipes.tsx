@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Search, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { availableFilters, browseRecipes, BROWSE_FILTERS, type BrowseFilter, type RecipeCard } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, entryFromCard, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
+import { filterRecipes } from '../lib/recipeFilter';
 import { Button, IconButton, PageContainer, RecipeTile, Skeleton, ToggleChip } from '../components/ds';
 
 // Build a meal plan: browse the catalog (already filtered for the household's
@@ -24,6 +25,8 @@ export function BrowseRecipes() {
   const [status, setStatus] = useState<string | null>(null);
   const [hint, setHint] = useState(() => { try { return localStorage.getItem(HINT_KEY) !== '1'; } catch { return true; } });
   const request = useRef(0);
+  // `recipes` keeps the raw pages so "Show more" counts from the right place.
+  const visible = useMemo(() => recipes && filterRecipes(recipes, prefs), [recipes, prefs]);
 
   useEffect(() => { availableFilters().then(setFilters).catch(() => {}); }, [prefs]);
 
@@ -127,14 +130,14 @@ export function BrowseRecipes() {
         <div aria-hidden className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }, (_, i) => <div key={i}><Skeleton className="aspect-square" /><Skeleton className="mt-2 h-4 w-3/4" /></div>)}
         </div>
-      ) : recipes && recipes.length === 0 ? (
+      ) : visible && visible.length === 0 && !more ? (
         <p className="border-y border-line py-8 text-base text-ink-muted">
           No recipes match{query ? ` "${query}"` : ''}. Try another search or filter.
         </p>
-      ) : recipes && (
+      ) : visible && (
         <>
           <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
-            {recipes.map(r => (
+            {visible.map(r => (
               <li key={r.id}>
                 <RecipeTile
                   recipe={r}

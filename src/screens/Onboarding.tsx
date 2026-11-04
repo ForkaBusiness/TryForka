@@ -33,7 +33,7 @@ export function Onboarding({ userId, initial, onDone, onSignOut }: {
       const last = step === STEPS.length - 1;
       const fields: Partial<Preferences> = step === 0 ? { diet: prefs.diet }
         : step === 1 ? { allergies: prefs.allergies }
-        : step === 2 ? { skip_ingredients: prefs.skip_ingredients }
+        : step === 2 ? { skip_ingredients: prefs.skip_ingredients, avoid_ingredients: prefs.avoid_ingredients }
         : { plan_breakfast: prefs.plan_breakfast, plan_lunch: prefs.plan_lunch, plan_dinner: prefs.plan_dinner, max_weeknight_minutes: prefs.max_weeknight_minutes };
       const onboarded_at = last ? new Date().toISOString() : prefs.onboarded_at;
       await savePreferences(userId, { ...fields, ...(last ? { onboarded_at } : {}) });
@@ -58,13 +58,13 @@ export function Onboarding({ userId, initial, onDone, onSignOut }: {
         <p className="mt-2 mb-8 text-base text-ink-muted">{intro}</p>
         {step === 0 && <DietPicker value={prefs.diet} onChange={diet => update({ diet })} />}
         {step === 1 && <AllergyPicker value={prefs.allergies} onChange={allergies => update({ allergies })} />}
-        {step === 2 && <SkipList value={prefs.skip_ingredients} onChange={skip_ingredients => update({ skip_ingredients })} />}
+        {step === 2 && <SkipList never={prefs.skip_ingredients} avoid={prefs.avoid_ingredients} onChange={(skip_ingredients, avoid_ingredients) => update({ skip_ingredients, avoid_ingredients })} />}
         {step === 3 && <PlanningPicker value={prefs} onChange={update} />}
         {error && <p role="alert" className="mt-6 text-sm text-alert">{error}</p>}
       </div>
       <BottomBar>
         <Button size="lg" block loading={saving} onClick={next} className="md:w-auto md:min-w-48">
-          {step === STEPS.length - 1 ? 'Finish' : step === 1 && !prefs.allergies.length ? 'No allergies' : step === 2 && !prefs.skip_ingredients.length ? 'Skip for now' : 'Continue'}
+          {step === STEPS.length - 1 ? 'Finish' : step === 1 && !prefs.allergies.length ? 'No allergies' : step === 2 && !prefs.skip_ingredients.length && !prefs.avoid_ingredients.length ? 'Skip for now' : 'Continue'}
         </Button>
       </BottomBar>
     </div>

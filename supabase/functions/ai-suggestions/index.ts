@@ -1,24 +1,27 @@
 import { askJson } from '../_shared/claude.ts';
 import { AppError, claimRequest, serve, userClient } from '../_shared/http.ts';
-import { ALLERGEN_LABELS, ingredientAllergens, type Allergen } from '../_shared/catalog/allergens.ts';
+import { ALLERGEN_LABELS, ingredientAllergens } from '../_shared/catalog/allergens.ts';
+import { allergyFamilies, allergyLabel, filterRecipes, recipeChecker, type FoodPrefs } from '../_shared/catalog/recipeFilter.ts';
 
 // Suggestions and week plans, picked from the recipe catalog.
 //   { mode: "suggestions", prompt, slot?, exclude? } -> { picks: [{ recipe, reason }] }
 //   { mode: "week" }                                  -> { plan: { monday: { breakfast, lunch, dinner }, … } }
-// Candidates come from safe_recipes() called as the user, so their allergies, diet and
-// skipped ingredients are already filtered out in SQL before Claude sees anything; Claude
-// only chooses among those ids, and every id it returns is checked against the list.
+// Candidates come from safe_recipes() called as the user and then pass through the recipe
+// filter, so allergies, diet and skipped ingredients are out before Claude sees anything.
+// Claude only chooses among those ids, and every id it returns is checked against the
+// list. The exclusions also go in the prompt, but the filter is what's enforced.
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 const WEEKNIGHTS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
 type Slot = 'breakfast' | 'lunch' | 'dinner';
 
 const RATE_LIMIT = { kind: 'suggestions', perMinute: 5, perDay: 50, noun: 'suggestions' };
-const CARD_COLUMNS = 'id, name, display_name, subtitle, category, area, thumb_url, total_minutes, meal_role, allergens, diets';
+const CARD_COLUMNS = 'id, name, display_name, subtitle, category, area, thumb_url, total_minutes, meal_role, allergens, diets, ingredient_names';
 
 interface Card {
   id: number; name: string; display_name: string | null; subtitle: string | null; category: string | null;
   area: string | null; thumb_url: string | null; total_minutes: number | null; meal_role: string;
+  allergens: string[]; diets: string[]; ingredient_names: string[];
 }
 
 const SYSTEM = `You help a busy family decide what to cook. You only ever choose recipes from the numbered list in the request, by id. Never invent recipes.
@@ -36,24 +39,33 @@ function shuffle<T>(items: T[]): T[] {
   return a;
 }
 
-async function candidates(db: ReturnType<typeof userClient>, roles: string[]): Promise<Card[]> {
+async function candidates(db: ReturnType<typeof userClient>, roles: string[], prefs: FoodPrefs): Promise<Card[]> {
   const { data, error } = await db.rpc('safe_recipes').select(CARD_COLUMNS).in('meal_role', roles);
   if (error) {
     console.error('[suggestions] safe_recipes failed:', error);
     throw new AppError("Couldn't load recipes. Try again.", 502);
   }
-  return (data ?? []) as Card[];
+  return filterRecipes((data ?? []) as Card[], prefs);
 }
 
-async function householdAllergies(db: ReturnType<typeof userClient>): Promise<Allergen[]> {
-  const { data } = await db.from('user_preferences').select('allergies').maybeSingle();
-  return ((data?.allergies as string[]) ?? []).filter((a): a is Allergen => a in ALLERGEN_LABELS);
+async function foodPrefs(db: ReturnType<typeof userClient>): Promise<FoodPrefs> {
+  const { data } = await db.from('user_preferences').select('diet, allergies, skip_ingredients, avoid_ingredients').maybeSingle();
+  return {
+    diet: (data?.diet as string) ?? 'none',
+    allergies: (data?.allergies as string[]) ?? [],
+    skip_ingredients: (data?.skip_ingredients as string[]) ?? [],
+    avoid_ingredients: (data?.avoid_ingredients as string[]) ?? [],
+  };
 }
 
 /** Tells Claude what's been filtered out, so a reason never claims a recipe contains it. */
-const avoidLine = (allergies: Allergen[]) => allergies.length
-  ? `The household is allergic to ${allergies.map(a => ALLERGEN_LABELS[a].toLowerCase()).join(', ')}. None of the listed recipes contain these. Never say or suggest a recipe contains them, even if the request asks for them.`
-  : '';
+function avoidLine(prefs: FoodPrefs): string {
+  const lines: string[] = [];
+  if (prefs.allergies.length) lines.push(`The household is allergic to ${prefs.allergies.map(a => allergyLabel(a).toLowerCase()).join(', ')}. None of the listed recipes contain these. Never say or suggest a recipe contains them, even if the request asks for them.`);
+  if (prefs.skip_ingredients.length) lines.push(`Never pick a recipe with these ingredients: ${prefs.skip_ingredients.join(', ')}.`);
+  if (prefs.avoid_ingredients?.length) lines.push(`Avoid these ingredients if you can: ${prefs.avoid_ingredients.join(', ')}.`);
+  return lines.join('\n');
+}
 
 async function tasteHints(db: ReturnType<typeof userClient>): Promise<string> {
   const [{ data: favs }, { data: rated }] = await Promise.all([
@@ -82,11 +94,13 @@ async function suggestions(db: ReturnType<typeof userClient>, body: Record<strin
   const slot = (['breakfast', 'lunch', 'dinner'] as const).find(s => s === body.slot);
   const exclude = new Set(Array.isArray(body.exclude) ? body.exclude.map(Number) : []);
   const roles = slot === 'breakfast' ? ['breakfast'] : slot ? ['main'] : ['main', 'breakfast'];
-  const list = (await candidates(db, roles)).filter(c => !exclude.has(c.id));
+  const prefs = await foodPrefs(db);
+  const list = (await candidates(db, roles, prefs)).filter(c => !exclude.has(c.id));
   if (!list.length) throw new AppError('No recipes match your settings. Check your allergies and skipped ingredients in Settings.', 404);
   const pool = shuffle(list).slice(0, 400);
   const byId = new Map(pool.map(c => [c.id, c]));
-  const [hints, allergies] = await Promise.all([tasteHints(db), householdAllergies(db)]);
+  const hints = await tasteHints(db);
+  const allergies = prefs.allergies.flatMap(allergyFamilies);
   // Asking for something they're allergic to ("peanut noodles"): say why it's not there.
   // Adjectives too: "creamy cheesy pasta" asks for dairy and gluten.
   const promptText = prompt.replace(/\b(cream|chees|butter|milk|nutt|egg|bread|flour)(y|ie)\b/gi, '$1');
@@ -96,7 +110,7 @@ async function suggestions(db: ReturnType<typeof userClient>, body: Record<strin
     : null;
   const out = await askJson<{ picks: Array<{ id: number; reason: string }> }>({
     system: SYSTEM,
-    content: `${hints}\n${avoidLine(allergies)}\n${slot ? `They're choosing a ${slot}.` : ''}\nThey asked: "${prompt}"\n\nPick the 6 to 8 recipes that best fit the request, best first. For each, give a reason of at most 10 words saying why it fits the request, in plain kitchen English. Don't repeat the recipe name, don't start with it, and don't use exclamation marks. Good: "Ready in 20 minutes and mild enough for kids".\n\n${pool.map(line).join('\n')}`,
+    content: `${hints}\n${avoidLine(prefs)}\n${slot ? `They're choosing a ${slot}.` : ''}\nThey asked: "${prompt}"\n\nPick the 6 to 8 recipes that best fit the request, best first. For each, give a reason of at most 10 words saying why it fits the request, in plain kitchen English. Don't repeat the recipe name, don't start with it, and don't use exclamation marks. Good: "Ready in 20 minutes and mild enough for kids".\n\n${pool.map(line).join('\n')}`,
     schema: {
       type: 'object',
       properties: {
@@ -134,9 +148,13 @@ async function week(db: ReturnType<typeof userClient>) {
   if (!slots.length) slots.push('dinner');
   const maxWeeknight: number | null = prefs?.max_weeknight_minutes ?? null;
 
-  const all = await candidates(db, ['main', 'breakfast']);
-  const mains = shuffle(all.filter(c => c.meal_role === 'main')).slice(0, 260);
-  const breakfasts = shuffle(all.filter(c => c.meal_role === 'breakfast'));
+  const food = await foodPrefs(db);
+  const check = recipeChecker(food);
+  const all = await candidates(db, ['main', 'breakfast'], food);
+  // filterRecipes puts "avoid if possible" recipes last, so reshuffle within each group.
+  const ranked = (role: string) => filterRecipes(shuffle(all.filter(c => c.meal_role === role)), food);
+  const mains = ranked('main').slice(0, 260);
+  const breakfasts = ranked('breakfast');
   if (!mains.length) throw new AppError('No recipes match your settings. Check your allergies and skipped ingredients in Settings.', 404);
   const byId = new Map([...mains, ...breakfasts].map(c => [c.id, c]));
 
@@ -164,7 +182,7 @@ async function week(db: ReturnType<typeof userClient>) {
   const hints = await tasteHints(db);
   const out = await askJson<{ plan: Record<string, Partial<Record<Slot, number>>> }>({
     system: SYSTEM,
-    content: `${hints}\n${rules}\n\nMains:\n${mains.map(line).join('\n')}${slots.includes('breakfast') ? `\n\nBreakfasts:\n${breakfasts.map(line).join('\n')}` : ''}`,
+    content: `${hints}\n${avoidLine(food)}\n${rules}\n\nMains:\n${mains.map(line).join('\n')}${slots.includes('breakfast') ? `\n\nBreakfasts:\n${breakfasts.map(line).join('\n')}` : ''}`,
     schema: {
       type: 'object',
       properties: {
@@ -184,8 +202,8 @@ async function week(db: ReturnType<typeof userClient>) {
 
   // Check every pick and fill every slot. Lunches and dinners never repeat within the
   // week while any unused main is left. When the household's recipes run short, rules
-  // are relaxed in this order: last week's meals, then the weeknight time limit, then
-  // repeats within the week (fewest uses first).
+  // are relaxed in this order: "avoid if possible" ingredients and last week's meals, then
+  // the weeknight time limit, then repeats within the week (fewest uses first).
   const uses = new Map<number, number>();
   const relaxed = new Set<'lastWeek' | 'time' | 'repeat'>();
   const tooLong = (c: Card, day: string, slot: Slot) =>
@@ -195,6 +213,7 @@ async function week(db: ReturnType<typeof userClient>) {
     if (!c) return false;
     if (slot === 'breakfast') return c.meal_role === 'breakfast';
     if (c.meal_role !== 'main') return false;
+    if (level < 1 && check(c).avoids.length) return false;
     if (level < 3 && uses.has(c.id)) return false;
     if (level < 1 && lastWeek.has(c.id)) return false;
     if (level < 2 && tooLong(c, day, slot)) return false;

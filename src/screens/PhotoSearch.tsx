@@ -51,7 +51,7 @@ export function PhotoSearch({ open, onClose }: { open: boolean; onClose: () => v
     if (!base64 || searching) return;
     setSearching(true); setError(null); setResult(null);
     try {
-      const r = await findSimilar(base64, context.trim());
+      const r = await findSimilar(base64, context.trim(), prefs);
       setResult({ dish: r.dish_name, recipes: r.recipes });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't look at that photo. Try again.");

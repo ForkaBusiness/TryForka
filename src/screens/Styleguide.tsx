@@ -23,7 +23,7 @@ const COLORS: Array<[string, string, string]> = [
 const SAMPLE: RecipeCard = {
   id: 52777, name: 'Air fryer patatas bravas', display_name: 'Air fryer patatas bravas', subtitle: 'Crispy potatoes with smoky tomato sauce',
   category: 'Vegetarian', area: 'Spanish', thumb_url: 'https://www.themealdb.com/images/media/meals/58oia61564916529.jpg',
-  total_minutes: 75, meal_role: 'main', allergens: [], diets: ['vegetarian', 'vegan', 'pescatarian'],
+  total_minutes: 75, meal_role: 'main', allergens: [], ingredient_names: [], diets: ['vegetarian', 'vegan', 'pescatarian'],
 };
 
 export function Styleguide() {

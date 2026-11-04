@@ -6,15 +6,18 @@ import {
   DAY_LONG, emptyPlan, entryFromCard, findInPlan, generateWeekPlan, getSuggestions, nextOpenSlot, planEntries, withSlot,
   type SuggestionPick,
 } from '../lib/plan';
+import { filterRecipes } from '../lib/recipeFilter';
+import { RecipeCarousel } from '../components/RecipeCarousel';
 import { Button, ChipButton, Sheet, Skeleton } from '../components/ds';
 
 // Suggestions: a text request, a photo, or the whole week. With a target slot (Swap on
-// the meal plan) every pick replaces that slot instead of adding to the week.
+// the meal plan) the options are a swipeable carousel and a pick replaces that slot
+// instead of adding to the week.
 
 const STARTERS = ['Under 30 minutes', "Uses what's in my fridge", 'Kid-friendly'];
 
 export function SuggestionsPanel({ open, target, onClose }: { open: boolean; target: SuggestionsTarget | null; onClose: () => void }) {
-  const { weekPlan, prefs, saveWeek, go, openPhotoSearch } = useApp();
+  const { weekPlan, prefs, saveWeek, setPlanReview, go, openPhotoSearch } = useApp();
   const [prompt, setPrompt] = useState('');
   const [picks, setPicks] = useState<SuggestionPick[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -34,9 +37,11 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
     const exclude = planEntries(weekPlan.plan).map(e => e.entry.id);
     (async () => {
       const base = current ? (await getCards([current.id])).get(current.id) ?? null : null;
-      setIdeas(await similarRecipes(base, target.slot === 'breakfast' ? 'breakfast' : 'main', exclude, 6));
+      const similar = await similarRecipes(base, target.slot === 'breakfast' ? 'breakfast' : 'main', exclude, prefs);
+      // The current recipe leads, so it shows as selected.
+      setIdeas([...(base ? filterRecipes([base], prefs) : []), ...similar]);
     })().catch(() => setIdeas([]));
-  }, [open, target, weekPlan]);
+  }, [open, target, weekPlan, prefs]);
 
   const ask = async (text: string) => {
     const q = text.trim();
@@ -44,7 +49,7 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
     setLoading(true); setMessage(null);
     try {
       const exclude = weekPlan ? planEntries(weekPlan.plan).map(e => e.entry.id) : [];
-      const result = await getSuggestions(q, { slot: target?.slot, exclude: target ? exclude : [] });
+      const result = await getSuggestions(q, prefs, { slot: target?.slot, exclude: target ? exclude : [] });
       setPicks(result.picks);
       setNote(result.note);
     } catch (err) {
@@ -68,8 +73,9 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const planWeek = async () => {
     setConfirmReplace(false); setPlanning(true); setMessage(null);
     try {
-      const week = await generateWeekPlan();
+      const week = await generateWeekPlan(prefs);
       await saveWeek(week.plan, true);
+      setPlanReview({ notice: week.notice, blocked: week.blocked });
       setMessage({ tone: 'ok', text: `Your week is planned. The grocery list is ready too.${week.notice ? ` ${week.notice}` : ''}`, groceries: true });
     } catch (err) {
       setMessage({ tone: 'error', text: err instanceof Error ? err.message : "Couldn't plan your week. Try again." });
@@ -135,6 +141,11 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   };
 
   const title = target ? `Swap ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
+  const selectedId = target && weekPlan ? weekPlan.plan[target.day][target.slot]?.id : null;
+  const carousel = (recipes: RecipeCard[], caption?: (r: RecipeCard) => string | undefined) => (
+    <RecipeCarousel key={recipes.map(r => r.id).join()} recipes={recipes} selectedId={selectedId} onSelect={r => void choose(r)}
+      onOpen={r => openRecipe(r.id)} caption={caption} label={`Recipe options for ${title.replace('Swap ', '')}`} />
+  );
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       <form onSubmit={submit} className="flex gap-2">
@@ -199,16 +210,20 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
       {!loading && picks && note && <p role="status" className="pt-3 text-sm text-ink-muted">{note}</p>}
       {!loading && picks && (
         picks.length
-          ? <ul className="mt-1">{picks.map(p => row(p.recipe, p.reason))}</ul>
+          ? target
+            ? <div className="mt-3">{carousel(picks.map(p => p.recipe), r => picks.find(p => p.recipe.id === r.id)?.reason)}</div>
+            : <ul className="mt-1">{picks.map(p => row(p.recipe, p.reason))}</ul>
           : <p className="py-4 text-base text-ink-muted">Nothing fits that yet. Try different words.</p>
       )}
 
       {!loading && !picks && target && (
         <section className="mt-4">
-          <h3 className="text-sm font-semibold text-ink-muted">Other ideas</h3>
+          <h3 className="text-sm font-semibold text-ink-muted">Options for this meal</h3>
           {ideas === null
-            ? <Skeleton className="mt-3 h-16" />
-            : <ul className="mt-1">{ideas.map(r => row(r))}</ul>}
+            ? <Skeleton className="mt-3 h-80" />
+            : ideas.length
+              ? <div className="mt-3">{carousel(ideas)}</div>
+              : <p className="py-4 text-base text-ink-muted">No other recipes fit this meal with your current settings.</p>}
         </section>
       )}
 

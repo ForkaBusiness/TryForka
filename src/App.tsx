@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSITE_LOGIN, WEBSITE_RESET_PASSWORD } from './lib/supabase';
 import { useMediaQuery } from './lib/useMediaQuery';
 import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, savePreferences, type Preferences, type Profile } from './lib/preferences';
-import { fetchWeekPlan, saveWeekPlan, type SavedWeekPlan, type WeekPlan } from './lib/plan';
+import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
 import { fetchGroceryList, rebuildGroceryList } from './lib/groceries';
 import { AppContext, type AppState, type FavoriteEntry, type Screen, type SuggestionsTarget } from './app/AppContext';
 import { AppFrame } from './components/Shell';
@@ -49,6 +49,8 @@ function SignedIn({ session }: { session: Session }) {
   const [prefs, setPrefs] = useState<Preferences | null | undefined>(undefined);
   const [profile, setProfile] = useState<Profile>({ full_name: '', household_name: '', household_size: 1 });
   const [weekPlan, setWeekPlan] = useState<SavedWeekPlan | null | undefined>(undefined);
+  const [planChecked, setPlanChecked] = useState(false);
+  const [planReview, setPlanReview] = useState<PlanReview>({ notice: null, blocked: [] });
   const [favorites, setFavorites] = useState<Map<number, FavoriteEntry>>(new Map());
   const [stack, setStack] = useState<Screen[]>([{ name: 'mealplan' }]);
   const [suggestions, setSuggestions] = useState<{ open: boolean; target: SuggestionsTarget | null }>({ open: false, target: null });
@@ -100,6 +102,30 @@ function SignedIn({ session }: { session: Session }) {
     return saved;
   }, [userId]);
 
+  // A saved plan was only checked against the settings of the day it was made, so check
+  // it again when it loads (before it's shown) and whenever the settings change. The short
+  // wait after a change means a mis-tapped allergy doesn't cost the household a planned meal.
+  const planLoaded = weekPlan !== undefined;
+  useEffect(() => {
+    if (!prefs || !planLoaded) return;
+    const current = planRef.current;
+    if (!current) { setPlanChecked(true); return; }
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      enforcePlan(current.plan, prefs)
+        .then(async result => {
+          if (cancelled || !result.changed) return;
+          setPlanReview({ notice: planNotice(result.replaced, result.blocked.length), blocked: result.blocked });
+          await saveWeek(result.plan, false).catch(() => setWeekPlan({ ...current, plan: result.plan }));
+        })
+        .catch(err => console.error('[plan] check failed:', err))
+        .finally(() => { if (!cancelled) setPlanChecked(true); });
+    }, planChecked ? 800 : 0);
+    return () => { cancelled = true; window.clearTimeout(id); };
+    // planChecked only picks the delay; a change to it must not start another check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs, planLoaded, saveWeek]);
+
   const toggleFavorite = useCallback(async (entry: FavoriteEntry) => {
     const has = favorites.has(entry.id);
     setFavorites(prev => { const next = new Map(prev); if (has) next.delete(entry.id); else next.set(entry.id, entry); return next; });
@@ -113,10 +139,11 @@ function SignedIn({ session }: { session: Session }) {
   }, [favorites, userId]);
 
   const ctx: AppState | null = useMemo(() => (prefs ? {
-    session, userId, prefs, updatePrefs, profile, setProfile, weekPlan, saveWeek, favorites, toggleFavorite, go, replace, back, isPhone,
+    session, userId, prefs, updatePrefs, profile, setProfile, favorites, toggleFavorite, go, replace, back, isPhone,
+    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planReview, setPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, updatePrefs, profile, weekPlan, saveWeek, favorites, toggleFavorite, go, replace, back, isPhone]);
+  } : null), [session, userId, prefs, updatePrefs, profile, weekPlan, planChecked, saveWeek, planReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
   if (prefs === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {

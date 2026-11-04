@@ -70,7 +70,7 @@ Unit tests for all of this run with `npm test`.
 Every user table has row-level security that allows owners only, and is removed when the account is deleted.
 
 - **Household settings:**
-  - `user_preferences`: diet, allergies (the 9 keys), ingredients to skip, which meals to plan, weeknight time limit, units, onboarding date. The older onboarding columns are kept but no longer used.
+  - `user_preferences`: diet, allergies (the 9 keys or an ingredient name), ingredients to skip ("never show"), ingredients to avoid ("avoid if possible", ranked last), which meals to plan, weeknight time limit, units, onboarding date. The older onboarding columns are kept but no longer used.
   - `users`: name, household name and size.
 - **Plans and shopping:**
   - `week_plans`: one per user, with weekday keys and dates planned and last edited.
@@ -80,7 +80,7 @@ Every user table has row-level security that allows owners only, and is removed 
   - `dish_lookups`: what the photo was identified as. The image itself is never stored.
   - `ai_requests` and `claim_request(kind, per_minute, per_day)`: per-user limits.
 - **Catalog:** `recipes` and `ingredient_meta` are readable by everyone, but only the server can write to them.
-- **`safe_recipes()`:** the database function every recipe list uses. It removes recipes with the caller's allergens, recipes that don't fit their diet, and recipes using ingredients they skip.
+- **`safe_recipes()`:** the database function every recipe list starts from, a coarse first pass. It removes recipes with the caller's allergens, recipes that don't fit their diet, and recipes using ingredients they skip (whole-word matches).
 
 ## 6. Edge Functions
 
@@ -95,7 +95,9 @@ Secrets: `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`, `SYNC_SECRET`, `MEALDB_A
 
 ## 7. Allergies
 
-Allergies are a hard filter at every point a recipe can reach the user: browse, search, week plans, suggestions, swaps and photo results. They all read from `safe_recipes()`.
+Allergies are a hard filter at every point a recipe can reach the user: browse, search, week plans, suggestions, swaps and photo results. They all read from `safe_recipes()`, then pass through the recipe filter (`supabase/functions/_shared/catalog/recipeFilter.ts`), which is the source of truth. The Edge Functions and the app run the same filter; Claude's prompt lists the exclusions too, but nothing relies on it.
+
+Saved plans are checked again when they load and when settings change. A recipe that no longer fits is replaced with the same kind of meal, or the slot stays empty with a message if nothing fits.
 
 Matching over-flags on purpose: ingredient names, the recipe name and the instructions are all checked. A single recipe still opens from a favorite even after an allergy is added, with a warning in the alert color.
 

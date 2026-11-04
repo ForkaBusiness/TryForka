@@ -107,8 +107,8 @@ export function Settings() {
         <div className="max-w-xl"><DietPicker value={prefs.diet} onChange={diet => savePrefs({ diet })} /></div>
       </Section>
 
-      <Section id="skip" title="Ingredients we skip" intro="Recipes that use these are hidden. Matched against ingredient names.">
-        <SkipList value={prefs.skip_ingredients} onChange={skip_ingredients => savePrefs({ skip_ingredients })} />
+      <Section id="skip" title="Ingredients we skip" intro="Recipes that use these are hidden. Tap Never show on an ingredient to change it to Avoid if possible, which keeps those recipes but shows them last.">
+        <SkipList never={prefs.skip_ingredients} avoid={prefs.avoid_ingredients} onChange={(skip_ingredients, avoid_ingredients) => savePrefs({ skip_ingredients, avoid_ingredients })} />
       </Section>
 
       <Section id="planning" title="Planning" intro="Used when we plan your week.">

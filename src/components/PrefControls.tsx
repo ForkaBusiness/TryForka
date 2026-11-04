@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react';
-import { Plus } from 'lucide-react';
-import { ALLERGENS, ALLERGEN_LABELS, type Allergen } from '../lib/allergenLabels';
+import { useEffect, useMemo, useState } from 'react';
+import { ingredientIndex } from '../lib/catalog';
+import { ALLERGEN_OPTIONS, allergyOptions, dislikeOptions, exactOption, type IngredientOption } from '../lib/ingredientSearch';
 import type { DietChoice, Preferences } from '../lib/preferences';
-import { Button, Checkbox, Input, RemovableTag, ToggleChip } from './ds';
+import { canonicalAllergy } from '../lib/recipeFilter';
+import { Checkbox, ChipButton, cx, ToggleChip } from './ds';
+import { IngredientInput } from './IngredientInput';
 
 // The food-settings controls, shared by onboarding and Settings so both write the
 // same fields.
@@ -40,39 +42,61 @@ export function DietPicker({ value, onChange }: { value: DietChoice; onChange: (
   );
 }
 
-export function AllergyPicker({ value, onChange }: { value: Allergen[]; onChange: (a: Allergen[]) => void }) {
-  const toggle = (a: Allergen) => onChange(value.includes(a) ? value.filter(x => x !== a) : [...value, a]);
+function useIngredientIndex(): IngredientOption[] | null {
+  const [options, setOptions] = useState<IngredientOption[] | null>(null);
+  useEffect(() => { ingredientIndex().then(setOptions).catch(() => {}); }, []);
+  return options;
+}
+
+const ingredientChip = (value: string, options: IngredientOption[] | null) => {
+  const known = options && exactOption(options, value);
+  return { value, label: known ? known.label : value, custom: !!options && !known };
+};
+
+export function AllergyPicker({ value, onChange }: { value: string[]; onChange: (a: string[]) => void }) {
+  const index = useIngredientIndex();
+  const options = useMemo(() => allergyOptions(index ?? []), [index]);
+  const add = (a: string) => onChange([...value, canonicalAllergy(a)]);
+  const family = (v: string) => ALLERGEN_OPTIONS.find(o => o.value === v);
+  const chips = value.map(v => (family(v) ? { value: v, label: family(v)!.label } : ingredientChip(v, index)));
+  const common = ALLERGEN_OPTIONS.filter(o => !value.includes(o.value));
   return (
-    <div role="group" aria-label="Allergies" className="flex flex-wrap gap-2">
-      {ALLERGENS.map(a => (
-        <ToggleChip key={a} selected={value.includes(a)} onToggle={() => toggle(a)}>{ALLERGEN_LABELS[a]}</ToggleChip>
-      ))}
+    <div>
+      <IngredientInput label="Add an allergy" placeholder="Peanut, shellfish, mustard" options={options}
+        chips={chips} onAdd={add} onRemove={v => onChange(value.filter(x => x !== v))} />
+      {common.length > 0 && (
+        <div role="group" aria-label="Common allergens" className="mt-4 flex flex-wrap gap-2">
+          {common.map(o => <ChipButton key={o.value} onClick={() => add(o.value)}>{o.label}</ChipButton>)}
+        </div>
+      )}
+      <p className="mt-3 text-sm text-ink-muted">We filter by ingredient list. Always check product labels for allergens.</p>
     </div>
   );
 }
 
-export function SkipList({ value, onChange }: { value: string[]; onChange: (s: string[]) => void }) {
-  const [draft, setDraft] = useState('');
-  const add = (e: FormEvent) => {
-    e.preventDefault();
-    const words = draft.split(',').map(w => w.trim().toLowerCase()).filter(w => w.length >= 2 && !value.includes(w));
-    if (words.length) onChange([...value, ...words]);
-    setDraft('');
+/** Dislikes: "never show" (skip) by default; each one can be switched to "avoid if possible". */
+export function SkipList({ never, avoid, onChange }: { never: string[]; avoid: string[]; onChange: (never: string[], avoid: string[]) => void }) {
+  const index = useIngredientIndex();
+  const options = useMemo(() => index && dislikeOptions(index), [index]);
+  const remove = (v: string) => onChange(never.filter(x => x !== v), avoid.filter(x => x !== v));
+  const severity = (v: string, label: string, avoided: boolean) => (
+    <button
+      type="button"
+      onClick={() => (avoided ? onChange([...never, v], avoid.filter(x => x !== v)) : onChange(never.filter(x => x !== v), [...avoid, v]))}
+      aria-label={`${label}: ${avoided ? 'avoid if possible' : 'never show'}. Change`}
+      className={cx('ml-1 h-7 shrink-0 cursor-pointer rounded-full px-2 text-sm font-medium whitespace-nowrap', avoided ? 'bg-canvas text-ink-muted' : 'bg-basil-soft text-basil')}
+    >
+      {avoided ? 'Avoid if possible' : 'Never show'}
+    </button>
+  );
+  const chip = (v: string, avoided: boolean) => {
+    const c = ingredientChip(v, options);
+    return { ...c, action: severity(v, c.label, avoided) };
   };
   return (
-    <div>
-      <form onSubmit={add} className="flex max-w-md items-end gap-2">
-        <Input className="flex-1" label="Add an ingredient" placeholder="mushrooms, olives" value={draft} onChange={e => setDraft(e.target.value)} />
-        <Button type="submit" variant="secondary" icon={Plus} disabled={!draft.trim()} className="h-12">Add</Button>
-      </form>
-      {value.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {value.map(w => (
-            <RemovableTag key={w} onRemove={() => onChange(value.filter(x => x !== w))} removeLabel={`Remove ${w}`}>{w}</RemovableTag>
-          ))}
-        </div>
-      )}
-    </div>
+    <IngredientInput label="Add an ingredient" placeholder="Mushroom, olive" options={options}
+      chips={[...never.map(v => chip(v, false)), ...avoid.map(v => chip(v, true))]}
+      onAdd={v => onChange([...never, v], avoid)} onRemove={remove} />
   );
 }
 

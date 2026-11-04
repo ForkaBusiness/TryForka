@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Check, ChefHat, FolderPlus, Heart, MoreHorizontal, NotebookPen, Star, TriangleAlert } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { getRecipe, ingredientPhoto, minutesLabel, photo, recipeMeta, recipeTitle, type Recipe } from '../lib/catalog';
-import { ALLERGEN_LABELS, type Allergen } from '../lib/allergenLabels';
+import { recipeChecker } from '../lib/recipeFilter';
 import { cookedRecently, markCooked, unmarkCooked } from '../lib/cooked';
 import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts';
 import { TimerChip } from '../components/Timers';
@@ -12,9 +12,6 @@ import { BottomBar, Button, IconButton, ListRow, Segmented, Sheet, Skeleton, Tag
 
 type Tab = 'ingredients' | 'steps';
 const MULTIPLIERS = [{ value: '1', label: '1x' }, { value: '2', label: '2x' }, { value: '3', label: '3x' }] as const;
-
-/** Lowercased skip words, matched like safe_recipes() does (simple plural stripping). */
-const skipStem = (s: string) => s.trim().toLowerCase().replace(/(es|s)$/, '');
 
 export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab }) {
   const { prefs, userId, back, go, favorites, toggleFavorite } = useApp();
@@ -53,9 +50,9 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
   }
 
   const title = recipeTitle(recipe);
-  const mine = new Set(prefs.allergies);
-  const hits = recipe.allergens.filter(a => mine.has(a)) as Allergen[];
-  const skips = prefs.skip_ingredients.map(skipStem).filter(s => s.length >= 3);
+  const allergyCheck = recipeChecker({ allergies: prefs.allergies, skip_ingredients: [] });
+  const dislikeCheck = recipeChecker({ allergies: [], skip_ingredients: prefs.skip_ingredients, avoid_ingredients: prefs.avoid_ingredients });
+  const hits = allergyCheck(recipe).blockedBy;
   const isFav = favorites.has(recipe.id);
   const meta = recipeMeta(recipe);
   const steps = recipe.steps;
@@ -102,7 +99,7 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
           {hits.length > 0 && (
             <div role="alert" className="mt-4 flex gap-2 rounded-control border border-alert/40 bg-alert/10 p-3 text-sm text-alert">
               <TriangleAlert size={20} strokeWidth={1.75} aria-hidden className="shrink-0" />
-              <span>Contains {hits.map(h => ALLERGEN_LABELS[h].toLowerCase()).join(' and ')}, which you marked as an allergy.</span>
+              <span>Contains {hits.map(h => h.toLowerCase()).join(' and ')}, which you marked as an allergy.</span>
             </div>
           )}
 
@@ -125,16 +122,18 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
               </div>
               <ul className="border-t border-line">
                 {recipe.ingredients.map((ing, i) => {
-                  const allergy = ing.allergens.filter(a => mine.has(a as Allergen)) as Allergen[];
-                  const skipped = skips.some(s => ing.name.toLowerCase().includes(s) || ing.name_us.toLowerCase().includes(s));
+                  const item = { name: '', ingredient_names: [ing.name, ing.name_us], allergens: ing.allergens };
+                  const allergy = allergyCheck(item).blockedBy;
+                  const dislike = dislikeCheck(item);
                   const measure = formatMeasure({ quantity: ing.quantity, quantityMax: ing.quantity_max, unit: ing.unit, note: ing.note }, prefs.units, Number(multiplier));
                   return (
                     <li key={i} className="flex items-center gap-3 border-b border-line py-3">
                       <img src={ingredientPhoto(ing.name)} alt="" loading="lazy" className="size-10 shrink-0 rounded-photo bg-canvas object-contain" />
                       <span className="min-w-0 flex-1">
                         <span className="block text-base text-ink">{ing.name_us}</span>
-                        {allergy.length > 0 && <span className="block text-sm font-semibold text-alert">Contains {allergy.map(a => ALLERGEN_LABELS[a].toLowerCase()).join(', ')}</span>}
-                        {skipped && !allergy.length && <span className="block text-sm text-ink-muted">You skip this</span>}
+                        {allergy.length > 0 && <span className="block text-sm font-semibold text-alert">Contains {allergy.map(a => a.toLowerCase()).join(', ')}</span>}
+                        {!dislike.allowed && !allergy.length && <span className="block text-sm text-ink-muted">You skip this</span>}
+                        {dislike.avoids.length > 0 && !allergy.length && <span className="block text-sm text-ink-muted">You'd rather avoid this</span>}
                       </span>
                       <span className="tabular max-w-[45%] text-right text-base text-ink">{measure}</span>
                     </li>

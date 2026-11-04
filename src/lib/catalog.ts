@@ -2,11 +2,14 @@ import { supabase } from './supabase';
 import type { RecipeIngredient, RecipeStep } from '../../supabase/functions/_shared/catalog/derive.ts';
 import type { StepTimer } from '../../supabase/functions/_shared/catalog/steps.ts';
 import type { Allergen, Diet } from '../../supabase/functions/_shared/catalog/allergens.ts';
+import { buildIngredientIndex, type IngredientOption } from './ingredientSearch';
+import { filterRecipes, recipeChecker, type FoodPrefs } from './recipeFilter';
 
 // The recipe catalog in Supabase (synced from TheMealDB by the sync-recipes function).
 // Lists always go through safe_recipes(), which applies the signed-in user's allergies,
 // diet and skipped ingredients in SQL. Single recipes are read from the table directly so
 // a saved recipe still opens (with its allergens flagged) after the user's settings change.
+// safe_recipes() is the coarse first pass; screens then run lists through the recipe filter.
 
 export type { RecipeIngredient, RecipeStep, StepTimer };
 export type MealRole = 'breakfast' | 'main' | 'side' | 'dessert' | 'condiment' | 'drink';
@@ -23,6 +26,7 @@ export interface RecipeCard {
   meal_role: MealRole | null;
   allergens: Allergen[];
   diets: Diet[];
+  ingredient_names: string[];
 }
 
 export interface Recipe extends RecipeCard {
@@ -33,7 +37,7 @@ export interface Recipe extends RecipeCard {
   youtube_url: string | null;
 }
 
-export const CARD_COLUMNS = 'id, name, display_name, subtitle, category, area, thumb_url, total_minutes, meal_role, allergens, diets';
+export const CARD_COLUMNS = 'id, name, display_name, subtitle, category, area, thumb_url, total_minutes, meal_role, allergens, diets, ingredient_names';
 const RECIPE_COLUMNS = `${CARD_COLUMNS}, steps, ingredients, tags, source_url, youtube_url`;
 
 export const recipeTitle = (r: Pick<RecipeCard, 'name' | 'display_name'>) => r.display_name || r.name;
@@ -113,13 +117,20 @@ export async function getCards(ids: number[]): Promise<Map<number, RecipeCard>> 
   return new Map(((data ?? []) as RecipeCard[]).map(r => [r.id, r]));
 }
 
-/** Safe alternatives for a slot: same role, same category or cuisine first. */
-export async function similarRecipes(base: RecipeCard | null, role: 'breakfast' | 'main', exclude: number[], count = 6): Promise<RecipeCard[]> {
+/** Re-checks recipes an Edge Function returned, against the catalog itself. Keeps the order, "avoid" items last. */
+export async function recheckRecipes(ids: number[], prefs: FoodPrefs): Promise<RecipeCard[]> {
+  const cards = await getCards(ids);
+  return filterRecipes(ids.flatMap(id => cards.get(id) ?? []), prefs);
+}
+
+/** Safe alternatives for a slot: same role, same category or cuisine first, "avoid" items last. */
+export async function similarRecipes(base: RecipeCard | null, role: 'breakfast' | 'main', exclude: number[], prefs: FoodPrefs, count = 8): Promise<RecipeCard[]> {
   const { data, error } = await supabase.rpc('safe_recipes').select(CARD_COLUMNS).eq('meal_role', role).limit(400);
   if (error) throw new Error(error.message);
   const skip = new Set(exclude);
-  const pool = ((data ?? []) as RecipeCard[]).filter(r => !skip.has(r.id));
-  const score = (r: RecipeCard) => (base && r.category === base.category ? 2 : 0) + (base && r.area === base.area ? 1 : 0) + Math.random();
+  const check = recipeChecker(prefs);
+  const pool = filterRecipes((data ?? []) as RecipeCard[], prefs).filter(r => !skip.has(r.id));
+  const score = (r: RecipeCard) => (base && r.category === base.category ? 2 : 0) + (base && r.area === base.area ? 1 : 0) + Math.random() - (check(r).avoids.length ? 10 : 0);
   return pool.sort((a, b) => score(b) - score(a)).slice(0, count);
 }
 
@@ -142,6 +153,22 @@ export async function ingredientAisles(names: string[]): Promise<Map<string, str
     for (const row of data ?? []) out.set(row.name as string, row.aisle as string);
   }
   return out;
+}
+
+let ingredients: Promise<IngredientOption[]> | null = null;
+
+/** Every ingredient in the catalog, for the preference inputs. Built once per session. */
+export function ingredientIndex(): Promise<IngredientOption[]> {
+  ingredients ??= (async () => {
+    const rows: Array<{ name: string; name_us: string }> = [];
+    for (let from = 0, page = 1000; ; from += page) {
+      const { data, error } = await supabase.from('ingredient_meta').select('name, name_us').order('name').range(from, from + page - 1);
+      if (error) throw new Error(error.message);
+      rows.push(...(data ?? []));
+      if ((data ?? []).length < page) return buildIngredientIndex(rows);
+    }
+  })().catch(err => { ingredients = null; throw err; });
+  return ingredients;
 }
 
 /** TheMealDB's ingredient photo. */
