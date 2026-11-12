@@ -68,7 +68,7 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
   const settle = () => {
     gesture.current = null;
     if (!row.current) return;
-    row.current.style.transition = 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)';
+    row.current.style.transition = 'transform 300ms var(--ease-out)';
     row.current.style.transform = '';
   };
 
@@ -124,7 +124,7 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
   const note = caption?.(current);
 
   return (
-    <section role="group" aria-roledescription="carousel" aria-label={label} tabIndex={0} onKeyDown={onKeyDown} className="rounded-[24px]">
+    <section role="group" aria-roledescription="carousel" aria-label={label} tabIndex={0} onKeyDown={onKeyDown} className="rounded-card">
       <div className="overflow-hidden">
         <div
           ref={row}
@@ -148,38 +148,38 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
                 aria-hidden={size === 'hidden' || undefined}
                 inert={size === 'hidden'}
                 className={cx(
-                  'relative min-w-0 overflow-hidden rounded-[24px] bg-line/60',
-                  'transition-[flex-grow,flex-basis,margin,opacity] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                  'photo relative min-w-0 rounded-card',
+                  'transition-[flex-grow,flex-basis,margin,opacity] duration-400 ease-out',
                   SIZE_CLASS[size],
                 )}
               >
                 {r.thumb_url && (
                   <img src={photo(r.thumb_url, 'medium')} alt="" draggable={false} loading={near ? 'eager' : 'lazy'}
-                    className="absolute inset-0 size-full object-cover object-center" />
+                    className="absolute inset-0" />
                 )}
-                <span aria-hidden className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), rgba(0,0,0,0) 65%)' }} />
+                <span aria-hidden className="scrim absolute inset-x-0 bottom-0 z-1 h-3/4" />
                 <button
                   type="button"
                   tabIndex={-1}
                   onClick={() => tapCard(i)}
                   aria-label={i === active ? `Select ${title}` : `Show ${title}`}
-                  className="absolute inset-0 cursor-pointer outline-none"
+                  className="absolute inset-0 z-1 cursor-pointer outline-none"
                 />
                 <div className={cx(
-                  'pointer-events-none absolute inset-x-0 bottom-0 transition-opacity',
+                  'pointer-events-none absolute inset-x-0 bottom-0 z-1 transition-opacity',
                   size === 'active' ? 'p-4' : 'p-3',
                   size === 'active' || size === 'medium' ? 'opacity-100 delay-150 duration-200' : 'opacity-0 duration-100',
                 )}>
-                  <p className={cx('line-clamp-3 font-display font-semibold tracking-[-0.01em] hyphens-auto text-surface', size === 'active' ? 'text-lg' : 'text-xs')}>{title}</p>
-                  {size === 'active' && activeMeta && <p className="mt-1 truncate text-sm text-surface">{activeMeta}</p>}
+                  <p className={cx('line-clamp-3 font-semibold hyphens-auto text-surface', size === 'active' ? 'text-heading' : 'text-caption')}>{title}</p>
+                  {size === 'active' && activeMeta && <p className="mt-1 truncate text-small text-surface">{activeMeta}</p>}
                   {size === 'active' && (
                     <button
                       type="button"
                       onClick={() => onSelect(r)}
                       aria-label={selected ? `${title} is selected` : `Select ${title}`}
                       className={cx(
-                        'pointer-events-auto mt-3 inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-4 text-sm font-semibold',
-                        selected ? 'bg-basil text-surface' : 'bg-surface text-ink',
+                        'pointer-events-auto mt-3 inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full px-4 text-small font-semibold',
+                        selected ? 'bg-green text-surface' : 'glass',
                       )}
                     >
                       {selected && <Check size={16} strokeWidth={2.25} aria-hidden />}
@@ -189,8 +189,8 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
                 </div>
                 {selected && (
                   <>
-                    <span aria-hidden className="pointer-events-none absolute inset-0 rounded-[24px] ring-[3px] ring-basil ring-inset" />
-                    <span aria-hidden className={cx('pointer-events-none absolute top-3 right-3 flex size-7 items-center justify-center rounded-full bg-basil text-surface transition-opacity', size === 'active' || size === 'medium' ? 'opacity-100' : 'opacity-0')}>
+                    <span aria-hidden className="pointer-events-none absolute inset-0 z-1 rounded-card ring-3 ring-green ring-inset" />
+                    <span aria-hidden className={cx('pointer-events-none absolute top-3 right-3 z-1 flex size-7 items-center justify-center rounded-full bg-green text-surface transition-opacity', size === 'active' || size === 'medium' ? 'opacity-100' : 'opacity-0')}>
                       <Check size={16} strokeWidth={2.5} />
                     </span>
                   </>
@@ -203,23 +203,23 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
 
       <div className="mt-3 flex items-center justify-center gap-3">
         <span className="hidden md:block">
-          <IconButton icon={ChevronLeft} label="Previous recipe" size={36} disabled={active === 0} onClick={() => moveTo(active - 1)} className="disabled:opacity-40" />
+          <IconButton icon={ChevronLeft} label="Previous recipe" size="sm" disabled={active === 0} onClick={() => moveTo(active - 1)} className="disabled:opacity-40" />
         </span>
         <div aria-hidden className="flex items-center gap-1.5">
           {recipes.map((r, i) => (
-            <span key={r.id} className={cx('h-1.5 rounded-full transition-[width,background-color] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)]', i === active ? 'w-5 bg-basil' : 'w-1.5 bg-line')} />
+            <span key={r.id} className={cx('h-1.5 rounded-full transition-[width,background-color] duration-400 ease-out', i === active ? 'w-5 bg-green' : 'w-1.5 bg-line')} />
           ))}
         </div>
         <span className="hidden md:block">
-          <IconButton icon={ChevronRight} label="Next recipe" size={36} disabled={active === count - 1} onClick={() => moveTo(active + 1)} className="disabled:opacity-40" />
+          <IconButton icon={ChevronRight} label="Next recipe" size="sm" disabled={active === count - 1} onClick={() => moveTo(active + 1)} className="disabled:opacity-40" />
         </span>
       </div>
       <p className="sr-only" aria-live="polite">{recipeTitle(current)}, {active + 1} of {count}</p>
 
       {(note || onOpen) && (
         <div className="mt-3 flex items-start justify-between gap-3">
-          <p className="min-w-0 text-sm text-ink-muted">{note}</p>
-          {onOpen && <button type="button" onClick={() => onOpen(current)} className="shrink-0 cursor-pointer text-sm font-semibold text-basil hover:underline">View recipe</button>}
+          <p className="min-w-0 text-small text-ink-muted">{note}</p>
+          {onOpen && <button type="button" onClick={() => onOpen(current)} className="shrink-0 cursor-pointer text-small font-semibold text-green hover:underline">View recipe</button>}
         </div>
       )}
     </section>

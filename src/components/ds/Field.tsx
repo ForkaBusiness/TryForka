@@ -3,53 +3,64 @@ import { Check, Minus, Plus } from 'lucide-react';
 import { cx } from './cx';
 import { ICON_PROPS } from './icon';
 
-// Form controls: 1px line border, basil focus ring, 10px radius.
+// Form controls. Matte: surface fill, line border, green focus ring.
 
-const CONTROL = 'w-full rounded-control border border-line bg-surface text-ink outline-none transition-[border-color,box-shadow] duration-150 focus:border-basil focus:ring-2 focus:ring-basil/25 disabled:bg-canvas disabled:text-ink-muted';
+/** The look of every text field. Exported for the one input that needs its own markup (the ingredient combobox). */
+export const fieldClass = 'w-full rounded-input border border-line bg-surface text-body text-ink outline-none transition-[border-color,box-shadow] duration-150 focus:border-green focus:ring-2 focus:ring-green/25 disabled:bg-cream disabled:text-ink-muted';
+
+const labelClass = 'mb-2 block text-small font-semibold text-ink';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
+  /** Keep the label for screen readers only (search bars, single-field forms). */
+  hideLabel?: boolean;
   hint?: string;
   error?: string;
+  /** Icon inside the left edge. */
+  leading?: React.ReactNode;
   /** Element inside the right edge (e.g. a show-password button). */
   trailing?: React.ReactNode;
 }
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input({ label, hint, error, trailing, className, id, ...rest }, ref) {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input({ label, hideLabel, hint, error, leading, trailing, className, id, ...rest }, ref) {
   const auto = useId();
   const inputId = id ?? auto;
   const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
   return (
     <div className={className}>
-      {label && <label htmlFor={inputId} className="mb-2 block text-sm font-semibold text-ink">{label}</label>}
+      {label && <label htmlFor={inputId} className={hideLabel ? 'sr-only' : labelClass}>{label}</label>}
       <div className="relative">
+        {leading && <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-ink-muted">{leading}</div>}
         <input
           ref={ref}
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy}
-          className={cx(CONTROL, 'h-12 px-4 text-base', trailing ? 'pr-12' : '', error && 'border-alert')}
+          className={cx(fieldClass, 'h-12', leading ? 'pl-12' : 'pl-4', trailing ? 'pr-13' : 'pr-4', error && 'border-terracotta')}
           {...rest}
         />
         {trailing && <div className="absolute inset-y-0 right-1 flex items-center">{trailing}</div>}
       </div>
-      {error ? <p id={`${inputId}-error`} className="mt-2 text-sm text-alert">{error}</p>
-        : hint ? <p id={`${inputId}-hint`} className="mt-2 text-sm text-ink-muted">{hint}</p> : null}
+      {error ? <p id={`${inputId}-error`} className="mt-2 text-small text-terracotta-deep">{error}</p>
+        : hint ? <p id={`${inputId}-hint`} className="mt-2 text-small text-ink-muted">{hint}</p> : null}
     </div>
   );
 });
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
+  hideLabel?: boolean;
+  /** Extra classes for the textarea itself (height, resize). */
+  fieldClassName?: string;
 }
 
-export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea({ label, className, id, ...rest }, ref) {
+export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea({ label, hideLabel, fieldClassName, className, id, ...rest }, ref) {
   const auto = useId();
   const inputId = id ?? auto;
   return (
     <div className={className}>
-      {label && <label htmlFor={inputId} className="mb-2 block text-sm font-semibold text-ink">{label}</label>}
-      <textarea ref={ref} id={inputId} className={cx(CONTROL, 'block min-h-32 resize-y px-4 py-3 text-base leading-normal')} {...rest} />
+      {label && <label htmlFor={inputId} className={hideLabel ? 'sr-only' : labelClass}>{label}</label>}
+      <textarea ref={ref} id={inputId} className={cx(fieldClass, 'block px-4 py-3', fieldClassName ?? 'min-h-32 resize-y')} {...rest} />
     </div>
   );
 });
@@ -63,6 +74,7 @@ export interface CheckboxProps {
   className?: string;
 }
 
+/** Round. Fills with the glaze when checked. */
 export function Checkbox({ checked, onChange, label, ariaLabel, className }: CheckboxProps) {
   return (
     <label className={cx('inline-flex cursor-pointer items-center gap-3', className)}>
@@ -77,14 +89,14 @@ export function Checkbox({ checked, onChange, label, ariaLabel, className }: Che
         <span
           aria-hidden
           className={cx(
-            'flex size-6 items-center justify-center rounded-check border transition-colors duration-150 peer-focus-visible:ring-2 peer-focus-visible:ring-basil peer-focus-visible:ring-offset-2',
-            checked ? 'border-basil bg-basil text-surface' : 'border-ink-muted/60 bg-surface',
+            'flex size-6 items-center justify-center rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-green peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-cream',
+            checked ? 'glaze animate-check shadow-glaze-pressed' : 'border-2 border-ink-muted/80 bg-surface',
           )}
         >
-          {checked && <Check size={16} strokeWidth={2.5} className="animate-check" />}
+          {checked && <Check size={15} strokeWidth={3} />}
         </span>
       </span>
-      {label && <span className="text-base text-ink">{label}</span>}
+      {label && <span className="text-body text-ink">{label}</span>}
     </label>
   );
 }
@@ -100,27 +112,16 @@ export interface StepperProps {
 }
 
 export function Stepper({ value, onChange, min = 1, max = 20, label, unit }: StepperProps) {
+  const side = 'flex h-full w-12 cursor-pointer items-center justify-center rounded-full text-ink hover:bg-cream disabled:cursor-not-allowed disabled:text-line disabled:hover:bg-transparent';
   return (
-    <div role="group" aria-label={label} className="inline-flex h-11 items-center rounded-control border border-line bg-surface">
-      <button
-        type="button"
-        aria-label={`Fewer ${label.toLowerCase()}`}
-        disabled={value <= min}
-        onClick={() => onChange(Math.max(min, value - 1))}
-        className="flex h-full w-11 cursor-pointer items-center justify-center text-ink disabled:cursor-not-allowed disabled:text-line"
-      >
+    <div role="group" aria-label={label} className="inline-flex h-12 items-center rounded-full border border-line bg-surface p-1">
+      <button type="button" aria-label={`Fewer ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))} className={side}>
         <Minus {...ICON_PROPS} />
       </button>
-      <output aria-live="polite" className="tabular min-w-24 px-2 text-center text-base font-semibold">
+      <output aria-live="polite" className="tabular min-w-24 px-2 text-center text-body font-semibold">
         {value}{unit ? ` ${unit(value)}` : ''}
       </output>
-      <button
-        type="button"
-        aria-label={`More ${label.toLowerCase()}`}
-        disabled={value >= max}
-        onClick={() => onChange(Math.min(max, value + 1))}
-        className="flex h-full w-11 cursor-pointer items-center justify-center text-ink disabled:cursor-not-allowed disabled:text-line"
-      >
+      <button type="button" aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))} className={side}>
         <Plus {...ICON_PROPS} />
       </button>
     </div>
@@ -138,7 +139,7 @@ export interface SegmentedProps<T extends string> {
 /** A small set of mutually exclusive choices: Ingredients / Steps, 1x / 2x / 3x, US / Metric. */
 export function Segmented<T extends string>({ options, value, onChange, label, className }: SegmentedProps<T>) {
   return (
-    <div role="radiogroup" aria-label={label} className={cx('inline-flex rounded-control border border-line bg-canvas p-1', className)}>
+    <div role="radiogroup" aria-label={label} className={cx('inline-flex rounded-full border border-line bg-cream p-1', className)}>
       {options.map(o => {
         const active = o.value === value;
         return (
@@ -149,8 +150,8 @@ export function Segmented<T extends string>({ options, value, onChange, label, c
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cx(
-              'h-9 flex-1 cursor-pointer whitespace-nowrap rounded-[7px] px-4 text-sm font-semibold transition-colors duration-150',
-              active ? 'bg-surface text-ink ring-1 ring-line' : 'text-ink-muted hover:text-ink',
+              'h-9 flex-1 cursor-pointer rounded-full px-4 text-small font-semibold whitespace-nowrap transition-colors duration-150',
+              active ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink',
             )}
           >
             {o.label}

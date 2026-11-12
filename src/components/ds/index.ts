@@ -1,8 +1,11 @@
 export * from './Button';
+export * from './Glass';
+export * from './Photo';
 export * from './Field';
 export * from './Chip';
 export * from './Layout';
-export * from './Sheet';
-export * from './RecipeTile';
+export * from './BottomSheet';
+export * from './RecipeCard';
+export * from './recipeMeta';
 export { cx } from './cx';
 export { ICON_PROPS } from './icon';

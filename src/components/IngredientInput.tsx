@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type R
 import { Plus, X } from 'lucide-react';
 import { normalizeIngredient } from '../lib/recipeFilter';
 import { exactOption, searchIngredients, type IngredientOption } from '../lib/ingredientSearch';
-import { cx } from './ds';
+import { cx, fieldClass } from './ds';
 
 // Autocomplete for food preferences: a combobox over the catalog's ingredients, with the
 // choices as removable chips. Saves the option's value, not what was typed, so the recipe
@@ -98,11 +98,11 @@ export function IngredientInput({ label, placeholder, options, chips, onAdd, onR
   };
 
   const optionId = (i: number) => `${id}-option-${i}`;
-  const rowClass = (i: number) => cx('flex cursor-pointer items-center gap-2 px-4 py-2.5 text-base', i === active ? 'bg-basil-soft text-basil' : 'text-ink');
+  const rowClass = (i: number) => cx('flex min-h-11 cursor-pointer items-center gap-2 px-4 py-2 text-body', i === active ? 'bg-green-soft text-green' : 'text-ink');
 
   return (
     <div className="max-w-md">
-      <label htmlFor={id} className="mb-2 block text-sm font-semibold text-ink">{label}</label>
+      <label htmlFor={id} className="mb-2 block text-small font-semibold text-ink">{label}</label>
       <div className="relative">
         <input
           id={id}
@@ -120,7 +120,7 @@ export function IngredientInput({ label, placeholder, options, chips, onAdd, onR
           onFocus={() => setOpen(true)}
           onBlur={() => { commit(false); setOpen(false); }}
           onKeyDown={onKeyDown}
-          className="h-12 w-full rounded-control border border-line bg-surface px-4 text-base text-ink outline-none transition-[border-color,box-shadow] duration-150 focus:border-basil focus:ring-2 focus:ring-basil/25"
+          className={cx(fieldClass, 'h-12 px-4')}
         />
         <ul
           id={listId}
@@ -128,19 +128,19 @@ export function IngredientInput({ label, placeholder, options, chips, onAdd, onR
           aria-label={`${label} suggestions`}
           // Keep focus in the input, so choosing an option isn't a blur.
           onMouseDown={e => e.preventDefault()}
-          className={cx('absolute inset-x-0 top-full z-20 mt-1 max-h-[22rem] overflow-y-auto rounded-control border border-line bg-surface py-1 shadow-float', !expanded && 'hidden')}
+          className={cx('absolute inset-x-0 top-full z-20 mt-1 max-h-88 overflow-y-auto rounded-input border border-line bg-surface py-1 shadow-lg', !expanded && 'hidden')}
         >
           {results.map((o, i) => (
             <li key={o.value} id={optionId(i)} role="option" aria-selected={i === active} onMouseEnter={() => setActive(i)} onClick={() => add(o.value)} className={rowClass(i)}>
               <span className="min-w-0 flex-1 truncate">{o.label}</span>
-              {o.family && <span className="shrink-0 text-sm text-ink-muted">All {o.label.toLowerCase()} foods</span>}
+              {o.family && <span className="shrink-0 text-small text-ink-muted">All {o.label.toLowerCase()} foods</span>}
             </li>
           ))}
           {customRow && (
             <li id={optionId(results.length)} role="option" aria-selected={active === results.length} onClick={() => addCustom(query)} className={rowClass(results.length)}>
               <Plus size={18} strokeWidth={1.75} aria-hidden className="shrink-0" />
               <span className="min-w-0 flex-1 truncate">Add "{query.trim()}"</span>
-              <span className="shrink-0 text-sm text-ink-muted">Not in our recipes</span>
+              <span className="shrink-0 text-small text-ink-muted">Not in our recipes</span>
             </li>
           )}
         </ul>
@@ -149,7 +149,7 @@ export function IngredientInput({ label, placeholder, options, chips, onAdd, onR
         <ul aria-label={label} className="mt-3 flex flex-wrap gap-2">
           {chips.map(c => (
             <li key={c.value} className="max-w-full">
-              <span className={cx('inline-flex h-9 max-w-full items-center gap-1 rounded-full border bg-surface pr-1 pl-3 text-base', c.custom ? 'border-dashed border-ink-muted text-ink-muted' : 'border-line text-ink')}>
+              <span className={cx('inline-flex h-9 max-w-full items-center gap-1 rounded-full border bg-surface pr-1 pl-3 text-body', c.custom ? 'border-dashed border-ink-muted text-ink-muted' : 'border-line text-ink')}>
                 <span className="truncate">{c.label}</span>
                 {c.custom && <span className="sr-only">(custom, may not match recipes)</span>}
                 {c.action}
@@ -157,17 +157,17 @@ export function IngredientInput({ label, placeholder, options, chips, onAdd, onR
                   type="button"
                   onClick={() => onRemove(c.value)}
                   aria-label={`Remove ${c.label}`}
-                  className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-muted hover:bg-canvas hover:text-ink"
+                  className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-ink-muted hover:bg-cream hover:text-ink"
                 >
                   <X size={16} strokeWidth={1.75} aria-hidden />
                 </button>
               </span>
-              {c.note && <p className="mt-1 pl-3 text-sm text-ink-muted">{c.note}</p>}
+              {c.note && <p className="mt-1 pl-3 text-small text-ink-muted">{c.note}</p>}
             </li>
           ))}
         </ul>
       )}
-      {chips.some(c => c.custom) && <p className="mt-2 text-sm text-ink-muted">Dashed items aren't in our ingredient list, so they may not match recipes.</p>}
+      {chips.some(c => c.custom) && <p className="mt-2 text-small text-ink-muted">Dashed items aren't in our ingredient list, so they may not match recipes.</p>}
     </div>
   );
 }

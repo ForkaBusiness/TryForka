@@ -3,11 +3,12 @@ import { X } from 'lucide-react';
 import { cx } from './cx';
 import { IconButton } from './Button';
 
-// A floating layer: a bottom sheet on phones, a side panel on desktop (side="auto"),
-// or always a bottom sheet (side="bottom", for short menus and confirmations).
-// Slides in when opened; Escape and the backdrop close it; focus moves into it.
+// A floating layer: a bottom sheet on phones. On desktop it's a side panel (side="auto",
+// for longer tasks like Suggestions) or a centered card (side="bottom", for short menus
+// and confirmations). Slides in when opened; Escape and the backdrop close it; focus
+// moves into it. Matte, like every sheet.
 
-export interface SheetProps {
+export interface BottomSheetProps {
   open: boolean;
   onClose: () => void;
   title: string;
@@ -15,18 +16,20 @@ export interface SheetProps {
   hideTitle?: boolean;
   side?: 'auto' | 'bottom';
   children: React.ReactNode;
+  /** Pinned under the scrolling content: the sheet's primary action or its input bar. */
   footer?: React.ReactNode;
   role?: 'dialog' | 'alertdialog';
 }
 
-export function Sheet({ open, onClose, title, hideTitle, side = 'auto', children, footer, role = 'dialog' }: SheetProps) {
+export function BottomSheet({ open, onClose, title, hideTitle, side = 'auto', children, footer, role = 'dialog' }: BottomSheetProps) {
   const panel = useRef<HTMLDivElement>(null);
   const restore = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     restore.current = document.activeElement as HTMLElement | null;
-    const first = panel.current?.querySelector<HTMLElement>('[data-autofocus], input, textarea, button:not([data-close])');
+    const first = panel.current?.querySelector<HTMLElement>('[data-autofocus]')
+      ?? panel.current?.querySelector<HTMLElement>('input, textarea, button:not([data-close])');
     (first ?? panel.current)?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
@@ -46,10 +49,9 @@ export function Sheet({ open, onClose, title, hideTitle, side = 'auto', children
   }, [open, onClose]);
 
   if (!open) return null;
-  const right = side === 'auto';
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-ink/40" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 animate-fade bg-backdrop" onClick={onClose} aria-hidden />
       <div
         ref={panel}
         role={role}
@@ -57,17 +59,20 @@ export function Sheet({ open, onClose, title, hideTitle, side = 'auto', children
         aria-label={title}
         tabIndex={-1}
         className={cx(
-          'absolute flex flex-col bg-surface shadow-float outline-none',
-          'inset-x-0 bottom-0 max-h-[92dvh] rounded-t-sheet animate-sheet-up',
-          right && 'md:inset-x-auto md:top-0 md:right-0 md:bottom-0 md:h-full md:max-h-none md:w-[440px] md:rounded-none md:animate-sheet-left',
+          'absolute inset-x-0 bottom-0 flex max-h-(--sheet-max) animate-sheet-up flex-col rounded-t-sheet bg-surface shadow-lg outline-none',
+          side === 'auto'
+            ? 'md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-full md:max-w-sheet md:animate-sheet-left md:rounded-tr-none md:rounded-bl-sheet'
+            : 'md:bottom-8 md:mx-auto md:max-w-dialog md:rounded-sheet',
         )}
       >
-        <div className="flex items-center gap-2 px-4 pt-3 pb-2 md:px-6 md:pt-5">
-          <h2 className={cx('flex-1 text-xl text-ink', hideTitle && 'sr-only')}>{title}</h2>
+        <span aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line md:hidden" />
+        <div className="flex items-center gap-2 px-gutter pt-2 pb-2 md:pt-5">
+          <h2 className={cx('flex-1 text-heading text-ink', hideTitle && 'sr-only')}>{title}</h2>
+          {hideTitle && <span className="flex-1" />}
           <IconButton icon={X} label="Close" onClick={onClose} data-close className="-mr-2" />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6">{children}</div>
-        {footer && <div className="border-t border-line px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] md:px-6">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-gutter pb-5">{children}</div>
+        {footer && <div className="border-t border-line px-gutter pt-3 pb-(--bottombar-pad)">{footer}</div>}
       </div>
     </div>
   );
