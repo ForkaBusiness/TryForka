@@ -1,23 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, LogOut, Trash2 } from 'lucide-react';
+import { Camera, FileText, LogOut, Trash2 } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { signOutToWebsite, supabase } from '../lib/supabase';
 import { saveProfile, type Preferences, type Profile } from '../lib/preferences';
 import { callFunction } from '../lib/plan';
 import { AllergyPicker, DietPicker, PlanningPicker, SkipList } from '../components/PrefControls';
-import { Button, Input, PageContainer, SaveStatus, Segmented, Sheet, Stepper } from '../components/ds';
+import { BottomSheet, Button, Card, Input, ListGroup, ListRow, PageContainer, SaveStatus, Segmented, Stepper } from '../components/ds';
 
-// One scrolling page: Household, Allergies, Diet, Ingredients we skip, Planning, Units,
-// Account, About. Every change saves on its own with a quiet "Saved".
+// One scrolling page of grouped cards: Household, Allergies, Diet, Ingredients we skip,
+// Planning, Units, Account, About. Every change saves on its own with a quiet "Saved".
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 function Section({ id, title, intro, children }: { id: string; title: string; intro?: string; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="border-t border-line py-8">
-      <h2 id={id} className="text-xl text-ink">{title}</h2>
-      {intro && <p className="mt-1 max-w-[60ch] text-base text-ink-muted">{intro}</p>}
-      <div className="mt-5">{children}</div>
+    <section aria-labelledby={id} className="mb-6">
+      <h2 id={id} className="label mb-2 px-1">{title}</h2>
+      <Card className="p-5">
+        {intro && <p className="mb-4 text-small text-ink-muted">{intro}</p>}
+        {children}
+      </Card>
     </section>
   );
 }
@@ -25,8 +27,8 @@ function Section({ id, title, intro, children }: { id: string; title: string; in
 function Avatar({ url, name }: { url?: string; name: string }) {
   const initials = name.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
   return url
-    ? <img src={url} alt="" className="size-16 rounded-full bg-line object-cover" />
-    : <span aria-hidden className="flex size-16 items-center justify-center rounded-full bg-basil-soft font-display text-xl font-semibold text-basil">{initials}</span>;
+    ? <img src={url} alt="" className="size-14 rounded-full bg-line object-cover" />
+    : <span aria-hidden className="flex size-14 items-center justify-center rounded-full bg-green-soft text-heading font-bold text-green">{initials}</span>;
 }
 
 export function Settings() {
@@ -89,10 +91,10 @@ export function Settings() {
   return (
     <PageContainer title="Settings" actions={<SaveStatus state={state} />}>
       <Section id="household" title="Household">
-        <div className="grid max-w-xl gap-5">
+        <div className="grid gap-5">
           <Input label="Household name" placeholder="The Millers" value={draft.household_name} onChange={e => editProfile({ household_name: e.target.value })} />
           <div>
-            <p className="mb-2 text-sm font-semibold text-ink">People</p>
+            <p className="mb-2 text-small font-semibold text-ink">People</p>
             <Stepper label="People" value={draft.household_size} min={1} max={12} unit={n => (n === 1 ? 'person' : 'people')}
               onChange={n => editProfile({ household_size: n }, 400)} />
           </div>
@@ -104,7 +106,7 @@ export function Settings() {
       </Section>
 
       <Section id="diet" title="Diet">
-        <div className="max-w-xl"><DietPicker value={prefs.diet} onChange={diet => savePrefs({ diet })} /></div>
+        <DietPicker value={prefs.diet} onChange={diet => savePrefs({ diet })} />
       </Section>
 
       <Section id="skip" title="Ingredients we skip" intro="Recipes that use these are hidden. Tap Never show on an ingredient to change it to Avoid if possible, which keeps those recipes but shows them last.">
@@ -116,12 +118,12 @@ export function Settings() {
       </Section>
 
       <Section id="units" title="Units">
-        <Segmented label="Units" value={prefs.units} onChange={units => savePrefs({ units })}
+        <Segmented label="Units" value={prefs.units} onChange={units => savePrefs({ units })} className="w-full"
           options={[{ value: 'us', label: 'US (cups, °F)' }, { value: 'metric', label: 'Metric (g, °C)' }]} />
       </Section>
 
       <Section id="account" title="Account">
-        <div className="grid max-w-xl gap-5">
+        <div className="grid gap-5">
           <div className="flex items-center gap-4">
             <Avatar url={avatar} name={draft.full_name || email} />
             <input ref={fileInput} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden
@@ -132,27 +134,25 @@ export function Settings() {
           </div>
           <Input label="Name" autoComplete="name" value={draft.full_name} onChange={e => editProfile({ full_name: e.target.value })} />
           <Input label="Email" value={email} readOnly disabled hint="Your email can't be changed here." />
-          <div>
-            <p className="text-sm font-semibold text-ink">Plan</p>
-            <p className="mt-1 text-base text-ink">Free plan</p>
-          </div>
-          <div className="flex flex-wrap gap-3 pt-2">
-            <Button variant="secondary" icon={LogOut} onClick={() => void signOutToWebsite()}>Sign out</Button>
-            <Button variant="danger-quiet" icon={Trash2} onClick={() => setConfirmDelete(true)}>Delete account</Button>
-          </div>
         </div>
       </Section>
 
-      <Section id="about" title="About">
-        <p className="max-w-[60ch] text-base text-ink">
-          Recipes and photos from{' '}
-          <a href="https://www.themealdb.com" target="_blank" rel="noreferrer" className="font-semibold text-basil hover:underline">TheMealDB</a>
-          , converted for US kitchens.
-        </p>
-        <button type="button" onClick={() => go({ name: 'terms' })} className="mt-3 cursor-pointer text-base font-semibold text-basil hover:underline">Terms of use</button>
-      </Section>
+      <ListGroup className="mb-6">
+        <ListRow title="Plan" trailing={<span className="text-body text-ink-muted">Free plan</span>} />
+        <ListRow leading={<LogOut size={20} strokeWidth={1.75} aria-hidden className="text-ink-muted" />} title="Sign out" onClick={() => void signOutToWebsite()} />
+        <ListRow leading={<Trash2 size={20} strokeWidth={1.75} aria-hidden className="text-terracotta" />} title="Delete account" destructive onClick={() => setConfirmDelete(true)} />
+      </ListGroup>
 
-      <Sheet
+      <ListGroup label="About" labelId="about">
+        <ListRow leading={<FileText size={20} strokeWidth={1.75} aria-hidden className="text-ink-muted" />} title="Terms of use" chevron onClick={() => go({ name: 'terms' })} />
+        <div className="px-4 py-3 text-small text-ink-muted">
+          Recipes and photos from{' '}
+          <a href="https://www.themealdb.com" target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">TheMealDB</a>
+          , converted for US kitchens.
+        </div>
+      </ListGroup>
+
+      <BottomSheet
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         title="Delete your account?"
@@ -165,9 +165,9 @@ export function Settings() {
           </div>
         }
       >
-        <p className="text-base text-ink">This permanently deletes your account, settings, week plans, grocery lists, favorites, collections, notes and ratings. It can't be undone.</p>
-        {deleteError && <p role="alert" className="mt-3 text-sm text-alert">{deleteError}</p>}
-      </Sheet>
+        <p className="text-body text-ink">This permanently deletes your account, settings, week plans, grocery lists, favorites, collections, notes and ratings. It can't be undone.</p>
+        {deleteError && <p role="alert" className="mt-3 text-small text-terracotta-deep">{deleteError}</p>}
+      </BottomSheet>
     </PageContainer>
   );
 }

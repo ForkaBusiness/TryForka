@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftRight, BookOpen, CalendarPlus, ChefHat, ShoppingBasket } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, CalendarDays, CalendarPlus, ChefHat, Clock, Lightbulb, UtensilsCrossed } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { getCards, minutesLabel, photo, recipeMeta, recipeTitle, type RecipeCard } from '../lib/catalog';
+import { getCards, minutesLabel, photo, recipeTitle, type RecipeCard } from '../lib/catalog';
 import { DAYS, DAY_LONG, DAY_SHORT, generateWeekPlan, planEntries, slotKey, SLOT_LABEL, todayKey, type Day, type PlanEntry, type Slot } from '../lib/plan';
-import { Button, cx, EmptyState, ListRow, PageContainer, Sheet, Skeleton, Tag } from '../components/ds';
+import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
 
-// Home: answers "what's for dinner tonight" first. Week strip, then the selected day's
-// dinner as the one bold element, then breakfast/lunch, then the rest of the week.
+// Home: answers "what's for dinner tonight" first. The selected day's dinner as the one
+// bold card, the week as a strip of day cards under it, then breakfast/lunch and the rest
+// of the week.
 
 function useCards(entries: PlanEntry[]): Map<number, RecipeCard> {
   const [cards, setCards] = useState<Map<number, RecipeCard>>(new Map());
@@ -23,27 +24,29 @@ const NO_SAFE_RECIPE = 'No recipe fits your settings for this meal';
 
 const plannedOn = (iso: string) => new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
-function WeekStrip({ selected, onSelect, today }: { selected: Day; onSelect: (d: Day) => void; today: Day }) {
+/** Seven day cards, like a calendar on the fridge. Today sits raised; the selected day is outlined. */
+function WeekStrip({ selected, onSelect, today, thumb }: { selected: Day; onSelect: (d: Day) => void; today: Day; thumb: (d: Day) => string | null | undefined }) {
   return (
-    <div role="tablist" aria-label="Day" className="mb-6 grid grid-cols-7 gap-1 border-b border-line pb-3">
+    <div role="tablist" aria-label="Day" className="no-scrollbar -mx-gutter flex gap-2 overflow-x-auto px-gutter pt-2 pb-3 md:mx-0 md:grid md:grid-cols-7 md:overflow-visible md:px-0">
       {DAYS.map(d => {
         const active = d === selected;
+        const isToday = d === today;
         return (
           <button
             key={d}
             type="button"
             role="tab"
             aria-selected={active}
-            aria-label={`${DAY_LONG[d]}${d === today ? ', today' : ''}`}
+            aria-label={`${DAY_LONG[d]}${isToday ? ', today' : ''}`}
             onClick={() => onSelect(d)}
             className={cx(
-              'relative flex h-12 cursor-pointer flex-col items-center justify-center rounded-control text-sm transition-colors duration-150',
-              active ? 'bg-ink font-semibold text-surface' : 'text-ink-muted hover:bg-surface hover:text-ink',
-              d === today && !active && 'font-semibold text-ink',
+              'flex w-18 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-photo border bg-surface p-2 transition-[transform,box-shadow,border-color] duration-150 ease-spring md:w-auto',
+              active ? 'border-green ring-1 ring-green' : 'border-line',
+              isToday ? '-translate-y-1 shadow-md' : 'shadow-sm',
             )}
           >
-            {DAY_SHORT[d]}
-            {d === today && <span aria-hidden className="absolute bottom-1.5 size-1.5 rounded-full bg-yolk" />}
+            <span className={cx('text-caption font-bold', isToday ? 'text-green' : active ? 'text-ink' : 'text-ink-muted')}>{isToday ? 'Today' : DAY_SHORT[d]}</span>
+            <Photo src={photo(thumb(d), 'small')} className="aspect-square w-full rounded-sm" />
           </button>
         );
       })}
@@ -58,49 +61,50 @@ function DinnerHero({ day, entry, card, isToday, blocked, onOpen, onCook, onSwap
   const label = isToday ? 'Tonight' : `${DAY_LONG[day]} dinner`;
   if (!entry) {
     return (
-      <section aria-label={label} className="mb-8 border-y border-line py-8">
-        <p className="text-sm font-semibold text-ink-muted">{label}</p>
-        <h2 className="mt-1 text-xl text-ink">{blocked ? NO_SAFE_RECIPE : 'Nothing planned yet'}</h2>
-        <Button className="mt-4" variant="secondary" icon={ArrowLeftRight} onClick={onSwap}>Find a dinner</Button>
+      <section aria-label={label} className="mb-6">
+        <EmptyState icon={UtensilsCrossed} title={blocked ? NO_SAFE_RECIPE : 'Nothing planned yet'}
+          action={<Button size="lg" block icon={ArrowLeftRight} onClick={onSwap}>Find a dinner</Button>}>
+          {blocked ? 'Pick one yourself, or loosen a setting.' : `Pick a dinner for ${isToday ? 'tonight' : DAY_LONG[day]} and it goes on the grocery list.`}
+        </EmptyState>
       </section>
     );
   }
-  const meta = card ? recipeMeta(card) : '';
+  const tags = card ? recipeTags(card) : [];
   return (
-    <section aria-label={label} className="mb-8">
-      <button type="button" onClick={onOpen} className="block w-full cursor-pointer overflow-hidden rounded-photo bg-line/60" aria-label={`Open ${entry.title}`}>
-        <img src={photo(card?.thumb_url ?? entry.image, 'large')} alt="" className="aspect-[4/3] w-full object-cover md:aspect-[2/1]" />
-      </button>
-      <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-ink">
-        {isToday && <span aria-hidden className="size-2 rounded-full bg-yolk" />}
-        {label}
-      </div>
-      <h2 className="mt-1 font-display text-3xl font-semibold tracking-[-0.01em] text-ink md:text-4xl">
-        <button type="button" onClick={onOpen} className="cursor-pointer text-left hover:underline hover:decoration-line hover:underline-offset-4">
-          {card ? recipeTitle(card) : entry.title}
-        </button>
-      </h2>
-      {card?.subtitle && <p className="mt-1 text-base text-ink-muted">{card.subtitle}</p>}
-      {(meta || card?.total_minutes) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {meta && <Tag>{meta}</Tag>}
-          {card?.total_minutes ? <Tag>{minutesLabel(card.total_minutes)}</Tag> : null}
+    <section aria-label={label} className="mb-6">
+      <Card className="overflow-hidden">
+        <div className="relative">
+          <button type="button" onClick={onOpen} className="block w-full cursor-pointer" aria-label={`Open ${entry.title}`}>
+            <Photo src={photo(card?.thumb_url ?? entry.image, 'large')} eager className="aspect-4/3 w-full md:aspect-video" />
+          </button>
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap gap-2">
+            {card?.total_minutes ? <GlassPill icon={Clock}>{shortMinutes(card.total_minutes)}</GlassPill> : null}
+            {tags[0] && <GlassPill>{tags[0]}</GlassPill>}
+          </div>
         </div>
-      )}
-      <div className="mt-5 flex flex-wrap gap-3">
-        <Button size="lg" icon={ChefHat} onClick={onCook}>Start cooking</Button>
-        <Button size="lg" variant="secondary" icon={ArrowLeftRight} onClick={onSwap}>Swap</Button>
-      </div>
+        <div className="p-5">
+          <p className="label">{label}</p>
+          <h2 className="display mt-1 text-title text-ink">
+            <button type="button" onClick={onOpen} className="cursor-pointer text-left">{card ? recipeTitle(card) : entry.title}</button>
+          </h2>
+          {card?.subtitle && <p className="mt-1 text-body text-ink-muted">{card.subtitle}</p>}
+          <div className="mt-5 flex gap-3">
+            <Button size="lg" icon={ChefHat} className="flex-1 sm:min-w-56 sm:flex-none" onClick={onCook}>Start cooking</Button>
+            <Button size="lg" variant="secondary" icon={ArrowLeftRight} onClick={onSwap}>Swap</Button>
+          </div>
+        </div>
+      </Card>
     </section>
   );
 }
 
 function Thumb({ src }: { src?: string | null }) {
-  return (
-    <span className="size-12 shrink-0 overflow-hidden rounded-photo bg-line/60">
-      {src && <img src={photo(src, 'small')} alt="" className="size-full object-cover" />}
-    </span>
-  );
+  return <Photo src={photo(src, 'small')} className="size-12 shrink-0 rounded-photo" />;
+}
+
+/** The line under the title: the day, and how long dinner takes. */
+function dayLine(day: Day, minutes?: number | null) {
+  return [DAY_LONG[day], minutesLabel(minutes)].filter(Boolean).join(' · ');
 }
 
 export function MealPlan() {
@@ -143,38 +147,35 @@ export function MealPlan() {
     }
   };
   const notice = planReview.notice && (
-    <div role="status" className="flex items-center justify-between gap-3 text-sm text-ink-muted">
+    <Card role="status" className="flex items-center justify-between gap-3 px-4 py-3 text-small text-ink-muted">
       <p className="min-w-0">{planReview.notice}</p>
       {planReview.undo && (
-        <Button size="sm" variant="quiet" loading={undoing} onClick={undo} aria-label="Undo: put back the previous meals and setting">Undo</Button>
+        <Button size="sm" variant="ghost" loading={undoing} onClick={undo} aria-label="Undo: put back the previous meals and setting">Undo</Button>
       )}
-    </div>
-  );
-
-  const actions = (
-    <>
-      <Button size="sm" variant="quiet" icon={ShoppingBasket} onClick={() => go({ name: 'groceries' })}>Grocery list</Button>
-      <Button size="sm" variant="quiet" icon={CalendarPlus} onClick={newWeek} loading={planning}>New week plan</Button>
-      <Button size="sm" variant="quiet" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>
-    </>
+    </Card>
   );
 
   if (weekPlan === undefined) {
     return (
-      <PageContainer title="This week">
-        <Skeleton className="mb-6 h-12" />
-        <Skeleton className="aspect-[16/9] w-full" />
+      <PageContainer>
+        <div aria-busy aria-label="Loading your week">
+          <Skeleton className="h-9 w-2/3 rounded-full" />
+          <Skeleton className="mt-3 mb-6 h-4 w-1/3 rounded-full" />
+          <Skeleton className="aspect-4/3 w-full rounded-card md:aspect-video" />
+          <div className="mt-6 grid grid-cols-7 gap-2">{DAYS.map(d => <Skeleton key={d} className="h-20" />)}</div>
+        </div>
       </PageContainer>
     );
   }
 
   if (!weekPlan || !entries.length) {
     return (
-      <PageContainer title="This week" actions={actions}>
+      <PageContainer title="This week">
         <EmptyState
+          icon={CalendarDays}
           title="No meals planned yet"
           action={
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
               <Button size="lg" icon={CalendarPlus} loading={planning} onClick={planWeek}>Plan my week</Button>
               <Button size="lg" variant="secondary" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>
             </div>
@@ -182,7 +183,7 @@ export function MealPlan() {
         >
           {planning ? 'Picking dinners that fit your household. This takes a few seconds.' : "We'll pick a week of dinners that fit your household, and make the grocery list."}
         </EmptyState>
-        {error && <p role="alert" className="mt-4 text-sm text-alert">{error}</p>}
+        {error && <p role="alert" className="mt-4 text-small text-terracotta-deep">{error}</p>}
         {notice && <div className="mt-4">{notice}</div>}
       </PageContainer>
     );
@@ -193,26 +194,34 @@ export function MealPlan() {
   const later = DAYS.slice(DAYS.indexOf(day) + 1);
   const open = (id: number) => go({ name: 'recipe', id });
   const isBlocked = (d: Day, s: Slot) => planReview.blocked.includes(slotKey(d, s));
+  const dinner = plan[day].dinner;
+  const dinnerCard = dinner ? cards.get(dinner.id) : undefined;
+  const isToday = day === today;
+  const headline = dinner
+    ? (isToday ? "Tonight's sorted." : `${DAY_LONG[day]}'s sorted.`)
+    : (isToday ? 'Nothing planned tonight.' : `Nothing planned ${DAY_LONG[day]}.`);
 
   return (
-    <PageContainer title="This week" actions={actions} intro={`Planned ${plannedOn(weekPlan.createdAt)}`}>
-      <WeekStrip selected={day} onSelect={setDay} today={today} />
-      {error && <p role="alert" className="mb-4 text-sm text-alert">{error}</p>}
+    <PageContainer title={headline} intro={dayLine(day, dinnerCard?.total_minutes)}>
+      {error && <p role="alert" className="mb-4 text-small text-terracotta-deep">{error}</p>}
       {notice && <div className="mb-4">{notice}</div>}
 
       <DinnerHero
         day={day}
-        entry={plan[day].dinner}
-        card={plan[day].dinner ? cards.get(plan[day].dinner!.id) : undefined}
-        isToday={day === today}
+        entry={dinner}
+        card={dinnerCard}
+        isToday={isToday}
         blocked={isBlocked(day, 'dinner')}
-        onOpen={() => plan[day].dinner && open(plan[day].dinner!.id)}
-        onCook={() => plan[day].dinner && go({ name: 'cooking', id: plan[day].dinner!.id })}
+        onOpen={() => dinner && open(dinner.id)}
+        onCook={() => dinner && go({ name: 'cooking', id: dinner.id })}
         onSwap={() => openSuggestions({ day, slot: 'dinner' })}
       />
 
+      <WeekStrip selected={day} onSelect={setDay} today={today}
+        thumb={d => (plan[d].dinner ? cards.get(plan[d].dinner!.id)?.thumb_url ?? plan[d].dinner!.image : null)} />
+
       {otherSlots.length > 0 && (
-        <div className="mb-10 border-t border-line">
+        <ListGroup label={isToday ? 'Also today' : `Also ${DAY_LONG[day]}`} className="mt-5">
           {otherSlots.map(slot => {
             const entry = plan[day][slot];
             const card = entry ? cards.get(entry.id) : undefined;
@@ -224,39 +233,48 @@ export function MealPlan() {
                 chevron onClick={() => openSuggestions({ day, slot })} />
             );
           })}
-        </div>
+        </ListGroup>
       )}
 
       {later.length > 0 && (
-        <section aria-labelledby="rest-of-week">
-          <h2 id="rest-of-week" className="mb-2 text-lg text-ink">Rest of the week</h2>
-          <ul className="border-t border-line">
-            {later.map(d => {
-              const dinner = plan[d].dinner;
-              const card = dinner ? cards.get(dinner.id) : undefined;
-              const others = (['breakfast', 'lunch'] as const).map(s => plan[d][s]).filter((e): e is PlanEntry => !!e);
-              return (
-                <li key={d}>
-                  <button type="button" onClick={() => { setDay(d); document.querySelector('main')?.scrollTo({ top: 0 }); }}
-                    className="flex w-full cursor-pointer items-center gap-4 border-b border-line py-3 text-left hover:bg-basil-soft/40">
-                    <span className="w-10 shrink-0 text-sm font-semibold text-ink">{DAY_SHORT[d]}</span>
-                    <Thumb src={card?.thumb_url ?? dinner?.image} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-display text-md font-semibold tracking-[-0.01em] text-ink">
-                        {dinner ? (card ? recipeTitle(card) : dinner.title) : isBlocked(d, 'dinner') ? NO_SAFE_RECIPE : 'No dinner planned'}
+        <section aria-labelledby="rest-of-week" className="mt-6">
+          <p id="rest-of-week" className="label mb-2 px-1">Rest of the week</p>
+          <Card className="overflow-hidden">
+            <ul className="divide-y divide-line">
+              {later.map(d => {
+                const dinner = plan[d].dinner;
+                const card = dinner ? cards.get(dinner.id) : undefined;
+                const others = (['breakfast', 'lunch'] as const).map(s => plan[d][s]).filter((e): e is PlanEntry => !!e);
+                return (
+                  <li key={d}>
+                    <button type="button" onClick={() => { setDay(d); document.querySelector('main')?.scrollTo({ top: 0 }); }}
+                      className="flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-cream/70 active:bg-cream">
+                      <span className="w-9 shrink-0 text-small font-bold text-ink-muted">{DAY_SHORT[d]}</span>
+                      <Thumb src={card?.thumb_url ?? dinner?.image} />
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 text-body font-medium text-ink">
+                          {dinner ? (card ? recipeTitle(card) : dinner.title) : isBlocked(d, 'dinner') ? NO_SAFE_RECIPE : 'No dinner planned'}
+                        </span>
+                        {others.length > 0 && <span className="block truncate text-small text-ink-muted">{others.map(o => cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title).join(', ')}</span>}
                       </span>
-                      {others.length > 0 && <span className="block truncate text-sm text-ink-muted">{others.map(o => cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title).join(', ')}</span>}
-                    </span>
-                    {card?.total_minutes ? <span className="hidden shrink-0 text-sm text-ink-muted sm:block">{minutesLabel(card.total_minutes)}</span> : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      {card?.total_minutes ? <span className="shrink-0 text-small text-ink-muted">{shortMinutes(card.total_minutes)}</span> : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
         </section>
       )}
 
-      <Sheet
+      <ListGroup label="Plan" className="mt-6">
+        <ListRow leading={<BookOpen size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Browse recipes" chevron onClick={() => go({ name: 'browse' })} />
+        <ListRow leading={<Lightbulb size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
+        <ListRow leading={<CalendarPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}
+          subtitle={`This one was planned ${plannedOn(weekPlan.createdAt)}`} chevron onClick={planning ? undefined : newWeek} />
+      </ListGroup>
+
+      <BottomSheet
         open={confirmReplace}
         onClose={() => setConfirmReplace(false)}
         title="Replace this week's plan?"
@@ -269,8 +287,8 @@ export function MealPlan() {
           </div>
         }
       >
-        <p className="text-base text-ink-muted">You'll get a new week of meals, and the grocery list will be rebuilt. Items you already checked off stay checked if they're still on it.</p>
-      </Sheet>
+        <p className="text-body text-ink-muted">You'll get a new week of meals, and the grocery list will be rebuilt. Items you already checked off stay checked if they're still on it.</p>
+      </BottomSheet>
     </PageContainer>
   );
 }

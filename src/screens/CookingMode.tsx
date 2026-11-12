@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
-import { Button, cx, IconButton, Skeleton } from '../components/ds';
+import { Button, IconButton, Progress, Skeleton } from '../components/ds';
 
-// One step per screen, readable from across the counter. Arrow keys and space move on
-// desktop; the screen stays awake while this is open.
+// A cookbook propped on the counter: one step per screen in type you can read from a few
+// feet away, and big targets for next and back. Arrow keys and space move on desktop; the
+// screen stays awake while this is open.
 
 function useWakeLock() {
   useEffect(() => {
@@ -74,13 +75,21 @@ export function CookingMode({ id }: { id: number }) {
   }, [next, prev, finished]);
 
   if (recipe === undefined) {
-    return <div className="p-6"><Skeleton className="h-2 w-full" /><Skeleton className="mt-10 h-24 w-2/3" /></div>;
+    return (
+      <div aria-busy aria-label="Loading recipe" className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-12">
+        <Skeleton className="h-11 w-11 rounded-full" />
+        <Skeleton className="mt-4 h-2 w-full rounded-full" />
+        <Skeleton className="mt-12 h-5 w-24 rounded-full" />
+        <Skeleton className="mt-5 h-40 w-full rounded-card" />
+      </div>
+    );
   }
   if (!recipe || !total) {
     return (
-      <div className="p-6">
-        <IconButton icon={X} label="Close cooking mode" onClick={back} />
-        <p className="mt-6 text-base text-ink-muted">{recipe ? 'This recipe has no written steps.' : "Couldn't load this recipe. Check your connection."}</p>
+      <div className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-12">
+        <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
+        <h1 className="display mt-6 text-title text-ink">{recipe ? 'No steps to cook from' : "Couldn't load this recipe"}</h1>
+        <p className="mt-2 text-body text-ink-muted">{recipe ? 'This recipe has no written steps.' : 'Check your connection, then try again.'}</p>
       </div>
     );
   }
@@ -90,35 +99,33 @@ export function CookingMode({ id }: { id: number }) {
 
   if (finished) {
     return (
-      <div className="flex min-h-dvh flex-col justify-center px-6 py-10 md:px-16">
-        <div className="max-w-[560px]">
-          <p className="text-sm font-semibold text-basil">Marked as cooked</p>
-          <h1 className="mt-2 text-2xl text-ink md:text-4xl">{title} is done. Enjoy.</h1>
-          <p className="mt-3 text-base text-ink-muted">How did it turn out? A rating helps us suggest what your household likes.</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="lg" onClick={() => replace({ name: 'rate', id })}>Rate this recipe</Button>
-            <Button size="lg" variant="secondary" onClick={back}>Back to recipe</Button>
-          </div>
+      <div className="mx-auto flex min-h-dvh w-full max-w-column flex-col justify-center px-gutter py-10">
+        <p className="label">Marked as cooked</p>
+        <h1 className="display mt-2 text-display text-ink">{title} is done. Enjoy.</h1>
+        <p className="mt-3 text-body text-ink-muted">How did it turn out? A rating helps us suggest what your household likes.</p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Button size="lg" onClick={() => replace({ name: 'rate', id })}>Rate this recipe</Button>
+          <Button size="lg" variant="secondary" onClick={back}>Back to recipe</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-canvas">
-      <header className="px-4 pt-4 md:px-8 md:pt-6">
+    <div className="flex min-h-dvh flex-col bg-cream">
+      <header className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-10">
         <div className="flex items-center gap-3">
-          <IconButton icon={X} label="Close cooking mode" onClick={back} className="-ml-2" />
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink-muted">{title}</p>
+          <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
+          <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</p>
         </div>
-        <div aria-hidden className="mt-3 flex gap-1">
-          {recipe.steps.map((_, i) => <span key={i} className={cx('h-1.5 flex-1 rounded-full', i <= step ? 'bg-basil' : 'bg-line')} />)}
+        <div className="mt-4">
+          <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />
         </div>
       </header>
 
-      <div className="flex-1 px-4 pt-8 pb-10 md:px-8 md:pt-14">
-        <p className="text-base font-semibold text-ink-muted" aria-live="polite">Step {step + 1} of {total}</p>
-        <p className="mt-4 max-w-[60ch] text-xl leading-snug font-medium text-ink md:text-3xl md:leading-snug">
+      <div className="mx-auto w-full max-w-column flex-1 px-gutter pt-8 pb-6 md:pt-12">
+        <p className="label" aria-live="polite">Step {step + 1} of {total}</p>
+        <p className="mt-4 text-step font-medium text-ink md:text-step-lg">
           {prefs.units === 'metric' ? current.text_metric : current.text_us}
         </p>
         {current.timers.length > 0 && (
@@ -126,13 +133,13 @@ export function CookingMode({ id }: { id: number }) {
             {current.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} size="lg" />)}
           </div>
         )}
-        {error && <p role="alert" className="mt-6 text-sm text-alert">{error}</p>}
+        {error && <p role="alert" className="mt-6 text-body text-terracotta-deep">{error}</p>}
       </div>
 
-      <div className="sticky bottom-0 border-t border-line bg-surface px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] md:px-8">
-        <div className="flex gap-3">
-          <Button size="lg" variant="secondary" className="flex-1" onClick={prev} disabled={step === 0}>Back</Button>
-          <Button size="lg" className="flex-1" onClick={next} loading={saving}>{last ? 'Done' : 'Next'}</Button>
+      <div className="sticky bottom-0 bg-linear-to-t from-cream from-75% to-cream/0">
+        <div className="mx-auto flex w-full max-w-column gap-3 px-gutter pt-5 pb-(--bottombar-pad)">
+          <Button size="lg" variant="secondary" icon={ArrowLeft} className="h-16 flex-1" onClick={prev} disabled={step === 0}>Back</Button>
+          <Button size="lg" iconEnd={last ? Check : ArrowRight} className="h-16 flex-2" onClick={next} loading={saving}>{last ? 'Done' : 'Next'}</Button>
         </div>
       </div>
     </div>

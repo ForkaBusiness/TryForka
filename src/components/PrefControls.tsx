@@ -28,13 +28,15 @@ export function DietPicker({ value, onChange }: { value: DietChoice; onChange: (
             role="radio"
             aria-checked={selected}
             onClick={() => onChange(o.value)}
-            className={`flex cursor-pointer items-center justify-between gap-3 rounded-control border px-4 py-3 text-left transition-colors duration-150 ${selected ? 'border-basil bg-basil-soft' : 'border-line bg-surface hover:border-ink-muted'}`}
+            className={cx('flex min-h-16 cursor-pointer items-center justify-between gap-3 rounded-input border px-4 py-3 text-left transition-colors duration-150', selected ? 'border-green bg-green-soft' : 'border-line bg-surface hover:border-ink-muted')}
           >
             <span>
-              <span className={`block text-base font-semibold ${selected ? 'text-basil' : 'text-ink'}`}>{o.label}</span>
-              <span className="block text-sm text-ink-muted">{o.hint}</span>
+              <span className={cx('block text-body font-semibold', selected ? 'text-green' : 'text-ink')}>{o.label}</span>
+              <span className="block text-small text-ink-muted">{o.hint}</span>
             </span>
-            <span aria-hidden className={`size-5 shrink-0 rounded-full border-2 ${selected ? 'border-basil bg-basil shadow-[inset_0_0_0_3px_var(--color-basil-soft)]' : 'border-ink-muted/60'}`} />
+            <span aria-hidden className={cx('flex size-5 shrink-0 items-center justify-center rounded-full border-2', selected ? 'border-green' : 'border-ink-muted/80')}>
+              {selected && <span className="size-2.5 rounded-full bg-green" />}
+            </span>
           </button>
         );
       })}
@@ -69,7 +71,7 @@ export function AllergyPicker({ value, onChange }: { value: string[]; onChange: 
           {common.map(o => <ChipButton key={o.value} onClick={() => add(o.value)}>{o.label}</ChipButton>)}
         </div>
       )}
-      <p className="mt-3 text-sm text-ink-muted">We filter by ingredient list. Always check product labels for allergens.</p>
+      <p className="mt-3 text-small text-ink-muted">We filter by ingredient list. Always check product labels for allergens.</p>
     </div>
   );
 }
@@ -84,7 +86,7 @@ export function SkipList({ never, avoid, onChange }: { never: string[]; avoid: s
       type="button"
       onClick={() => (avoided ? onChange([...never, v], avoid.filter(x => x !== v)) : onChange(never.filter(x => x !== v), [...avoid, v]))}
       aria-label={`${label}: ${avoided ? 'avoid if possible' : 'never show'}. Change`}
-      className={cx('ml-1 h-7 shrink-0 cursor-pointer rounded-full px-2 text-sm font-medium whitespace-nowrap', avoided ? 'bg-canvas text-ink-muted' : 'bg-basil-soft text-basil')}
+      className={cx('ml-1 h-7 shrink-0 cursor-pointer rounded-full px-2 text-small font-medium whitespace-nowrap', avoided ? 'bg-cream text-ink-muted' : 'bg-green-soft text-green')}
     >
       {avoided ? 'Avoid if possible' : 'Never show'}
     </button>
@@ -112,7 +114,7 @@ export function PlanningPicker({ value, onChange }: { value: Planning; onChange:
   return (
     <div className="space-y-6">
       <fieldset>
-        <legend className="mb-3 text-sm font-semibold text-ink">Meals to plan</legend>
+        <legend className="mb-3 text-small font-semibold text-ink">Meals to plan</legend>
         <div className="flex flex-wrap gap-6">
           {meals.map(([key, label]) => (
             <Checkbox
@@ -126,7 +128,7 @@ export function PlanningPicker({ value, onChange }: { value: Planning; onChange:
         </div>
       </fieldset>
       <fieldset>
-        <legend className="mb-3 text-sm font-semibold text-ink">Weeknight dinners take at most</legend>
+        <legend className="mb-3 text-small font-semibold text-ink">Weeknight dinners take at most</legend>
         <div role="radiogroup" aria-label="Weeknight cook time" className="flex flex-wrap gap-2">
           {TIME_OPTIONS.map(o => (
             <ToggleChip key={o.label} role="radio" selected={value.max_weeknight_minutes === o.value} onToggle={() => onChange({ max_weeknight_minutes: o.value })}>

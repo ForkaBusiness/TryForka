@@ -1,80 +1,138 @@
-/* Fonts: Bricolage Grotesque (headings, recipe names, timer digits), Figtree (body/UI).
-   Poppins 700 is loaded only for the five letters of the sidebar wordmark, which stays as it was.
-   DM Sans and Poppins (full) are still loaded for screens not yet rebuilt; removed in Phase 3. */
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
+/* Fonts, self-hosted. Fraunces (all axes: opsz, SOFT, WONK, wght) for screen titles and
+   hero headlines only; Figtree for everything else. Poppins 700 is only the five letters
+   of the Forka wordmark, which matches the website. */
+@import '@fontsource-variable/fraunces/full.css';
+@import '@fontsource-variable/figtree/index.css';
+@import '@fontsource/poppins/latin-700.css';
 @import 'tailwindcss';
 
 /* ===================================================================
-   Forka design tokens. The only colors, fonts, radii and shadows the
-   app uses. Contrast (WCAG AA, normal text needs 4.5:1):
-     ink on canvas 15.9   ink on surface 17.3
-     ink-muted on canvas 5.2   ink-muted on surface 5.7   ink-muted on basil-soft 4.8
-     basil on surface 6.3   surface on basil 6.3   basil on basil-soft 5.3
-     alert on surface 5.5   alert on canvas 5.1   surface on alert 5.5
-     yolk on ink 9.3 (yolk is never used as text on light backgrounds)
+   Glazed Pantry design tokens. The only colors, type sizes, radii,
+   shadows and easings the app uses. Reusable on the marketing site.
+
+   Contrast (WCAG AA: 4.5 for text, 3 for large text and controls):
+     ink on cream 13.5          ink on surface 14.9
+     ink-muted on cream 5.0     ink-muted on surface 5.5    ink-muted on green-soft 4.6
+     green on cream 6.8         green on surface 7.5        green on green-soft 6.3
+     surface on green-light 5.0 (the lightest stop of the glaze)
+     terracotta on cream 3.6: icons, borders and fills only, never text
+     terracotta-deep on cream 5.5, on surface 6.1, on terracotta-soft 5.0 (warning text)
+     surface on terracotta-deep 6.1 (destructive button)
+     ink on glass over a black photo 5.2; ink on glass-strong over black 8.8;
+     green-deep on glass-strong over black 5.8 (tab bar labels)
+     surface on scrim (0.7 and up) over a white photo 5.6
    =================================================================== */
 @theme {
   --color-*: initial;
-  --color-ink: #18211c;
-  --color-ink-muted: #5d6a62;
-  --color-line: #dce2dd;
-  --color-canvas: #f4f6f3;
-  --color-surface: #ffffff;
-  --color-basil: #2f6b4c;
-  --color-basil-soft: #e3eee7;
-  --color-yolk: #f2b93b;
-  --color-alert: #b3452f;
+  --color-cream: #f6f1e7;          /* app background */
+  --color-surface: #fffdf8;        /* cards, sheets, inputs */
+  --color-ink: #2a2520;            /* primary text */
+  --color-ink-muted: #6f665c;      /* secondary text */
+  --color-line: #e6ddcd;           /* borders, dividers */
+  --color-green: #2f5d3a;          /* primary accent */
+  --color-green-light: #3f7a4c;    /* glaze, top */
+  --color-green-deep: #234a2d;     /* glaze, bottom */
+  --color-green-soft: #e3ebdc;     /* selected and active backgrounds */
+  --color-terracotta: #c0643b;     /* warnings, allergens, destructive (non-text) */
+  --color-terracotta-deep: #9a4a27; /* the same, as text or behind text */
+  --color-terracotta-soft: #f7e4d9; /* warning background */
+  --color-glass: rgb(255 252 245 / 0.6);          /* floating controls on photos */
+  --color-glass-strong: rgb(255 252 245 / 0.78);  /* the tab bar, which carries small labels */
+  --color-glass-edge: rgb(255 255 255 / 0.6);
+  --color-photo-warm: rgb(206 142 74 / 0.09);     /* overlay that makes catalog photos one set */
+  --color-scrim: rgb(42 37 32 / 0.84);            /* behind text set directly on a photo */
+  --color-scrim-mid: rgb(42 37 32 / 0.7);
+  --color-backdrop: rgb(42 37 32 / 0.42);         /* behind sheets */
 
   --font-*: initial;
-  --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Fraunces Variable', ui-serif, Georgia, serif;
+  --font-display--font-variation-settings: 'opsz' 144, 'SOFT' 50, 'WONK' 0;
+  --font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-wordmark: 'Poppins', ui-sans-serif, system-ui, sans-serif;
 
-  /* Type scale (px): 12 13 15 17 20 24 26 28 32 */
+  /* Type scale (size/line): display 34/38, title 26/30, heading 20/26, body 16/24,
+     small 14/20, caption 12/16. Body never goes under 16. The two step sizes are for
+     cooking mode only, read from across the counter. */
   --text-*: initial;
-  --text-xs: 0.75rem;
-  --text-xs--line-height: 1.4;
-  --text-sm: 0.8125rem;
-  --text-sm--line-height: 1.45;
-  --text-base: 0.9375rem;
-  --text-base--line-height: 1.5;
-  --text-md: 1.0625rem;
-  --text-md--line-height: 1.35;
-  --text-lg: 1.25rem;
-  --text-lg--line-height: 1.3;
-  --text-xl: 1.5rem;
-  --text-xl--line-height: 1.3;
-  --text-2xl: 1.625rem;
-  --text-2xl--line-height: 1.2;
-  --text-3xl: 1.75rem;
-  --text-3xl--line-height: 1.3;
-  --text-4xl: 2rem;
-  --text-4xl--line-height: 1.15;
+  --text-display: 2.125rem;
+  --text-display--line-height: 2.375rem;
+  --text-title: 1.625rem;
+  --text-title--line-height: 1.875rem;
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.625rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.25rem;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-step: 1.625rem;
+  --text-step--line-height: 2.25rem;
+  --text-step-lg: 2.125rem;
+  --text-step-lg--line-height: 2.875rem;
+
+  /* Space: Tailwind's 4px scale, plus the screen side padding. */
+  --spacing-gutter: 1.25rem;
+
+  /* Widths */
+  --container-form: 26rem;     /* auth and short forms */
+  --container-column: 45rem;   /* reading and list screens */
+  --container-wide: 60rem;     /* recipe grids */
+  --container-tabbar: 24rem;   /* the floating tab bar */
+  --container-sheet: 27.5rem;  /* side sheet on desktop */
+  --container-dialog: 32rem;   /* confirmation sheet on desktop */
 
   /* Radius by role */
   --radius-*: initial;
-  --radius-check: 6px;     /* checkboxes */
-  --radius-control: 10px;  /* buttons, inputs, segmented controls */
-  --radius-photo: 12px;    /* recipe and ingredient photos */
-  --radius-sheet: 20px;    /* bottom sheets (top corners) */
-  --radius-full: 9999px;   /* tags, chips, round icon buttons */
+  --radius-sm: 0.5rem;       /* logo, focus rings on small things */
+  --radius-photo: 1rem;      /* standalone photos and thumbnails */
+  --radius-input: 1.125rem;  /* inputs, textareas, menus */
+  --radius-card: 1.75rem;    /* cards */
+  --radius-sheet: 1.75rem;   /* sheets */
+  --radius-full: 9999px;     /* buttons, chips, round controls */
 
-  /* Shadows only on floating layers */
+  /* Shadows: soft and brown-tinted, never black. */
   --shadow-*: initial;
-  --shadow-float: 0 12px 32px rgb(24 33 28 / 0.18), 0 2px 6px rgb(24 33 28 / 0.08);
+  --shadow-sm: 0 1px 2px rgb(92 64 34 / 0.07), 0 1px 1px rgb(92 64 34 / 0.04);
+  --shadow-md: 0 6px 16px rgb(92 64 34 / 0.1), 0 1px 3px rgb(92 64 34 / 0.07);
+  --shadow-lg: 0 18px 44px rgb(92 64 34 / 0.2), 0 4px 10px rgb(92 64 34 / 0.09);
+  --shadow-glaze: inset 0 1px 0 rgb(255 255 255 / 0.35), inset 0 -2px 0 rgb(0 0 0 / 0.15), 0 6px 14px rgb(47 93 58 / 0.3), 0 1px 2px rgb(47 93 58 / 0.3);
+  --shadow-glaze-pressed: inset 0 1px 0 rgb(255 255 255 / 0.25), inset 0 -1px 0 rgb(0 0 0 / 0.15), 0 2px 5px rgb(47 93 58 / 0.28);
+  --shadow-glass: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 8px 22px rgb(92 64 34 / 0.16), 0 1px 2px rgb(92 64 34 / 0.08);
+
+  --ease-*: initial;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --animate-*: initial;
-  --animate-sheet-up: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  --animate-sheet-left: sheet-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  --animate-check: check-pop 160ms ease-out;
-  --animate-flash: flash 1s ease-in-out infinite;
+  --animate-sheet-up: sheet-up 240ms var(--ease-out);
+  --animate-sheet-left: sheet-left 240ms var(--ease-out);
+  --animate-check: check-pop 160ms var(--ease-spring);
+  --animate-fade: fade-in 160ms ease-out;
   --animate-spin: spin 0.8s linear infinite;
 }
 
 @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes sheet-left { from { transform: translateX(100%); } to { transform: translateX(0); } }
-@keyframes check-pop { 0% { transform: scale(0.6); } 100% { transform: scale(1); } }
+@keyframes check-pop { 0% { transform: scale(0.5); } 100% { transform: scale(1); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Layout measures that depend on the device's safe areas. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tabbar-height: 4rem;
+  --tabbar-bottom: calc(var(--safe-bottom) + 0.75rem);
+  /* Room a screen leaves so its last row clears the floating tab bar. */
+  --tabbar-space: calc(var(--tabbar-height) + var(--tabbar-bottom) + 1rem);
+  /* Padding under a sticky bottom action bar, and the bar's full height (52px button). */
+  --bottombar-pad: calc(var(--safe-bottom) + 1rem);
+  --bottombar-space: calc(5.5rem + var(--bottombar-pad));
+  /* Padding above a screen's first row. */
+  --screen-top: calc(var(--safe-top) + 1.25rem);
+  --sheet-max: 92dvh;
+}
 
 @layer base {
   html, body, #root {
@@ -85,19 +143,19 @@
   }
 
   body {
-    background: var(--color-canvas);
+    background: var(--color-cream);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: var(--text-base);
-    line-height: 1.5;
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
   }
 
+  /* Headings are Figtree unless a screen title or hero asks for font-display. */
   h1, h2, h3 {
-    font-family: var(--font-display);
     font-weight: 600;
-    letter-spacing: -0.01em;
   }
 
   button, input, textarea, select {
@@ -106,7 +164,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-basil);
+    outline: 2px solid var(--color-green);
     outline-offset: 2px;
   }
 
@@ -116,8 +174,142 @@
   }
 }
 
-/* Tabular numerals for quantities and timers. */
-.tabular { font-variant-numeric: tabular-nums; }
+@layer components {
+  /* Screen titles and hero headlines: Fraunces at a high optical size, slightly soft. */
+  .display {
+    font-family: var(--font-display);
+    font-variation-settings: var(--font-display--font-variation-settings);
+    font-weight: 560;
+    letter-spacing: -0.015em;
+  }
+
+  /* ── Glaze ─────────────────────────────────────────────────────────────
+     Glazed ceramic. Primary buttons and checked checkboxes only. */
+  .glaze {
+    position: relative;
+    isolation: isolate;
+    color: var(--color-surface);
+    background: linear-gradient(to bottom, var(--color-green-light), var(--color-green) 52%, var(--color-green-deep));
+    box-shadow: var(--shadow-glaze);
+    transition: transform 120ms var(--ease-spring), box-shadow 120ms var(--ease-spring);
+  }
+  /* The gloss: a soft ellipse of light across the top third. */
+  .glaze::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 52%;
+    border-radius: inherit;
+    background: radial-gradient(ellipse 70% 100% at 50% 0%, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.07) 55%, transparent 75%);
+    pointer-events: none;
+    z-index: -1;
+  }
+  button.glaze:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+    box-shadow: var(--shadow-glaze-pressed);
+  }
+  button.glaze:disabled {
+    color: var(--color-ink-muted);
+    background: var(--color-line);
+    box-shadow: none;
+  }
+  button.glaze:disabled::before {
+    display: none;
+  }
+
+  /* ── Glass ─────────────────────────────────────────────────────────────
+     Only for things that float over photos or scrolling content: the tab bar, round
+     controls on photos, tag pills on photos. Solid surface where blur isn't supported.
+     Never inside long scrolling lists. */
+  .glass, .glass-strong {
+    color: var(--color-ink);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    box-shadow: var(--shadow-md);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass, .glass-strong {
+      background: var(--color-glass);
+      -webkit-backdrop-filter: blur(20px) saturate(160%);
+      backdrop-filter: blur(20px) saturate(160%);
+      border-color: var(--color-glass-edge);
+      box-shadow: var(--shadow-glass);
+    }
+    .glass-strong {
+      background: var(--color-glass-strong);
+    }
+  }
+
+  /* ── Photos ────────────────────────────────────────────────────────────
+     One treatment for every recipe photo: cover crop, and a faint warm wash so
+     photos from different kitchens read as one set. */
+  .photo {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--color-line) 70%, var(--color-cream));
+  }
+  .photo > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .photo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--color-photo-warm);
+    pointer-events: none;
+  }
+
+  /* Text set directly on a photo sits on this. */
+  .scrim {
+    background: linear-gradient(to top, var(--color-scrim) 0%, var(--color-scrim-mid) 48%, transparent 100%);
+  }
+
+  /* ── Strike ────────────────────────────────────────────────────────────
+     A pen line that draws across a checked-off item. */
+  .strike {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    background-position: 0 56%;
+    background-size: 0% 1.5px;
+    transition: background-size 260ms var(--ease-out), color 200ms ease-out;
+  }
+  .strike[data-checked='true'] {
+    background-size: 100% 1.5px;
+  }
+
+  /* Small label above a group of rows ("Produce", "Account"). */
+  .label {
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+  }
+
+  /* Tabular numerals for quantities and timers. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Horizontal strips scroll without a visible bar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Broken image fallback (set by main.tsx). */
+  img.broken-image-fallback {
+    background: var(--color-cream);
+    object-fit: none;
+  }
+}
 
 /* Motion only in response to actions, and never when the user asks for less. */
 @media (prefers-reduced-motion: reduce) {
@@ -127,10 +319,4 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* Broken image fallback (set by main.tsx). */
-img.broken-image-fallback {
-  background: var(--color-canvas);
-  object-fit: none;
 }

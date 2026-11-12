@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { CalendarPlus, ChevronDown, Copy, Plus, Share2, ShoppingCart, X } from 'lucide-react';
+import { CalendarPlus, ChevronDown, Copy, Plus, Share2, ShoppingBasket, ShoppingCart, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import {
   fetchGroceryList, listMatchesPlan, rebuildGroceryList, saveChecked, saveCustomItems, type CustomItem, type SavedGroceryList,
 } from '../lib/groceries';
 import { AISLES, amountLines, listText, STAPLES_GROUP, uniqueMeals, type GroceryItem } from '../lib/groceryMerge';
-import { planEntries } from '../lib/plan';
-import { Button, Checkbox, cx, EmptyState, IconButton, PageContainer, Progress, Skeleton } from '../components/ds';
+import { Button, Checkbox, cx, EmptyState, IconButton, Input, PageContainer, Skeleton } from '../components/ds';
 
-// The week's grocery list: by aisle, what you need first; checked items drop into
-// "Got it" under their aisle; staples sit in "Probably have it" at the bottom.
+// The week's grocery list, like a paper list on the counter: grouped by aisle under small
+// labels, each item crossed off in place with a pen line when it's checked. Staples sit in
+// "Probably have it" at the bottom.
+
+/** One ruled line of the list. */
+const ROW = 'flex gap-3 border-b border-line';
 
 function ItemRow({ item, checked, onToggle, units }: { item: GroceryItem; checked: boolean; onToggle: () => void; units: 'us' | 'metric' }) {
   const [open, setOpen] = useState(false);
@@ -17,43 +20,29 @@ function ItemRow({ item, checked, onToggle, units }: { item: GroceryItem; checke
   const lines = amountLines(item, units);
   const notes = item.notes.filter(n => n.text);
   return (
-    <li className="flex items-start gap-3 border-b border-line py-3">
-      <Checkbox checked={checked} onChange={onToggle} ariaLabel={item.name} className="mt-0.5" />
+    <li className={cx(ROW, 'items-start py-3')}>
+      <Checkbox checked={checked} onChange={onToggle} ariaLabel={item.name} />
       <div className="min-w-0 flex-1">
         {/* The checkbox is the control; tapping the name toggles too (mouse/touch convenience). */}
-        <span onClick={onToggle} className={cx('block cursor-pointer text-base', checked ? 'text-ink-muted line-through' : 'text-ink')}>
-          {item.name}
+        <span onClick={onToggle} className="block cursor-pointer text-body">
+          <span data-checked={checked} className={cx('strike', checked ? 'text-ink-muted' : 'text-ink')}>{item.name}</span>
         </span>
         {meals.length > 1 ? (
-          <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className="cursor-pointer text-sm text-ink-muted hover:text-ink">
+          <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className="cursor-pointer text-small text-ink-muted hover:text-ink">
             for {meals.length} meals
           </button>
         ) : meals.length === 1 && !lines.length && !notes.length ? (
-          <span className="block text-sm text-ink-muted">for {meals[0]}</span>
+          <span className="block text-small text-ink-muted">for {meals[0]}</span>
         ) : null}
-        {open && <ul className="mt-1 text-sm text-ink-muted">{meals.map(m => <li key={m}>{m}</li>)}</ul>}
+        {open && <ul className="mt-1 text-small text-ink-muted">{meals.map(m => <li key={m}>{m}</li>)}</ul>}
       </div>
-      <div className={cx('max-w-[46%] shrink-0 text-right', checked && 'text-ink-muted line-through')}>
-        {lines.map(l => <span key={l} className="tabular block text-base">{l}</span>)}
+      <div className={cx('max-w-2/5 shrink-0 text-right', checked ? 'text-ink-muted' : 'text-ink')}>
+        {lines.map(l => <span key={l} className="tabular block text-body font-medium">{l}</span>)}
         {notes.map((n, i) => (
-          <span key={i} className="block text-sm text-ink-muted">{n.text}{meals.length > 1 || lines.length ? `, ${n.recipe}` : ''}</span>
+          <span key={i} className="block text-small text-ink-muted">{n.text}{meals.length > 1 || lines.length ? `, ${n.recipe}` : ''}</span>
         ))}
       </div>
     </li>
-  );
-}
-
-function GotIt({ count, children }: { count: number; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  if (!count) return null;
-  return (
-    <div>
-      <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className="flex w-full cursor-pointer items-center gap-2 py-3 text-sm font-semibold text-ink-muted hover:text-ink">
-        <ChevronDown size={18} strokeWidth={1.75} aria-hidden className={cx('transition-transform duration-150', open && 'rotate-180')} />
-        Got it ({count})
-      </button>
-      {open && <ul className="border-t border-line">{children}</ul>}
-    </div>
   );
 }
 
@@ -129,7 +118,6 @@ export function Groceries() {
   const staples = items.filter(i => i.staple);
   const countable = [...toBuy.map(i => i.key), ...custom.map(c => c.key)];
   const done = countable.filter(k => checked.has(k)).length;
-  const mealCount = weekPlan ? planEntries(weekPlan.plan).length : 0;
 
   const text = () => listText(items, custom, checked, prefs.units);
   const copy = async () => {
@@ -148,7 +136,7 @@ export function Groceries() {
   if (weekPlan === null || (status === 'ready' && !list && !custom.length)) {
     return (
       <PageContainer title="Grocery list">
-        <EmptyState title="No grocery list yet" action={<Button icon={CalendarPlus} onClick={() => go({ name: 'mealplan' })}>Plan your week</Button>}>
+        <EmptyState icon={ShoppingBasket} title="No grocery list yet" action={<Button size="lg" icon={CalendarPlus} onClick={() => go({ name: 'mealplan' })}>Plan your week</Button>}>
           Plan your week and the list builds itself from the meals, sorted by aisle.
         </EmptyState>
       </PageContainer>
@@ -157,73 +145,68 @@ export function Groceries() {
 
   const actions = status === 'ready' ? (
     <>
-      <Button size="sm" variant="secondary" icon={Copy} onClick={copy}>Copy list</Button>
-      <Button size="sm" variant="secondary" icon={Share2} onClick={share}>Share</Button>
+      <IconButton icon={Copy} label="Copy list" variant="outlined" size="sm" onClick={copy} />
+      <IconButton icon={Share2} label="Share" variant="outlined" size="sm" onClick={share} />
     </>
   ) : undefined;
 
+  const count = status === 'ready'
+    ? `${countable.length} item${countable.length === 1 ? '' : 's'}, ${done} checked`
+    : status === 'building' ? "Building your list from this week's meals…" : undefined;
+
   return (
-    <PageContainer title="Grocery list" actions={actions}>
+    <PageContainer title="Grocery list" actions={actions} intro={count}>
       {status === 'loading' || status === 'building' ? (
-        <div aria-busy>
-          <p className="mb-4 text-base text-ink-muted">{status === 'building' ? "Building your list from this week's meals…" : 'Loading your list…'}</p>
-          {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="mb-3 h-10 w-full" />)}
+        <div aria-busy aria-label="Loading your list">
+          <Skeleton className="mb-8 h-12 w-full rounded-input" />
+          <Skeleton className="mb-2 h-3 w-20 rounded-full" />
+          {[0, 1, 2, 3, 4, 5].map(i => (
+            <div key={i} className={cx(ROW, 'items-center py-3')}>
+              <Skeleton className="size-6 rounded-full" /><Skeleton className="h-4 flex-1 rounded-full" /><Skeleton className="h-4 w-14 rounded-full" />
+            </div>
+          ))}
         </div>
       ) : status === 'error' ? (
-        <p role="alert" className="text-base text-alert">Couldn't load your grocery list. Check your connection and try again.</p>
+        <EmptyState icon={ShoppingBasket} title="Couldn't load your grocery list">Check your connection and try again.</EmptyState>
       ) : (
         <>
-          <div className="mb-6 -mt-2">
-            <p className="mb-2 text-base text-ink-muted">{mealCount} meal{mealCount === 1 ? '' : 's'} this week</p>
-            <Progress value={countable.length ? done / countable.length : 0} label={`${done} of ${countable.length} items checked`} />
-            <p role="status" aria-live="polite" className="mt-2 min-h-5 text-sm text-basil">{shareState}</p>
-            {saveError && <p role="alert" className="text-sm text-alert">Couldn't save your last change. It'll retry with the next one.</p>}
-          </div>
+          <p role="status" aria-live="polite" className={cx('text-small font-semibold text-green', shareState && 'mb-3')}>{shareState}</p>
+          {saveError && <p role="alert" className="mb-3 text-small text-terracotta-deep">Couldn't save your last change. It'll retry with the next one.</p>}
 
-          <form onSubmit={addItem} className="mb-8 flex max-w-xl gap-2">
-            <label htmlFor="add-item" className="sr-only">Add an item</label>
-            <input id="add-item" value={draft} onChange={e => setDraft(e.target.value)} placeholder="Add an item, like paper towels"
-              className="h-12 min-w-0 flex-1 rounded-control border border-line bg-surface px-4 text-base outline-none focus:border-basil focus:ring-2 focus:ring-basil/25" />
+          <form onSubmit={addItem} className="mb-8 flex gap-2">
+            <Input id="add-item" label="Add an item" hideLabel className="min-w-0 flex-1" value={draft} onChange={e => setDraft(e.target.value)} placeholder="Add an item" />
             <Button type="submit" variant="secondary" icon={Plus} className="h-12" disabled={!draft.trim()}>Add</Button>
           </form>
 
           {custom.length > 0 && (
             <section className="mb-8" aria-labelledby="aisle-custom">
-              <h2 id="aisle-custom" className="mb-1 text-lg text-ink">Added by you</h2>
-              <ul className="border-t border-line">
-                {custom.filter(c => !checked.has(c.key)).map(c => (
-                  <li key={c.key} className="flex items-center gap-3 border-b border-line py-2">
-                    <Checkbox checked={false} onChange={() => toggle(c.key)} ariaLabel={c.name} />
-                    <span className="flex-1 text-base text-ink">{c.name}</span>
-                    <IconButton icon={X} label={`Remove ${c.name}`} size={36} onClick={() => removeItem(c.key)} />
-                  </li>
-                ))}
+              <h2 id="aisle-custom" className="label border-b border-line pb-2">Added by you</h2>
+              <ul>
+                {custom.map(c => {
+                  const on = checked.has(c.key);
+                  return (
+                    <li key={c.key} className={cx(ROW, 'items-center py-2')}>
+                      <Checkbox checked={on} onChange={() => toggle(c.key)} ariaLabel={c.name} />
+                      <span className="flex-1 text-body"><span data-checked={on} className={cx('strike', on ? 'text-ink-muted' : 'text-ink')}>{c.name}</span></span>
+                      <IconButton icon={X} label={`Remove ${c.name}`} size="sm" onClick={() => removeItem(c.key)} />
+                    </li>
+                  );
+                })}
               </ul>
-              <GotIt count={custom.filter(c => checked.has(c.key)).length}>
-                {custom.filter(c => checked.has(c.key)).map(c => (
-                  <li key={c.key} className="flex items-center gap-3 border-b border-line py-2">
-                    <Checkbox checked onChange={() => toggle(c.key)} ariaLabel={c.name} />
-                    <span className="flex-1 text-base text-ink-muted line-through">{c.name}</span>
-                    <IconButton icon={X} label={`Remove ${c.name}`} size={36} onClick={() => removeItem(c.key)} />
-                  </li>
-                ))}
-              </GotIt>
             </section>
           )}
 
           {AISLES.map(aisle => {
             const inAisle = toBuy.filter(i => i.aisle === aisle);
             if (!inAisle.length) return null;
-            const left = inAisle.filter(i => !checked.has(i.key));
-            const got = inAisle.filter(i => checked.has(i.key));
+            const left = inAisle.filter(i => !checked.has(i.key)).length;
             return (
               <section key={aisle} className="mb-8" aria-labelledby={`aisle-${aisle}`}>
-                <h2 id={`aisle-${aisle}`} className="mb-1 text-lg text-ink">{aisle}</h2>
-                {left.length > 0 && <ul className="border-t border-line">{left.map(i => <ItemRow key={i.key} item={i} checked={false} onToggle={() => toggle(i.key)} units={prefs.units} />)}</ul>}
-                {!left.length && <p className="border-t border-line py-3 text-sm text-ink-muted">All checked off.</p>}
-                <GotIt count={got.length}>
-                  {got.map(i => <ItemRow key={i.key} item={i} checked onToggle={() => toggle(i.key)} units={prefs.units} />)}
-                </GotIt>
+                <div className="flex items-baseline justify-between gap-3 border-b border-line pb-2">
+                  <h2 id={`aisle-${aisle}`} className="label">{aisle}</h2>
+                  {!left && <span className="text-caption font-semibold text-green">All checked off</span>}
+                </div>
+                <ul>{inAisle.map(i => <ItemRow key={i.key} item={i} checked={checked.has(i.key)} onToggle={() => toggle(i.key)} units={prefs.units} />)}</ul>
               </section>
             );
           })}
@@ -231,9 +214,9 @@ export function Groceries() {
           {staples.length > 0 && (
             <section className="mb-8">
               <button type="button" aria-expanded={staplesOpen} onClick={() => setStaplesOpen(o => !o)}
-                className="flex w-full cursor-pointer items-center gap-2 border-b border-line pb-2 text-left">
-                <span className="flex-1 font-display text-lg font-semibold tracking-[-0.01em] text-ink">{STAPLES_GROUP}</span>
-                <span className="text-sm text-ink-muted">{staples.length} items</span>
+                className="flex min-h-11 w-full cursor-pointer items-center gap-2 border-b border-line pb-2 text-left">
+                <span className="label flex-1">{STAPLES_GROUP}</span>
+                <span className="text-small text-ink-muted">{staples.length} items</span>
                 <ChevronDown size={20} strokeWidth={1.75} aria-hidden className={cx('text-ink-muted transition-transform duration-150', staplesOpen && 'rotate-180')} />
               </button>
               {staplesOpen && <ul>{staples.map(i => <ItemRow key={i.key} item={i} checked={checked.has(i.key)} onToggle={() => toggle(i.key)} units={prefs.units} />)}</ul>}

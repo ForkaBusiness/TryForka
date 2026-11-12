@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../app/AppContext';
 import { supabase } from '../lib/supabase';
 import { getCards, recipeTitle } from '../lib/catalog';
-import { PageContainer, SaveStatus, Skeleton } from '../components/ds';
+import { PageContainer, SaveStatus, Skeleton, Textarea } from '../components/ds';
 
 // Notes for one recipe. Saves as you type (after a short pause), no Save button.
 
@@ -61,17 +61,16 @@ export function Notes({ id }: { id: number }) {
 
   return (
     <PageContainer title="Notes" onBack={leave} intro={title || undefined} actions={<SaveStatus state={state} />}>
-      {text === null ? <Skeleton className="h-80 w-full" /> : (
-        <>
-          <label htmlFor="note" className="sr-only">Notes for {title || 'this recipe'}</label>
-          <textarea
-            id="note"
-            value={text}
-            onChange={e => onChange(e.target.value)}
-            placeholder="What worked, what you'd change, who liked it"
-            className="block min-h-80 w-full resize-y rounded-control border border-line bg-surface px-4 py-3 text-base leading-normal outline-none focus:border-basil focus:ring-2 focus:ring-basil/25"
-          />
-        </>
+      {text === null ? <Skeleton className="h-80 w-full rounded-input" /> : (
+        <Textarea
+          id="note"
+          label={`Notes for ${title || 'this recipe'}`}
+          hideLabel
+          value={text}
+          onChange={e => onChange(e.target.value)}
+          placeholder="What worked, what you'd change, who liked it"
+          fieldClassName="min-h-80 resize-y"
+        />
       )}
     </PageContainer>
   );

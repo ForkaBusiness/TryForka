@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { photo, previewRecipes, recipeTitle, type RecipeCard } from '../lib/catalog';
 import { Button, Checkbox, IconButton, Input } from '../components/ds';
+import { Wordmark } from '../components/Shell';
+import { WelcomePanel } from '../components/WelcomePanel';
 
 // Sign up and log in. Not shown: the website's login.html and signup.html handle this now.
-// Form on the left; on desktop, a basil panel with a static
-// preview of a real week from the catalog, so the first thing people see is the product.
+// Form on the left; on desktop, a green panel with a static preview of a real week.
+// The style guide can preview it in development (/app/styleguide?preview=login).
 
 type Mode = 'signup' | 'login';
 
@@ -36,34 +37,6 @@ function GoogleMark() {
       <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
       <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
     </svg>
-  );
-}
-
-const DAYS = ['Mon', 'Tue', 'Wed'];
-
-function WeekPreview() {
-  const [recipes, setRecipes] = useState<RecipeCard[]>([]);
-  useEffect(() => { previewRecipes().then(setRecipes).catch(() => setRecipes([])); }, []);
-  return (
-    <div role="img" aria-label="Example of a planned week: three dinners with photos" className="w-full max-w-[400px]">
-      <div className="rounded-sheet bg-surface p-5">
-        <p className="mb-3 text-sm font-semibold text-ink-muted">This week</p>
-        <ul className="divide-y divide-line">
-          {(recipes.length ? recipes : [null, null, null]).map((r, i) => (
-            <li key={i} className="flex items-center gap-4 py-3">
-              <span className="w-10 shrink-0 text-sm font-semibold text-ink">{DAYS[i]}</span>
-              <span className="size-14 shrink-0 overflow-hidden rounded-photo bg-line/60">
-                {r?.thumb_url && <img src={photo(r.thumb_url, 'small')} alt="" className="size-full object-cover" />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-display text-md font-semibold text-ink">{r ? recipeTitle(r) : ' '}</span>
-                <span className="block truncate text-sm text-ink-muted">{r?.subtitle ?? ' '}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
   );
 }
 
@@ -146,15 +119,12 @@ export function Auth({ mode, onSwitch, onTerms }: AuthProps) {
   const title = forgot ? 'Reset your password' : mode === 'signup' ? 'Create your account' : 'Log in';
 
   return (
-    <div className="flex min-h-dvh bg-canvas">
-      <div className="flex flex-1 justify-center px-4 py-10 md:items-center md:px-12">
-        <div className="w-full max-w-[400px]">
-          <div className="mb-8 flex items-center gap-2.5">
-            <img src={`${import.meta.env.BASE_URL}forka-logo.png`} alt="" className="size-9 rounded-[10px]" />
-            <span style={{ fontSize: 22, fontFamily: '"Poppins", sans-serif', fontWeight: 700, color: 'rgba(10,37,51,1)', letterSpacing: '-0.5px' }}>Forka</span>
-          </div>
-          <h1 className="text-2xl text-ink md:text-4xl">{title}</h1>
-          {forgot && <p className="mt-2 text-base text-ink-muted">We'll email you a link to set a new one.</p>}
+    <div className="flex min-h-dvh bg-cream">
+      <div className="flex flex-1 justify-center px-gutter pt-(--screen-top) pb-10 md:items-center md:px-12 md:py-10">
+        <div className="w-full max-w-form">
+          <Wordmark className="mb-10" />
+          <h1 className="display text-display text-ink">{title}</h1>
+          {forgot && <p className="mt-2 text-body text-ink-muted">We'll email you a link to set a new one.</p>}
 
           <form onSubmit={submit} noValidate className="mt-6 space-y-4">
             {mode === 'signup' && !forgot && (
@@ -170,11 +140,11 @@ export function Auth({ mode, onSwitch, onTerms }: AuthProps) {
                 placeholder={mode === 'signup' ? 'At least 8 characters' : 'Your password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                trailing={<IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? 'Hide password' : 'Show password'} size={40} onClick={() => setShowPassword(s => !s)} />}
+                trailing={<IconButton icon={showPassword ? EyeOff : Eye} label={showPassword ? 'Hide password' : 'Show password'} size="sm" className="mr-1" onClick={() => setShowPassword(s => !s)} />}
               />
             )}
             {mode === 'login' && !forgot && (
-              <button type="button" onClick={() => setForgot(true)} className="cursor-pointer text-sm font-semibold text-basil hover:underline">
+              <button type="button" onClick={() => setForgot(true)} className="cursor-pointer text-small font-semibold text-green hover:underline">
                 Forgot your password?
               </button>
             )}
@@ -182,33 +152,30 @@ export function Auth({ mode, onSwitch, onTerms }: AuthProps) {
               <Checkbox
                 checked={agree}
                 onChange={setAgree}
-                label={<>I agree to the <button type="button" onClick={onTerms} className="cursor-pointer font-semibold text-basil underline underline-offset-2">terms</button></>}
+                label={<>I agree to the <button type="button" onClick={onTerms} className="cursor-pointer font-semibold text-green underline underline-offset-2">terms</button></>}
               />
             )}
-            {error && <p role="alert" className="text-sm text-alert">{error}</p>}
-            {notice && <p role="status" className="text-sm text-basil">{notice}</p>}
+            {error && <p role="alert" className="text-small text-terracotta-deep">{error}</p>}
+            {notice && <p role="status" className="text-small font-semibold text-green">{notice}</p>}
             <Button type="submit" size="lg" block loading={loading}>
               {forgot ? 'Send reset link' : mode === 'signup' ? 'Create account' : 'Log in'}
             </Button>
             {forgot && (
-              <Button type="button" variant="quiet" block onClick={() => setForgot(false)}>Back to log in</Button>
+              <Button variant="ghost" block onClick={() => setForgot(false)}>Back to log in</Button>
             )}
           </form>
 
           {!forgot && (
             <>
-              <div className="my-6 flex items-center gap-3 text-sm text-ink-muted">
+              <div className="my-6 flex items-center gap-3 text-small text-ink-muted">
                 <span className="h-px flex-1 bg-line" />or<span className="h-px flex-1 bg-line" />
               </div>
-              <div className="grid gap-3">
-                <button type="button" onClick={() => oauth('google')}
-                  className="flex h-12 cursor-pointer items-center justify-center gap-3 rounded-control border border-line bg-surface text-base font-semibold text-ink hover:border-ink-muted">
-                  <GoogleMark />Continue with Google
-                </button>
-              </div>
-              <p className="mt-8 text-base text-ink-muted">
+              <Button variant="secondary" size="lg" block onClick={() => oauth('google')}>
+                <GoogleMark />Continue with Google
+              </Button>
+              <p className="mt-8 text-body text-ink-muted">
                 {mode === 'signup' ? 'Already have an account? ' : 'New to Forka? '}
-                <button type="button" onClick={() => onSwitch(mode === 'signup' ? 'login' : 'signup')} className="cursor-pointer font-semibold text-basil hover:underline">
+                <button type="button" onClick={() => onSwitch(mode === 'signup' ? 'login' : 'signup')} className="cursor-pointer font-semibold text-green hover:underline">
                   {mode === 'signup' ? 'Log in' : 'Create an account'}
                 </button>
               </p>
@@ -217,10 +184,7 @@ export function Auth({ mode, onSwitch, onTerms }: AuthProps) {
         </div>
       </div>
 
-      <div className="hidden w-[46%] max-w-[640px] flex-col items-center justify-center gap-8 bg-basil px-12 md:flex">
-        <p className="max-w-[400px] font-display text-3xl font-semibold tracking-[-0.01em] text-surface">{PANEL_LINE[mode]}</p>
-        <WeekPreview />
-      </div>
+      <WelcomePanel line={PANEL_LINE[mode]} />
     </div>
   );
 }
@@ -240,11 +204,11 @@ export function NewPassword({ onDone }: { onDone: () => void }) {
     onDone();
   };
   return (
-    <div className="flex min-h-dvh justify-center bg-canvas px-4 py-10 md:items-center">
-      <form onSubmit={submit} noValidate className="w-full max-w-[400px] space-y-4">
-        <h1 className="text-2xl text-ink md:text-4xl">Set a new password</h1>
+    <div className="flex min-h-dvh justify-center bg-cream px-gutter pt-(--screen-top) pb-10 md:items-center md:py-10">
+      <form onSubmit={submit} noValidate className="w-full max-w-form space-y-4">
+        <h1 className="display text-display text-ink">Set a new password</h1>
         <Input label="New password" type="password" autoComplete="new-password" placeholder="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} />
-        {error && <p role="alert" className="text-sm text-alert">{error}</p>}
+        {error && <p role="alert" className="text-small text-terracotta-deep">{error}</p>}
         <Button type="submit" size="lg" block loading={loading}>Save password</Button>
       </form>
     </div>

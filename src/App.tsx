@@ -7,8 +7,9 @@ import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type PlanReview, 
 import { fetchGroceryList, rebuildGroceryList } from './lib/groceries';
 import { AppContext, type AppState, type FavoriteEntry, type Screen, type SuggestionsTarget } from './app/AppContext';
 import { AppFrame } from './components/Shell';
-import { TAB_BAR_HEIGHT, type NavId } from './components/nav';
+import type { NavId } from './components/nav';
 import { TimerTray } from './components/Timers';
+import { Button, PageContainer, Skeleton } from './components/ds';
 import { Terms } from './screens/Terms';
 import { Onboarding } from './screens/Onboarding';
 import { MealPlan } from './screens/MealPlan';
@@ -29,17 +30,26 @@ import { Styleguide } from './screens/Styleguide';
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
 
 const TABS: NavId[] = ['mealplan', 'groceries', 'favorites', 'settings'];
-/** Screens with a sticky bottom action bar (the timer tray sits above it). */
+/** Screens with a sticky bottom action bar: it takes the tab bar's place, and the timer tray sits above it. */
 const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking'];
-const BOTTOM_BAR_HEIGHT = 77;
 
 /** Blank while the session check runs or while leaving for the website's log-in page. */
 function Blank() {
-  return <div className="h-dvh bg-canvas" aria-busy="true" />;
+  return <div className="h-dvh bg-cream" aria-busy="true" />;
 }
 
+/** The shape of the home screen while the household's data loads. */
 function Loading() {
-  return <div className="flex h-dvh items-center justify-center bg-canvas text-base text-ink-muted" role="status">Loading…</div>;
+  return (
+    <div className="h-dvh overflow-hidden bg-cream" role="status" aria-label="Loading your week">
+      <PageContainer>
+        <Skeleton className="h-9 w-2/3 rounded-full" />
+        <Skeleton className="mt-3 mb-6 h-4 w-1/3 rounded-full" />
+        <Skeleton className="aspect-4/3 w-full rounded-card md:aspect-video" />
+        <Skeleton className="mt-6 h-24 w-full rounded-card" />
+      </PageContainer>
+    </div>
+  );
 }
 
 /** The signed-in app: loads the household's data, then renders the current screen. */
@@ -176,10 +186,10 @@ function SignedIn({ session }: { session: Session }) {
   if (prefs === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {
     return (
-      <div className="flex h-dvh flex-col items-start justify-center gap-3 px-6">
-        <h1 className="text-2xl">Couldn't load your account</h1>
-        <p className="text-base text-ink-muted">Check your connection, then reload the page.</p>
-        <button type="button" onClick={() => window.location.reload()} className="cursor-pointer font-semibold text-basil hover:underline">Reload</button>
+      <div className="mx-auto flex h-dvh w-full max-w-column flex-col items-start justify-center px-gutter">
+        <h1 className="display text-title text-ink">Couldn't load your account</h1>
+        <p className="mt-2 text-body text-ink-muted">Check your connection, then reload the page.</p>
+        <Button className="mt-6" onClick={() => window.location.reload()}>Reload</Button>
       </div>
     );
   }
@@ -203,15 +213,13 @@ function SignedIn({ session }: { session: Session }) {
   }
 
   const root = stack[0].name as NavId;
-  const showNav = screen.name !== 'cooking';
-  const tabBar = isPhone && showNav ? TAB_BAR_HEIGHT : 0;
-  const bar = WITH_BOTTOM_BAR.includes(screen.name) ? BOTTOM_BAR_HEIGHT : 0;
+  const showNav = !WITH_BOTTOM_BAR.includes(screen.name);
 
   return (
     <AppContext.Provider value={ctx}>
-      <div style={{ '--tray-offset': `calc(${tabBar + bar}px + env(safe-area-inset-bottom, 0px))` } as React.CSSProperties}>
+      <div style={{ '--tray-bottom': showNav ? 'var(--tabbar-space)' : 'var(--bottombar-space)' } as React.CSSProperties}>
         <AppFrame
-          isPhone={isPhone}
+          showBrand={screen.name !== 'cooking'}
           active={(TABS as string[]).includes(root) ? root : 'mealplan'}
           onSelect={id => go({ name: id })}
           showNav={showNav}

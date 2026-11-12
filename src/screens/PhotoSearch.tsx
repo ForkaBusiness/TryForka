@@ -4,7 +4,7 @@ import { useApp } from '../app/AppContext';
 import { checkFile, findSimilar, PhotoError, preparePhoto } from '../lib/photo';
 import { DAY_LONG, emptyPlan, entryFromCard, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
 import type { RecipeCard } from '../lib/catalog';
-import { Button, cx, RecipeTile, Sheet, Skeleton } from '../components/ds';
+import { BottomSheet, Button, cx, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, Textarea } from '../components/ds';
 
 // Find meals like this: a photo (taken or chosen), an optional description, then 6-8
 // recipes from the household's safe catalog that are closest to it.
@@ -86,7 +86,7 @@ export function PhotoSearch({ open, onClose }: { open: boolean; onClose: () => v
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Find meals like this">
+    <BottomSheet open={open} onClose={onClose} title="Find meals like this">
       <input
         ref={fileInput}
         type="file"
@@ -113,62 +113,59 @@ export function PhotoSearch({ open, onClose }: { open: boolean; onClose: () => v
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
-          className={cx('flex flex-col items-start gap-4 rounded-photo border border-dashed p-6 transition-colors duration-150', dragging ? 'border-basil bg-basil-soft' : 'border-line bg-canvas')}
+          className={cx('flex flex-col gap-4 rounded-card border border-dashed p-5 transition-colors duration-150', dragging ? 'border-green bg-green-soft' : 'border-ink-muted/50 bg-cream')}
         >
-          <p className="text-base text-ink">Take or choose a photo of a dish you liked. We'll find recipes like it that fit your household.</p>
-          <div className="flex flex-wrap gap-3">
-            <Button icon={ImagePlus} loading={preparing} onClick={() => fileInput.current?.click()}>Take or choose a photo</Button>
-            <Button variant="secondary" onClick={() => (document.getElementById('photo-library') as HTMLInputElement | null)?.click()}>Photo library</Button>
+          <span aria-hidden className="flex size-12 items-center justify-center rounded-full bg-green-soft text-green"><ImagePlus size={24} strokeWidth={1.75} /></span>
+          <p className="text-body text-ink">Take or choose a photo of a dish you liked. We'll find recipes like it that fit your household.</p>
+          <div className="flex flex-col gap-3">
+            <Button size="lg" block loading={preparing} onClick={() => fileInput.current?.click()}>Take or choose a photo</Button>
+            <Button size="lg" block variant="secondary" onClick={() => (document.getElementById('photo-library') as HTMLInputElement | null)?.click()}>Photo library</Button>
           </div>
-          <p className="hidden text-sm text-ink-muted md:block">Or drag a photo here. JPEG, PNG, WebP or HEIC, up to 15 MB.</p>
+          <p className="hidden text-small text-ink-muted md:block">Or drag a photo here. JPEG, PNG, WebP or HEIC, up to 15 MB.</p>
         </div>
       ) : (
         <div>
-          <img src={preview} alt="Your photo" className="max-h-72 w-full rounded-photo bg-canvas object-cover" />
-          <button type="button" onClick={() => fileInput.current?.click()} className="mt-2 inline-flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-basil hover:underline">
+          <span className="photo aspect-4/3 w-full rounded-card"><img src={preview} alt="Your photo" /></span>
+          <button type="button" onClick={() => fileInput.current?.click()} className="mt-3 inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-small font-semibold text-green hover:underline">
             <RefreshCcw size={16} strokeWidth={1.75} aria-hidden />Use a different photo
           </button>
 
           {!result && (
-            <div className="mt-4">
-              <label htmlFor="photo-context" className="mb-2 block text-sm font-semibold text-ink">Tell us about it (optional)</label>
-              <textarea
+            <div className="mt-3">
+              <Textarea
                 ref={contextInput}
                 id="photo-context"
+                label="Tell us about it (optional)"
                 value={context}
                 maxLength={CONTEXT_MAX}
                 onChange={e => setContext(e.target.value)}
-                placeholder="What is it? e.g. my mom's chicken tinga, the kids loved it"
+                placeholder="My mom's chicken tinga, the kids loved it"
                 rows={2}
-                className="block w-full resize-none rounded-control border border-line bg-surface px-4 py-3 text-base outline-none focus:border-basil focus:ring-2 focus:ring-basil/25"
+                fieldClassName="resize-none"
               />
-              <p className="mt-1 text-right text-xs text-ink-muted">{context.length}/{CONTEXT_MAX}</p>
+              <p className="mt-1 text-right text-caption text-ink-muted">{context.length}/{CONTEXT_MAX}</p>
               <Button size="lg" block className="mt-3" loading={searching} onClick={search}>Find similar meals</Button>
             </div>
           )}
         </div>
       )}
 
-      {error && <p role="alert" className="mt-4 text-sm text-alert">{error}</p>}
-      <p role="status" aria-live="polite" className="mt-2 min-h-5 text-sm text-basil">{status}</p>
+      {error && <p role="alert" className="mt-4 text-small text-terracotta-deep">{error}</p>}
+      <p role="status" aria-live="polite" className="mt-2 min-h-5 text-small font-semibold text-green">{status}</p>
 
-      {searching && (
-        <div aria-hidden className="mt-4 grid grid-cols-2 gap-4">
-          {[0, 1, 2, 3].map(i => <div key={i}><Skeleton className="aspect-square" /><Skeleton className="mt-2 h-4 w-3/4" /></div>)}
-        </div>
-      )}
+      {searching && <div className="mt-4"><RecipeGridSkeleton count={4} compact /></div>}
 
       {result && (
         <section aria-labelledby="photo-results" className="mt-4">
-          <h3 id="photo-results" className="text-lg text-ink">Like your {result.dish.charAt(0).toLowerCase() + result.dish.slice(1)}</h3>
-          <button type="button" onClick={editAgain} className="mt-1 cursor-pointer text-sm font-semibold text-basil hover:underline">Not quite? Edit and try again</button>
+          <h3 id="photo-results" className="text-heading text-ink">Like your {result.dish.charAt(0).toLowerCase() + result.dish.slice(1)}</h3>
+          <button type="button" onClick={editAgain} className="mt-1 cursor-pointer text-small font-semibold text-green hover:underline">Not quite? Edit and try again</button>
           {result.recipes.length === 0 ? (
-            <p className="mt-4 text-base text-ink-muted">Nothing in your recipes is close to that yet. Try a different photo or description.</p>
+            <p className="mt-4 text-body text-ink-muted">Nothing in your recipes is close to that yet. Try a different photo or description.</p>
           ) : (
-            <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-6">
+            <RecipeGrid compact className="mt-4">
               {result.recipes.map(r => (
                 <li key={r.id}>
-                  <RecipeTile
+                  <RecipeCardView
                     recipe={r}
                     onOpen={() => { onClose(); go({ name: 'recipe', id: r.id }); }}
                     added={!!weekPlan && !!findInPlan(weekPlan.plan, r.id)}
@@ -178,10 +175,10 @@ export function PhotoSearch({ open, onClose }: { open: boolean; onClose: () => v
                   />
                 </li>
               ))}
-            </ul>
+            </RecipeGrid>
           )}
         </section>
       )}
-    </Sheet>
+    </BottomSheet>
   );
 }
