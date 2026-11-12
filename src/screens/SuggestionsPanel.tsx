@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Camera, CalendarPlus, Check, Plus } from 'lucide-react';
+import { Camera, CalendarPlus } from 'lucide-react';
 import { useApp, type SuggestionsTarget } from '../app/AppContext';
-import { getCards, photo, recipeTitle, similarRecipes, type RecipeCard } from '../lib/catalog';
+import { getCards, similarRecipes, type RecipeCard } from '../lib/catalog';
 import {
   DAY_LONG, emptyPlan, entryFromCard, findInPlan, generateWeekPlan, getSuggestions, nextOpenSlot, planEntries, withSlot,
   type SuggestionPick,
 } from '../lib/plan';
 import { filterRecipes } from '../lib/recipeFilter';
 import { RecipeCarousel } from '../components/RecipeCarousel';
-import { Button, ChipButton, Sheet, Skeleton } from '../components/ds';
+import { BottomSheet, Button, ChipButton, cx, Input, ListGroup, ListRow, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, Skeleton } from '../components/ds';
 
-// Suggestions: a text request, a photo, or the whole week. With a target slot (Swap on
-// the meal plan) the options are a swipeable carousel and a pick replaces that slot
-// instead of adding to the week.
+// Suggestions: prompt chips, a photo, or the whole week, with the request bar anchored to
+// the bottom. Results are recipe cards. With a target slot (Swap on the meal plan) the
+// options are a swipeable carousel and a pick replaces that slot instead of adding to the week.
 
 const STARTERS = ['Under 30 minutes', "Uses what's in my fridge", 'Kid-friendly'];
 
@@ -115,68 +115,54 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const inWeek = (id: number) => !!weekPlan && !!findInPlan(weekPlan.plan, id);
   const openRecipe = (id: number) => { onClose(); go({ name: 'recipe', id }); };
 
-  const row = (r: RecipeCard, reason?: string) => {
-    const added = !target && inWeek(r.id);
-    return (
-      <li key={r.id} className="flex items-center gap-3 border-b border-line py-3">
-        <button type="button" onClick={() => openRecipe(r.id)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left">
-          <span className="size-16 shrink-0 overflow-hidden rounded-photo bg-line/60">
-            {r.thumb_url && <img src={photo(r.thumb_url, 'small')} alt="" className="size-full object-cover" />}
-          </span>
-          <span className="min-w-0">
-            <span className="block font-display text-md font-semibold tracking-[-0.01em] text-ink">{recipeTitle(r)}</span>
-            <span className="block text-sm text-ink-muted">{reason || r.subtitle}</span>
-          </span>
-        </button>
-        {target ? (
-          <Button size="sm" variant="secondary" onClick={() => choose(r)}>Use this</Button>
-        ) : (
-          <Button size="sm" variant={added ? 'quiet' : 'secondary'} icon={added ? Check : Plus} onClick={() => choose(r)}
-            aria-label={added ? `${recipeTitle(r)} is in your week. Remove it` : `Add ${recipeTitle(r)} to week`}>
-            {added ? 'In week' : 'Add'}
-          </Button>
-        )}
-      </li>
-    );
-  };
-
   const title = target ? `Swap ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
   const selectedId = target && weekPlan ? weekPlan.plan[target.day][target.slot]?.id : null;
   const carousel = (recipes: RecipeCard[], caption?: (r: RecipeCard) => string | undefined) => (
     <RecipeCarousel key={recipes.map(r => r.id).join()} recipes={recipes} selectedId={selectedId} onSelect={r => void choose(r)}
       onOpen={r => openRecipe(r.id)} caption={caption} label={`Recipe options for ${title.replace('Swap ', '')}`} />
   );
+  const bar = (
+    <form onSubmit={submit} className="flex gap-2">
+      <Input
+        ref={inputRef}
+        id="suggest-input"
+        data-autofocus
+        label="What sounds good?"
+        hideLabel
+        className="min-w-0 flex-1"
+        value={prompt}
+        onChange={e => setPrompt(e.target.value)}
+        placeholder="Quick chicken, nothing spicy"
+        maxLength={300}
+      />
+      <Button type="submit" className="h-12" disabled={!prompt.trim()} loading={loading}>Suggest</Button>
+    </form>
+  );
   return (
-    <Sheet open={open} onClose={onClose} title={title}>
-      <form onSubmit={submit} className="flex gap-2">
-        <label htmlFor="suggest-input" className="sr-only">What sounds good?</label>
-        <input
-          ref={inputRef}
-          id="suggest-input"
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          placeholder="What sounds good? e.g. quick chicken, nothing spicy"
-          maxLength={300}
-          className="h-12 min-w-0 flex-1 rounded-control border border-line bg-surface px-4 text-base outline-none focus:border-basil focus:ring-2 focus:ring-basil/25"
-        />
-        <Button type="submit" size="md" className="h-12" disabled={!prompt.trim()} loading={loading}>Suggest</Button>
-      </form>
+    <BottomSheet open={open} onClose={onClose} title={title} footer={bar}>
+      {!loading && !picks && !target && !planning && (
+        <div className="mb-4">
+          <p className="label mb-2 px-1">What sounds good?</p>
+          <div className="flex flex-wrap gap-2">
+            {STARTERS.map(s => <ChipButton key={s} onClick={() => starter(s)}>{s}</ChipButton>)}
+          </div>
+        </div>
+      )}
 
-      <div className="mt-3 flex flex-col gap-1 border-b border-line pb-3">
-        <Button variant="quiet" icon={Camera} className="justify-start px-2" onClick={() => { onClose(); openPhotoSearch(); }}>Find meals like a photo</Button>
+      <ListGroup>
+        <ListRow leading={<Camera size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Find meals like a photo" chevron
+          onClick={() => { onClose(); openPhotoSearch(); }} />
         {!target && (
-          <Button variant="quiet" icon={CalendarPlus} className="justify-start px-2" loading={planning}
-            onClick={() => (weekPlan ? setConfirmReplace(true) : void planWeek())}>
-            Plan my whole week
-          </Button>
+          <ListRow leading={<CalendarPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title={planning ? 'Planning your week…' : 'Plan my whole week'} chevron
+            onClick={planning ? undefined : () => (weekPlan ? setConfirmReplace(true) : void planWeek())} />
         )}
-      </div>
+      </ListGroup>
 
       {confirmReplace && (
-        <div role="alertdialog" aria-label="Replace this week's plan?" className="border-b border-line py-4">
-          <p className="text-base font-semibold text-ink">Replace this week's plan?</p>
-          <p className="mt-1 text-sm text-ink-muted">The grocery list will be rebuilt for the new meals.</p>
-          <div className="mt-3 flex gap-2">
+        <div role="alertdialog" aria-label="Replace this week's plan?" className="mt-4 rounded-input border border-line bg-cream p-4">
+          <p className="text-body font-semibold text-ink">Replace this week's plan?</p>
+          <p className="mt-1 text-small text-ink-muted">The grocery list will be rebuilt for the new meals.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" onClick={planWeek}>Replace</Button>
             <Button size="sm" variant="secondary" onClick={() => setConfirmReplace(false)}>Keep current plan</Button>
           </div>
@@ -184,10 +170,10 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
       )}
 
       {message && (
-        <div role={message.tone === 'error' ? 'alert' : 'status'} className={`py-3 text-sm ${message.tone === 'error' ? 'text-alert' : 'text-basil'}`}>
+        <div role={message.tone === 'error' ? 'alert' : 'status'} className={cx('pt-4 text-small font-medium', message.tone === 'error' ? 'text-terracotta-deep' : 'text-green')}>
           {message.text}
           {message.groceries && (
-            <span className="mt-2 flex gap-2">
+            <span className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="secondary" onClick={() => { onClose(); go({ name: 'mealplan' }); }}>See this week</Button>
               <Button size="sm" variant="secondary" onClick={() => { onClose(); go({ name: 'groceries' }); }}>Grocery list</Button>
             </span>
@@ -195,43 +181,38 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
         </div>
       )}
 
-      {planning && <p className="py-4 text-base text-ink-muted">Picking a week of meals that fit your household…</p>}
+      {planning && <p className="pt-4 text-body text-ink-muted">Picking a week of meals that fit your household…</p>}
 
-      {loading && (
-        <ul aria-hidden className="mt-2">
-          {[0, 1, 2, 3].map(i => (
-            <li key={i} className="flex items-center gap-3 border-b border-line py-3">
-              <Skeleton className="size-16" /><span className="flex-1"><Skeleton className="h-4 w-2/3" /><Skeleton className="mt-2 h-3 w-1/2" /></span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {loading && <div className="mt-4"><RecipeGridSkeleton count={4} compact /></div>}
 
-      {!loading && picks && note && <p role="status" className="pt-3 text-sm text-ink-muted">{note}</p>}
+      {!loading && picks && note && <p role="status" className="pt-4 text-small text-ink-muted">{note}</p>}
       {!loading && picks && (
         picks.length
           ? target
-            ? <div className="mt-3">{carousel(picks.map(p => p.recipe), r => picks.find(p => p.recipe.id === r.id)?.reason)}</div>
-            : <ul className="mt-1">{picks.map(p => row(p.recipe, p.reason))}</ul>
-          : <p className="py-4 text-base text-ink-muted">Nothing fits that yet. Try different words.</p>
+            ? <div className="mt-4">{carousel(picks.map(p => p.recipe), r => picks.find(p => p.recipe.id === r.id)?.reason)}</div>
+            : (
+              <RecipeGrid compact className="mt-4">
+                {picks.map(p => (
+                  <li key={p.recipe.id}>
+                    <RecipeCardView recipe={p.recipe} note={p.reason || undefined} onOpen={() => openRecipe(p.recipe.id)}
+                      added={inWeek(p.recipe.id)} onAdd={() => void choose(p.recipe)} />
+                  </li>
+                ))}
+              </RecipeGrid>
+            )
+          : <p className="pt-4 text-body text-ink-muted">Nothing fits that yet. Try different words.</p>
       )}
 
       {!loading && !picks && target && (
-        <section className="mt-4">
-          <h3 className="text-sm font-semibold text-ink-muted">Options for this meal</h3>
+        <section className="mt-5">
+          <h3 className="label px-1">Options for this meal</h3>
           {ideas === null
-            ? <Skeleton className="mt-3 h-80" />
+            ? <Skeleton className="mt-3 h-80 rounded-card" />
             : ideas.length
               ? <div className="mt-3">{carousel(ideas)}</div>
-              : <p className="py-4 text-base text-ink-muted">No other recipes fit this meal with your current settings.</p>}
+              : <p className="pt-3 text-body text-ink-muted">No other recipes fit this meal with your current settings.</p>}
         </section>
       )}
-
-      {!loading && !picks && !target && !planning && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {STARTERS.map(s => <ChipButton key={s} onClick={() => starter(s)}>{s}</ChipButton>)}
-        </div>
-      )}
-    </Sheet>
+    </BottomSheet>
   );
 }

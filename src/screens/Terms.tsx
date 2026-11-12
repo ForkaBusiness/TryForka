@@ -28,13 +28,13 @@ const SECTIONS: Array<[string, string[]]> = [
 
 export function Terms({ onBack }: { onBack: () => void }) {
   return (
-    <div className="min-h-dvh bg-canvas">
+    <div className="min-h-dvh bg-cream">
       <PageContainer title="Terms of use" onBack={onBack} intro="Last updated October 15, 2026">
-        <div className="max-w-[64ch] space-y-8">
+        <div className="space-y-8">
           {SECTIONS.map(([heading, paragraphs]) => (
             <section key={heading}>
-              <h2 className="mb-2 text-lg text-ink">{heading}</h2>
-              {paragraphs.map(p => <p key={p.slice(0, 24)} className="mb-3 text-base text-ink">{p}</p>)}
+              <h2 className="mb-2 text-heading text-ink">{heading}</h2>
+              {paragraphs.map(p => <p key={p.slice(0, 24)} className="mb-3 text-body text-ink">{p}</p>)}
             </section>
           ))}
         </div>
