@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Search, X } from 'lucide-react';
+import { Camera, Search, SearchX, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { availableFilters, browseRecipes, BROWSE_FILTERS, type BrowseFilter, type RecipeCard } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, entryFromCard, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
 import { filterRecipes } from '../lib/recipeFilter';
-import { Button, IconButton, PageContainer, RecipeTile, Skeleton, ToggleChip } from '../components/ds';
+import { Button, Card, EmptyState, IconButton, Input, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, ToggleChip } from '../components/ds';
 
 // Build a meal plan: browse the catalog (already filtered for the household's
 // allergies, diet and skipped ingredients) and add recipes to the week with "+".
@@ -84,62 +84,59 @@ export function BrowseRecipes() {
   };
 
   return (
-    <PageContainer title="Build a meal plan" onBack={() => go({ name: 'mealplan' })} backLabel="Back to meal plan">
+    <PageContainer wide title="Build a meal plan" onBack={() => go({ name: 'mealplan' })} backLabel="Back to meal plan">
       {hint && (
-        <div className="-mt-3 mb-5 flex items-start gap-2 text-base text-ink-muted">
-          <p className="flex-1">
+        <Card className="mb-5 flex items-start gap-2 py-2 pr-2 pl-4">
+          <p className="flex-1 py-2 text-body text-ink-muted">
             Tap + to add recipes to your week, or let{' '}
-            <button type="button" onClick={() => openSuggestions()} className="cursor-pointer font-semibold text-basil hover:underline">Suggestions</button>
+            <button type="button" onClick={() => openSuggestions()} className="cursor-pointer font-semibold text-green hover:underline">Suggestions</button>
             {' '}plan it for you.
           </p>
-          <IconButton icon={X} label="Dismiss tip" size={36} onClick={dismissHint} />
-        </div>
+          <IconButton icon={X} label="Dismiss tip" size="sm" onClick={dismissHint} />
+        </Card>
       )}
 
       <div className="mb-4 flex gap-2">
-        <div className="relative flex-1">
-          <Search size={20} strokeWidth={1.75} aria-hidden className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-muted" />
-          <label htmlFor="recipe-search" className="sr-only">Search recipes</label>
-          <input
-            id="recipe-search"
-            type="search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search recipes"
-            className="h-12 w-full rounded-control border border-line bg-surface pr-4 pl-11 text-base outline-none focus:border-basil focus:ring-2 focus:ring-basil/25"
-          />
-        </div>
-        <IconButton icon={Camera} label="Find meals like a photo" variant="outlined" size={44} className="size-12" onClick={openPhotoSearch} />
+        <Input
+          id="recipe-search"
+          type="search"
+          label="Search recipes"
+          hideLabel
+          className="flex-1"
+          leading={<Search size={20} strokeWidth={1.75} aria-hidden />}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search recipes"
+        />
+        <IconButton icon={Camera} label="Find meals like a photo" variant="outlined" size="lg" onClick={openPhotoSearch} />
       </div>
 
-      <div role="radiogroup" aria-label="Filter recipes" className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
+      <div role="radiogroup" aria-label="Filter recipes" className="no-scrollbar -mx-gutter mb-4 flex gap-2 overflow-x-auto px-gutter pb-1 md:mx-0 md:flex-wrap md:px-0">
         {filters.map(f => <ToggleChip key={f} role="radio" selected={filter === f} onToggle={() => setFilter(f)}>{f}</ToggleChip>)}
       </div>
 
       {prefs.allergies.length === 0 && (
-        <p className="mb-5 text-sm text-ink-muted">
-          <button type="button" onClick={() => go({ name: 'settings' })} className="cursor-pointer font-semibold text-basil hover:underline">Add allergies in Settings</button>
+        <p className="mb-4 text-small text-ink-muted">
+          <button type="button" onClick={() => go({ name: 'settings' })} className="cursor-pointer font-semibold text-green hover:underline">Add allergies in Settings</button>
           {' '}and we'll hide recipes that contain them.
         </p>
       )}
 
-      <p role="status" aria-live="polite" className="mb-3 min-h-5 text-sm text-basil">{status}</p>
-      {error && <p role="alert" className="mb-4 text-sm text-alert">{error}</p>}
+      <p role="status" aria-live="polite" className="mb-3 min-h-5 text-small font-semibold text-green">{status}</p>
+      {error && <p role="alert" className="mb-4 text-small text-terracotta-deep">{error}</p>}
 
       {recipes === null && !error ? (
-        <div aria-hidden className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }, (_, i) => <div key={i}><Skeleton className="aspect-square" /><Skeleton className="mt-2 h-4 w-3/4" /></div>)}
-        </div>
+        <RecipeGridSkeleton count={8} />
       ) : visible && visible.length === 0 && !more ? (
-        <p className="border-y border-line py-8 text-base text-ink-muted">
-          No recipes match{query ? ` "${query}"` : ''}. Try another search or filter.
-        </p>
+        <EmptyState icon={SearchX} title={query ? `No recipes match "${query}"` : 'No recipes match'}>
+          Try another search or filter.
+        </EmptyState>
       ) : visible && (
         <>
-          <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+          <RecipeGrid>
             {visible.map(r => (
               <li key={r.id}>
-                <RecipeTile
+                <RecipeCardView
                   recipe={r}
                   onOpen={() => go({ name: 'recipe', id: r.id })}
                   added={!!weekPlan && !!findInPlan(weekPlan.plan, r.id)}
@@ -149,8 +146,8 @@ export function BrowseRecipes() {
                 />
               </li>
             ))}
-          </ul>
-          {more && <div className="mt-8"><Button variant="secondary" loading={loadingMore} onClick={loadMore}>Show more recipes</Button></div>}
+          </RecipeGrid>
+          {more && <div className="mt-8 flex justify-center"><Button variant="secondary" loading={loadingMore} onClick={loadMore}>Show more recipes</Button></div>}
         </>
       )}
     </PageContainer>
