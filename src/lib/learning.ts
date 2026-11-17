@@ -84,12 +84,17 @@ export async function busyNightSwap(family: Family, saved: SavedWeekPlan, day: D
   if (!current) return null;
   const [pool, list] = await Promise.all([planningPool(family.prefs), groceryListFor(family.userId, saved)]);
   const card = pool.find(r => r.id === current.id) ?? (await lookupCards([current.id])).get(current.id);
-  const options = fasterOptions(card ?? { id: current.id, total_minutes: null }, pool, new Set(planEntries(saved.plan).map(e => e.entry.id)));
+  const taste = await familyTaste(family, pool);
+  // Not what's in the week, and not what the household took out of it this week (a faster
+  // dinner they undid is not offered a second time).
+  const off = new Set([...planEntries(saved.plan).map(e => e.entry.id), ...taste.takenOut]);
+  const options = fasterOptions(card ?? { id: current.id, total_minutes: null }, pool, off);
   if (!options.length) return null;
-  const [details, taste] = await Promise.all([recipeIngredients(options.map(r => r.id)), familyTaste(family, pool)]);
-  const needs = new Map(details.map(d => [d.id, d.ingredients.map(i => itemKey(i.name_us || i.name)).filter(key => key && !isStaple(key))]));
+  const details = await recipeIngredients(options.map(r => r.id));
+  const needs = new Map(details.filter(d => d.ingredients?.length).map(d => [d.id, d.ingredients.map(i => itemKey(i.name_us || i.name)).filter(key => key && !isStaple(key))]));
   const pick = pickBusyNight(
-    options.map(recipe => ({ recipe, needs: needs.get(recipe.id) ?? [], taste: scoreRecipe(recipe, taste).total })),
+    // A recipe whose ingredients aren't known can't be called "nothing to buy": it's left out.
+    options.filter(recipe => needs.has(recipe.id)).map(recipe => ({ recipe, needs: needs.get(recipe.id)!, taste: scoreRecipe(recipe, taste).total })),
     new Set(list.items.map(i => i.key)),
   );
   if (!pick) return null;

@@ -51,8 +51,12 @@ export interface AppState {
   saveWeek: (plan: WeekPlan, fresh: boolean, opts?: { quiet?: boolean }) => Promise<SavedWeekPlan>;
   /** Plans a new week from what the family eats and saves it. Locked days stay. Returns the notice, if any. */
   planNewWeek: () => Promise<string | null>;
-  /** One tap on a busy night: trades that day's dinner for something faster that uses what's on the grocery list. False when nothing faster fits. */
-  swapForBusyNight: (day: Day) => Promise<boolean>;
+  /**
+   * One tap on a busy night: trades that day's dinner for something faster that uses what's
+   * on the grocery list. 'none' when nothing faster fits; 'stale' when the week changed
+   * while it was looking, so nothing was swapped.
+   */
+  swapForBusyNight: (day: Day) => Promise<'swapped' | 'none' | 'stale'>;
   /** Saves an after-dinner check-in, then updates the days still open. True when the plan changed. */
   submitCheckin: (recipeId: number, date: string, answers: CheckinAnswer[]) => Promise<boolean>;
   /** What the recipe filter last changed in the plan, and which slots it left empty. */

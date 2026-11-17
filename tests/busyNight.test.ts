@@ -18,10 +18,17 @@ const untimed = recipe('Mystery bake', null);
 const ALL = [stew, tacos, stirFry, omelette, roast, curry, untimed];
 
 test('faster options are clearly faster mains that are not already in the week, fastest first', () => {
-  assert.deepEqual(fasterOptions(stew, ALL, new Set()).map(r => r.name), ['Veg stir fry', 'Chicken tacos', 'Quick curry']);
-  assert.deepEqual(fasterOptions(stew, ALL, new Set([stirFry.id])).map(r => r.name), ['Chicken tacos', 'Quick curry']);
+  assert.deepEqual(fasterOptions(stew, ALL, new Set()).map(r => r.name), ['Veg stir fry', 'Chicken tacos']);
+  assert.deepEqual(fasterOptions(stew, ALL, new Set([stirFry.id])).map(r => r.name), ['Chicken tacos']);
   assert.deepEqual(fasterOptions(curry, ALL, new Set()).map(r => r.name), ['Veg stir fry', 'Chicken tacos'], 'ten minutes faster or more');
   assert.deepEqual(fasterOptions(stirFry, ALL, new Set()), [], 'nothing is faster than the quickest dinner');
+});
+
+test('when quick dinners exist, only they are considered; otherwise anything clearly faster', () => {
+  const options = fasterOptions(roast, ALL, new Set());
+  assert.ok(options.every(r => r.total_minutes! <= QUICK_MINUTES), 'a 35 minute curry is not offered while 20 and 25 minute dinners exist');
+  const slowOnly = [roast, stew, recipe('Slow braise', 90), curry];
+  assert.deepEqual(fasterOptions(stew, slowOnly, new Set()).map(r => r.name), ['Quick curry', 'Slow braise'], 'nothing under 30 minutes: the faster ones still count');
 });
 
 test('a dinner with no time on it is traded for a quick one', () => {

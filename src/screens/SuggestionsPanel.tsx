@@ -117,11 +117,13 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const inWeek = (id: number) => !!weekPlan && !!findInPlan(weekPlan.plan, id);
   const openRecipe = (id: number) => { onClose(); go({ name: 'recipe', id }); };
 
-  const title = target ? `Swap ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
+  // An open day has nothing to swap: the sheet is for picking.
+  const filled = !!target && !!weekPlan?.plan[target.day][target.slot];
+  const title = target ? `${filled ? 'Swap' : 'Pick'} ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
   const selectedId = target && weekPlan ? weekPlan.plan[target.day][target.slot]?.id : null;
   const carousel = (recipes: RecipeCard[], caption?: (r: RecipeCard) => string | undefined) => (
     <RecipeCarousel key={recipes.map(r => r.id).join()} recipes={recipes} selectedId={selectedId} onSelect={r => void choose(r)}
-      onOpen={r => openRecipe(r.id)} caption={caption} label={`Recipe options for ${title.replace('Swap ', '')}`} />
+      onOpen={r => openRecipe(r.id)} caption={caption} label={`Recipe options for ${title.replace(/^(Swap|Pick) /, '')}`} />
   );
   const bar = (
     <form onSubmit={submit} className="flex gap-2">

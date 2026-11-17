@@ -134,8 +134,9 @@ function SignedIn({ session }: { session: Session }) {
     if (!opts?.quiet) logPlanEvents(userId, planEdits(before?.plan ?? null, plan));
     planRef.current = saved;
     setWeekPlan(saved);
-    // Any edit to the plan means Undo would no longer restore what the household sees.
-    setPlanReview(r => (r.undo ? { ...r, undo: undefined } : r));
+    // An edit by hand makes the last note out of date (it describes a week that's gone), and
+    // any edit means Undo would no longer restore what the household sees.
+    setPlanReview(r => (opts?.quiet ? (r.undo ? { ...r, undo: undefined } : r) : (r.notice || r.undo ? { notice: null, blocked: r.blocked } : r)));
     // Build the grocery list now so it's ready when they open it (the Groceries screen
     // also rebuilds if it finds the list out of date).
     fetchGroceryList(userId).then(prev => rebuildGroceryList(userId, saved, prev)).catch(err => console.error('[groceries] rebuild failed:', err));
@@ -253,16 +254,20 @@ function SignedIn({ session }: { session: Session }) {
     return week.notice;
   }, [family, saveWeek]);
 
-  // A busy night says nothing about taste, so the swap is saved quietly. Undo puts the dinner back.
-  const swapForBusyNight = useCallback(async (day: Day) => {
+  // A busy night says nothing about taste, so the swap is saved quietly. Undo puts the
+  // dinner back, and that does say something: the faster dinner was turned down, so it
+  // isn't offered again this week.
+  const swapForBusyNight = useCallback(async (day: Day): Promise<'swapped' | 'none' | 'stale'> => {
     const current = planRef.current;
-    if (!family || !current) return false;
+    if (!family || !current) return 'none';
     const settings = settingsKey.current;
     const swap = await busyNightSwap(family, current, day);
-    if (!swap || planRef.current !== current || settingsKey.current !== settings) return false;
+    // Worked out from the plan as it was: if it changed meanwhile, this answer is about another week.
+    if (planRef.current !== current || settingsKey.current !== settings) return 'stale';
+    if (!swap) return 'none';
     await saveWeek(swap.plan, false, { quiet: true });
     setPlanReview(r => ({ notice: swap.note, blocked: r.blocked, undo: { plan: current.plan } }));
-    return true;
+    return 'swapped';
   }, [family, saveWeek]);
 
   // The daily update. The check-in itself is saved first and stands on its own: if the

@@ -16,10 +16,13 @@ export const BUSY_SHORTLIST = 40;
  */
 export function fasterOptions<T extends PlannerRecipe>(current: Pick<PlannerRecipe, 'id' | 'total_minutes'> | null, candidates: readonly T[], inPlan: ReadonlySet<number>): T[] {
   const limit = current?.total_minutes ? current.total_minutes - FASTER_BY_MINUTES : QUICK_MINUTES;
-  return candidates
+  const faster = candidates
     .filter(r => r.meal_role === 'main' && r.id !== current?.id && !inPlan.has(r.id) && !!r.total_minutes && r.total_minutes <= limit)
-    .sort((a, b) => a.total_minutes! - b.total_minutes! || a.id - b.id)
-    .slice(0, BUSY_SHORTLIST);
+    .sort((a, b) => a.total_minutes! - b.total_minutes! || a.id - b.id);
+  // A busy night wants a quick dinner, not just a quicker one: when quick ones exist, only
+  // they are considered, so a 50 minute dinner never beats a 15 minute one on shopping alone.
+  const quick = faster.filter(r => r.total_minutes! <= QUICK_MINUTES);
+  return (quick.length ? quick : faster).slice(0, BUSY_SHORTLIST);
 }
 
 export interface BusyOption<T extends PlannerRecipe = PlannerRecipe> {
@@ -55,7 +58,8 @@ export function pickBusyNight<T extends PlannerRecipe>(options: readonly BusyOpt
 /** "Swapped tonight for a faster dinner: Chicken tacos. About 20 min, and 6 of its 8 ingredients are already on your list." */
 export function busyNightNote(dayLabel: string, pick: BusyPick): string {
   const name = pick.recipe.display_name || pick.recipe.name;
-  const minutes = pick.recipe.total_minutes ? `About ${pick.recipe.total_minutes} min` : 'Quicker';
+  const m = pick.recipe.total_minutes;
+  const minutes = m ? (m >= 90 ? `About ${+(m / 60).toFixed(1)} hr` : `About ${m} min`) : 'Quicker';
   const list = !pick.needs ? ''
     : pick.have === pick.needs ? ', and everything it needs is already on your list'
     : pick.have ? `, and ${pick.have} of its ${pick.needs} ingredients are already on your list`
