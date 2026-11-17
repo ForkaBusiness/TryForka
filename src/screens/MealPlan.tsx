@@ -488,7 +488,7 @@ export function MealPlan() {
           </div>
         }
       >
-        <p className="text-body text-ink-muted">You'll get a new week of meals, and the grocery list will be rebuilt. Items you already checked off stay checked if they're still on it. Locked days stay as they are.</p>
+        <p className="text-body text-ink-muted">You'll get a new week of meals, and the grocery list will be rebuilt. Items you already checked off this week stay checked if they're still on it. Locked days stay as they are.</p>
       </BottomSheet>
     </PageContainer>
   );

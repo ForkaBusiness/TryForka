@@ -50,8 +50,13 @@ create index if not exists meal_checkins_user_recipe on public.meal_checkins (us
 
 alter table public.meal_checkins enable row level security;
 drop policy if exists "Users can manage own check-ins" on public.meal_checkins;
+-- A check-in can only name a person in the same family.
 create policy "Users can manage own check-ins" on public.meal_checkins
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for all using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and (member_id is null or exists (select 1 from public.family_members m where m.id = member_id and m.user_id = auth.uid()))
+  );
 
 -- ── Plan events ─────────────────────────────────────────────────────────────
 -- What the household did to its plan by hand: picked a recipe, swapped one out, removed

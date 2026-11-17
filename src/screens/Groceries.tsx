@@ -193,7 +193,7 @@ export function Groceries() {
     await copy();
   };
 
-  if (weekPlan === null || (status === 'ready' && !custom.length && (!list || !recipes.length))) {
+  if (weekPlan === null || (weekPlan !== undefined && status === 'ready' && !custom.length && (!list || !recipes.length))) {
     return (
       <PageContainer title="Grocery list">
         <EmptyState icon={ShoppingBasket} title="No grocery list yet" action={<Button size="lg" icon={CalendarPlus} onClick={() => go({ name: 'mealplan' })}>Plan your week</Button>}>
@@ -231,7 +231,8 @@ export function Groceries() {
 
   return (
     <PageContainer title="Grocery list" actions={actions} intro={count}>
-      {status === 'loading' || status === 'building' ? (
+      {/* The plan is briefly hidden while it's checked against new settings: show the list's shape, not an empty state. */}
+      {weekPlan === undefined || status === 'loading' || status === 'building' ? (
         <div aria-busy aria-label="Loading your list">
           <div className="mb-8 flex gap-3 overflow-hidden">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="aspect-square w-28 shrink-0" />)}</div>
           <Skeleton className="mb-8 h-12 w-full rounded-input" />

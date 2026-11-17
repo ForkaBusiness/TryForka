@@ -211,6 +211,16 @@ export function shoppedRecipeIds(items: readonly Pick<GroceryItem, 'key' | 'stap
   return new Set(items.filter(i => !i.staple && ticked.has(i.key)).flatMap(i => i.recipes ?? []));
 }
 
+/**
+ * Recipes whose day the daily update must leave alone because of the grocery list: any
+ * with an ingredient ticked off, read from the whole list (a recipe taken off the list
+ * keeps its ticks), and any the household took off the list, usually because they already
+ * have what it needs.
+ */
+export function protectedByList(list: { items: readonly Pick<GroceryItem, 'key' | 'staple' | 'recipes'>[]; checked: Iterable<string>; excluded: readonly number[] }): Set<number> {
+  return new Set([...shoppedRecipeIds(list.items, list.checked), ...list.excluded]);
+}
+
 /** Distinct meal titles, for "for 2 meals" and its expanded list. */
 export const uniqueMeals = (item: Pick<GroceryItem, 'meals'>) => [...new Set(item.meals)];
 
@@ -229,4 +239,20 @@ export function listText(items: GroceryItem[], custom: Array<{ key: string; name
   const extra = custom.filter(c => !checked.has(c.key));
   if (extra.length) lines.push('', 'Also', ...extra.map(c => `- ${c.name}`));
   return lines.join('\n');
+}
+
+/** The Monday (local) of the week a moment falls in, as YYYY-MM-DD. */
+function mondayOf(iso: string): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/**
+ * Whether a list is still for the same shop: the same plan, or a plan made again in the
+ * same calendar week (re-planning mid-week after the big shop keeps what's been bought).
+ * A list from before plans were recorded counts as the same shop.
+ */
+export function sameShop(previousPlanCreatedAt: string | null, planCreatedAt: string): boolean {
+  return !previousPlanCreatedAt || mondayOf(previousPlanCreatedAt) === mondayOf(planCreatedAt);
 }

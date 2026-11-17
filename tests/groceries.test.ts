@@ -114,7 +114,7 @@ test('prep words merge into the plain item; canned tomatoes stay separate', () =
 
 // ── Quantity math, unit conversion, and taking recipes off the list ────────
 
-import { recipeItems, shoppedRecipeIds, withoutRecipes } from '../src/lib/groceryMerge.ts';
+import { protectedByList, recipeItems, shoppedRecipeIds, withoutRecipes } from '../src/lib/groceryMerge.ts';
 
 test('volumes in spoons, cups and millilitres add up to one amount', () => {
   const items = combine([
@@ -226,13 +226,17 @@ test('grouped by recipe, each recipe shows its own amounts and what else the ite
   assert.deepEqual(recipeItems(items, 99), []);
 });
 
-test('a recipe taken off the list no longer counts as shopped for', () => {
+test('a day stays protected when its recipe is taken off the list: ticks count from the whole list, and taken-off recipes count too', () => {
   const items = combine([
-    recipe(1, 'Tacos', ing('Onion', '2')),
+    recipe(1, 'Salmon', ing('Salmon', '500g')),
     recipe(2, 'Curry', ing('Onion', '1')),
+    recipe(3, 'Tacos', ing('Tortillas', '8')),
   ], aisle);
-  assert.deepEqual([...shoppedRecipeIds(items, ['onion'])].sort(), [1, 2]);
-  assert.deepEqual([...shoppedRecipeIds(withoutRecipes(items, new Set([1])), ['onion'])], [2]);
+  // Salmon was ticked, then its recipe taken off the list: still protected.
+  assert.deepEqual([...protectedByList({ items, checked: ['salmon'], excluded: [1] })], [1]);
+  // Taken off with nothing ticked (they have it already): protected as well.
+  assert.deepEqual([...protectedByList({ items, checked: [], excluded: [3] })], [3]);
+  assert.deepEqual([...protectedByList({ items, checked: [], excluded: [] })], []);
 });
 
 test('amounts with nothing to add up stay as written, next to the amounts that do', () => {
@@ -278,4 +282,15 @@ test('real catalog cases: cans, kaffir leaves and chopped cloves are not added t
   assert.deepEqual(amountLines(find(items, 'lime'), 'us'), ['1 whole']);
   assert.deepEqual(find(items, 'lime').notes, [{ text: '2 fresh kaffir leaves', recipe: 'Green curry' }]);
   assert.deepEqual(amountLines(find(items, 'garlic'), 'us'), ['9 cloves']);
+});
+
+import { sameShop } from '../src/lib/groceryMerge.ts';
+
+test('re-planning in the same week keeps the shop; a new week starts fresh', () => {
+  // Plans made Monday and Thursday of the same week (local time): same shop, ticks stay.
+  assert.ok(sameShop('2026-11-16T15:00:00', '2026-11-19T20:00:00'));
+  assert.ok(sameShop('2026-11-16T15:00:00', '2026-11-22T21:00:00'), 'through Sunday');
+  // The next Monday: a new shop.
+  assert.ok(!sameShop('2026-11-19T20:00:00', '2026-11-23T08:00:00'));
+  assert.ok(sameShop(null, '2026-11-23T08:00:00'), 'a list from before plans were recorded');
 });

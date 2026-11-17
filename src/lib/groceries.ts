@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { ingredientAisles, recipeIngredients } from './catalog';
 import { planEntries, type SavedWeekPlan } from './plan';
-import { AISLES, combine, LIST_VERSION, type Aisle, type GroceryItem, type MergeIngredient } from './groceryMerge';
+import { AISLES, combine, sameShop, LIST_VERSION, type Aisle, type GroceryItem, type MergeIngredient } from './groceryMerge';
 
 // The household's grocery list (one row per user in grocery_lists), built from the
 // saved week plan. Editing the plan rebuilds the list and keeps ticks for items that
@@ -23,6 +23,7 @@ export interface SavedGroceryList {
 }
 
 const sameInstant = (a: string | null, b: string | null) => !!a && !!b && new Date(a).getTime() === new Date(b).getTime();
+
 
 /** True when the list was built from this version of the plan (and in the current item format). */
 export function listMatchesPlan(list: SavedGroceryList | null, plan: SavedWeekPlan): boolean {
@@ -86,9 +87,9 @@ export async function rebuildGroceryList(userId: string, saved: SavedWeekPlan, p
   const items = await buildItems(saved);
   const keys = new Set([...items.map(i => i.key), ...(previous?.custom ?? []).map(c => c.key)]);
   // A new week is a new shop: last week's ticks and recipes taken off the list don't carry
-  // over. Items added by hand stay, unticked. A list from before this was recorded counts
-  // as the same week.
-  const sameWeek = !previous?.planCreatedAt || sameInstant(previous.planCreatedAt, saved.createdAt);
+  // over, though items added by hand stay. Re-planning within the same week keeps ticks for
+  // items still on the list.
+  const sameWeek = sameShop(previous?.planCreatedAt ?? null, saved.createdAt);
   const checked = sameWeek ? (previous?.checked ?? []).filter(k => keys.has(k)) : [];
   const custom = previous?.custom ?? [];
   const planned = new Set(planEntries(saved.plan).map(e => e.entry.id));

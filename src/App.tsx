@@ -221,8 +221,10 @@ function SignedIn({ session }: { session: Session }) {
       // doesn't make the same swap again. What goes back is checked against today's
       // settings first, like any saved plan.
       const current = planRef.current?.plan ?? null;
+      const settings = settingsKey.current;
       const safe = shownPrefs ? await enforcePlan(undo.plan, shownPrefs) : null;
-      if (!safe) return;
+      // Checked under settings that have changed since: leave it, a fresh check is running.
+      if (!safe || settingsKey.current !== settings) return;
       await saveWeek(markChosen(current, safe.plan), false, { quiet: true });
       if (safe.changed) { setPlanReview({ notice: planNotice(safe.replaced, safe.blocked.length), blocked: safe.blocked }); return; }
       // What the update brought in was turned down: it isn't offered again this week.

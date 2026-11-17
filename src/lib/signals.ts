@@ -50,12 +50,19 @@ export async function answeredDinners(userId: string, dates: string[]): Promise<
 
 /** Saves one dinner's answers, replacing any earlier answers for the same dinner. */
 export async function saveCheckin(userId: string, recipeId: number, date: string, answers: CheckinAnswer[]): Promise<void> {
-  const { error: clearError } = await supabase.from('meal_checkins').delete().eq('user_id', userId).eq('recipe_id', recipeId).eq('eaten_on', date);
-  if (clearError) throw new Error(clearError.message);
-  if (!answers.length) return;
-  const { error } = await supabase.from('meal_checkins')
-    .insert(answers.map(a => ({ user_id: userId, recipe_id: recipeId, member_id: a.memberId, response: a.response, eaten_on: date })));
-  if (error) throw new Error(error.message);
+  const { data: earlier, error: readError } = await supabase.from('meal_checkins').select('id').eq('user_id', userId).eq('recipe_id', recipeId).eq('eaten_on', date);
+  if (readError) throw new Error(readError.message);
+  // The new answers go in first: if that fails, the earlier ones are still there.
+  if (answers.length) {
+    const { error } = await supabase.from('meal_checkins')
+      .insert(answers.map(a => ({ user_id: userId, recipe_id: recipeId, member_id: a.memberId, response: a.response, eaten_on: date })));
+    if (error) throw new Error(error.message);
+  }
+  const old = (earlier ?? []).map(r => r.id as string);
+  if (old.length) {
+    const { error } = await supabase.from('meal_checkins').delete().eq('user_id', userId).in('id', old);
+    if (error) throw new Error(error.message);
+  }
 }
 
 export interface PlanEvent { recipeId: number; kind: Signals['events'][number]['kind']; day?: Day }
