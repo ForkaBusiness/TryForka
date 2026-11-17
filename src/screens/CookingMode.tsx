@@ -4,6 +4,7 @@ import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
+import { HiddenRecipe } from '../components/AllergyReminder';
 import { Button, IconButton, Progress, Skeleton } from '../components/ds';
 
 // A cookbook propped on the counter: one step per screen in type you can read from a few
@@ -35,13 +36,16 @@ function useWakeLock() {
 export function CookingMode({ id }: { id: number }) {
   const { prefs, userId, replace, back } = useApp();
   const [recipe, setRecipe] = useState<Recipe | null | undefined>(undefined);
+  const [blockedBy, setBlockedBy] = useState<string[] | null>(null);
   const [step, setStep] = useState(0);
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useWakeLock();
 
-  useEffect(() => { getRecipe(id).then(setRecipe).catch(() => setRecipe(null)); }, [id]);
+  useEffect(() => {
+    getRecipe(id, prefs).then(r => { setBlockedBy(r?.blockedBy ?? null); setRecipe(r?.recipe ?? null); }).catch(() => setRecipe(null));
+  }, [id, prefs]);
 
   const total = recipe?.steps.length ?? 0;
   const last = step >= total - 1;
@@ -74,6 +78,7 @@ export function CookingMode({ id }: { id: number }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [next, prev, finished]);
 
+  if (blockedBy) return <HiddenRecipe blockedBy={blockedBy} onBack={back} />;
   if (recipe === undefined) {
     return (
       <div aria-busy aria-label="Loading recipe" className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-12">

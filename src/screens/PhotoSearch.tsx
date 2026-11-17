@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { ImagePlus, RefreshCcw } from 'lucide-react';
+import { AllergyReminder } from '../components/AllergyReminder';
 import { useApp } from '../app/AppContext';
 import { checkFile, findSimilar, PhotoError, preparePhoto } from '../lib/photo';
 import { DAY_LONG, emptyPlan, entryFromCard, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
@@ -159,6 +160,7 @@ export function PhotoSearch({ open, onClose }: { open: boolean; onClose: () => v
         <section aria-labelledby="photo-results" className="mt-4">
           <h3 id="photo-results" className="text-heading text-ink">Like your {result.dish.charAt(0).toLowerCase() + result.dish.slice(1)}</h3>
           <button type="button" onClick={editAgain} className="mt-1 cursor-pointer text-small font-semibold text-green hover:underline">Not quite? Edit and try again</button>
+          <AllergyReminder className="mt-3" />
           {result.recipes.length === 0 ? (
             <p className="mt-4 text-body text-ink-muted">Nothing in your recipes is close to that yet. Try a different photo or description.</p>
           ) : (

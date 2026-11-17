@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, Search, SearchX, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { availableFilters, browseRecipes, BROWSE_FILTERS, type BrowseFilter, type RecipeCard } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, entryFromCard, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
-import { filterRecipes } from '../lib/recipeFilter';
+import { AllergyReminder } from '../components/AllergyReminder';
 import { Button, Card, EmptyState, IconButton, Input, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, ToggleChip } from '../components/ds';
 
 // Build a meal plan: browse the catalog (already filtered for the household's
@@ -25,8 +25,10 @@ export function BrowseRecipes() {
   const [status, setStatus] = useState<string | null>(null);
   const [hint, setHint] = useState(() => { try { return localStorage.getItem(HINT_KEY) !== '1'; } catch { return true; } });
   const request = useRef(0);
-  // `recipes` keeps the raw pages so "Show more" counts from the right place.
-  const visible = useMemo(() => recipes && filterRecipes(recipes, prefs), [recipes, prefs]);
+  // How far into the catalog we've read. Pages come back already filtered for the family,
+  // so "Show more" counts from here, not from how many recipes are on screen.
+  const fetched = useRef(0);
+  const visible = recipes;
 
   useEffect(() => { availableFilters().then(setFilters).catch(() => {}); }, [prefs]);
 
@@ -40,8 +42,8 @@ export function BrowseRecipes() {
     const req = ++request.current;
     setRecipes(null);
     setError(null);
-    browseRecipes({ filter, search: query, limit: PAGE })
-      .then(rows => { if (req === request.current) { setRecipes(rows); setMore(rows.length === PAGE); } })
+    browseRecipes({ filter, search: query, limit: PAGE }, prefs)
+      .then(page => { if (req === request.current) { setRecipes(page.recipes); fetched.current = page.fetched; setMore(page.fetched === PAGE); } })
       .catch(() => { if (req === request.current) setError("Couldn't load recipes. Check your connection and try again."); });
   }, [filter, query, prefs]);
 
@@ -49,9 +51,10 @@ export function BrowseRecipes() {
     if (!recipes) return;
     setLoadingMore(true);
     try {
-      const rows = await browseRecipes({ filter, search: query, limit: PAGE, offset: recipes.length });
-      setRecipes([...recipes, ...rows]);
-      setMore(rows.length === PAGE);
+      const page = await browseRecipes({ filter, search: query, limit: PAGE, offset: fetched.current }, prefs);
+      setRecipes([...recipes, ...page.recipes]);
+      fetched.current += page.fetched;
+      setMore(page.fetched === PAGE);
     } catch {
       setError("Couldn't load more recipes. Try again.");
     } finally {
@@ -115,6 +118,7 @@ export function BrowseRecipes() {
         {filters.map(f => <ToggleChip key={f} role="radio" selected={filter === f} onToggle={() => setFilter(f)}>{f}</ToggleChip>)}
       </div>
 
+      <AllergyReminder className="mb-4" />
       {prefs.allergies.length === 0 && (
         <p className="mb-4 text-small text-ink-muted">
           <button type="button" onClick={() => go({ name: 'settings' })} className="cursor-pointer font-semibold text-green hover:underline">Add allergies in Settings</button>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Star } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { supabase } from '../lib/supabase';
-import { getCards, recipeTitle } from '../lib/catalog';
+import { recipeTitle, safeCardMap } from '../lib/catalog';
 import { Button, Card, cx, PageContainer, Textarea } from '../components/ds';
 
 // Rate this recipe: five stars (empty until chosen) and an optional comment.
@@ -10,7 +10,7 @@ import { Button, Card, cx, PageContainer, Textarea } from '../components/ds';
 const LABELS = ['', 'Not for us', 'It was OK', 'Good', 'Really good', 'A favorite'];
 
 export function RateRecipe({ id }: { id: number }) {
-  const { userId, back } = useApp();
+  const { userId, back, prefs } = useApp();
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [title, setTitle] = useState('');
@@ -19,10 +19,10 @@ export function RateRecipe({ id }: { id: number }) {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    getCards([id]).then(m => { const c = m.get(id); if (c) setTitle(recipeTitle(c)); }).catch(() => {});
+    safeCardMap([id], prefs).then(m => { const c = m.get(id); if (c) setTitle(recipeTitle(c)); }).catch(() => {});
     supabase.from('recipe_ratings').select('rating, comment').eq('user_id', userId).eq('recipe_id', id).maybeSingle()
       .then(({ data }) => { if (data) { setRating(data.rating as number); setComment((data.comment as string) ?? ''); } });
-  }, [id, userId]);
+  }, [id, userId, prefs]);
 
   const save = async () => {
     if (!rating) { setError('Choose a star rating first.'); return; }

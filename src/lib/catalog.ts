@@ -3,13 +3,16 @@ import type { RecipeIngredient, RecipeStep } from '../../supabase/functions/_sha
 import type { StepTimer } from '../../supabase/functions/_shared/catalog/steps.ts';
 import type { Allergen, Diet } from '../../supabase/functions/_shared/catalog/allergens.ts';
 import { buildIngredientIndex, type IngredientOption } from './ingredientSearch';
-import { filterRecipes, recipeChecker, type FoodPrefs } from './recipeFilter';
+import { recipeChecker, type FoodPrefs } from './recipeFilter';
+import { recipeGate, type Opened } from './recipeGate';
+import { BROWSE_FILTERS, CARD_COLUMNS, countByFilter, ingredientsOf, supabaseRecipes, type BrowseFilter } from './recipeSource';
 
 // The recipe catalog in Supabase (synced from TheMealDB by the sync-recipes function).
-// Lists always go through safe_recipes(), which applies the signed-in user's allergies,
-// diet and skipped ingredients in SQL. Single recipes are read from the table directly so
-// a saved recipe still opens (with its allergens flagged) after the user's settings change.
-// safe_recipes() is the coarse first pass; screens then run lists through the recipe filter.
+// Every function here that hands recipes to a screen goes through the gate
+// (recipeGate.ts): the SQL filter narrows the list first, then the recipe filter runs on
+// what comes back with the family's settings, each person's allergies included. That
+// holds for lists, for Suggestions and photo results, and for a single recipe opened by
+// id, which comes back as "blocked" instead of the recipe when the family can't eat it.
 
 export type { RecipeIngredient, RecipeStep, StepTimer };
 export type MealRole = 'breakfast' | 'main' | 'side' | 'dessert' | 'condiment' | 'drink';
@@ -37,8 +40,7 @@ export interface Recipe extends RecipeCard {
   youtube_url: string | null;
 }
 
-export const CARD_COLUMNS = 'id, name, display_name, subtitle, category, area, thumb_url, total_minutes, meal_role, allergens, diets, ingredient_names';
-const RECIPE_COLUMNS = `${CARD_COLUMNS}, steps, ingredients, tags, source_url, youtube_url`;
+export { BROWSE_FILTERS, CARD_COLUMNS, type BrowseFilter };
 
 export const recipeTitle = (r: Pick<RecipeCard, 'name' | 'display_name'>) => r.display_name || r.name;
 
@@ -57,91 +59,65 @@ export function recipeMeta(r: Pick<RecipeCard, 'area' | 'diets' | 'category'>): 
 
 export const minutesLabel = (m: number | null | undefined) => (m ? (m >= 90 ? `About ${+(m / 60).toFixed(1)} hr` : `About ${m} min`) : '');
 
-// ── Browse filters ─────────────────────────────────────────────────────────
+// ── Recipes for the screen: all through the gate ───────────────────────────
 
-export const BROWSE_FILTERS = ['All', 'Vegetarian', 'Vegan', 'Chicken', 'Beef', 'Seafood', 'Pasta', 'Breakfast'] as const;
-export type BrowseFilter = typeof BROWSE_FILTERS[number];
+const gate = recipeGate<RecipeCard, Recipe>(supabaseRecipes);
 
-const PASTA_NAMES = ['pasta', 'spaghetti', 'lasagn', 'penne', 'linguine', 'fettuccine', 'tagliatelle', 'macaroni', 'ravioli', 'gnocchi', 'rigatoni', 'carbonara', 'orzo'];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- PostgREST builder types differ between rpc() and from()
-type Query = any;
-
-function applyFilter(q: Query, filter: BrowseFilter): Query {
-  switch (filter) {
-    case 'Breakfast': return q.eq('meal_role', 'breakfast');
-    case 'Vegetarian': return q.eq('meal_role', 'main').contains('diets', ['vegetarian']);
-    case 'Vegan': return q.eq('meal_role', 'main').contains('diets', ['vegan']);
-    case 'Chicken': case 'Beef': case 'Seafood': return q.eq('meal_role', 'main').eq('category', filter);
-    case 'Pasta': return q.eq('meal_role', 'main').or(['category.eq.Pasta', ...PASTA_NAMES.map(p => `name.ilike.*${p}*`)].join(','));
-    default: return q.in('meal_role', ['main', 'breakfast']);
-  }
-}
-
-const cleanSearch = (s: string) => s.replace(/[,()*%\\]/g, ' ').replace(/\s+/g, ' ').trim();
-
-export async function browseRecipes(opts: { filter: BrowseFilter; search?: string; limit?: number; offset?: number }): Promise<RecipeCard[]> {
-  let q = applyFilter(supabase.rpc('safe_recipes').select(CARD_COLUMNS), opts.filter);
-  const term = cleanSearch(opts.search ?? '');
-  if (term) {
-    q = q.or(['display_name', 'name', 'area', 'category', 'subtitle'].map(c => `${c}.ilike.*${term}*`).join(','));
-  }
-  const limit = opts.limit ?? 48;
-  const offset = opts.offset ?? 0;
-  const { data, error } = await q.order('display_name', { ascending: true }).range(offset, offset + limit - 1);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as RecipeCard[];
+/** A page of the catalog the family may eat. `fetched` is the page's size before the filter: page on by that. */
+export function browseRecipes(opts: { filter: BrowseFilter; search?: string; limit?: number; offset?: number }, prefs: FoodPrefs): Promise<{ recipes: RecipeCard[]; fetched: number }> {
+  return gate.browse({ filter: opts.filter, search: opts.search ?? '', limit: opts.limit ?? 48, offset: opts.offset ?? 0 }, prefs);
 }
 
 /** Which browse filters have any recipes for this user (e.g. no Chicken for vegetarians). */
 export async function availableFilters(): Promise<BrowseFilter[]> {
-  const counts = await Promise.all(BROWSE_FILTERS.map(async f => {
-    const { count } = await applyFilter(supabase.rpc('safe_recipes', {}, { head: true, count: 'exact' }), f);
-    return [f, count ?? 0] as const;
-  }));
+  const counts = await Promise.all(BROWSE_FILTERS.map(async f => [f, await countByFilter(f)] as const));
   return counts.filter(([f, n]) => f === 'All' || n > 0).map(([f]) => f);
 }
 
-export async function getRecipe(id: number): Promise<Recipe | null> {
-  const { data, error } = await supabase.from('recipes').select(RECIPE_COLUMNS).eq('id', id).maybeSingle();
-  if (error) throw new Error(error.message);
-  return data as Recipe | null;
+/** One recipe to open, or why the family can't have it. Null when it doesn't exist. */
+export const getRecipe = (id: number, prefs: FoodPrefs): Promise<Opened<Recipe> | null> => gate.open(id, prefs);
+
+/** These recipes in the order given, without the ones the family can't eat. For favorites, collections, and results from the Edge Functions. */
+export const safeCards = (ids: readonly number[], prefs: FoodPrefs): Promise<RecipeCard[]> => gate.cards(ids, prefs);
+
+/** The same, by id. A recipe the family can't eat is simply not in the map. */
+export async function safeCardMap(ids: readonly number[], prefs: FoodPrefs): Promise<Map<number, RecipeCard>> {
+  return new Map((await gate.cards(ids, prefs)).map(r => [r.id, r]));
 }
 
-/** Cards for these ids, in no particular order (not filtered: used for saved plans and favorites). */
-export async function getCards(ids: number[]): Promise<Map<number, RecipeCard>> {
-  const unique = [...new Set(ids)].filter(Boolean);
-  if (!unique.length) return new Map();
-  const { data, error } = await supabase.from('recipes').select(CARD_COLUMNS).in('id', unique);
-  if (error) throw new Error(error.message);
-  return new Map(((data ?? []) as RecipeCard[]).map(r => [r.id, r]));
-}
-
-/** Re-checks recipes an Edge Function returned, against the catalog itself. Keeps the order, "avoid" items last. */
-export async function recheckRecipes(ids: number[], prefs: FoodPrefs): Promise<RecipeCard[]> {
-  const cards = await getCards(ids);
-  return filterRecipes(ids.flatMap(id => cards.get(id) ?? []), prefs);
-}
+/** Every main and breakfast the family may eat: what the planner chooses from. */
+export const planningPool = (prefs: FoodPrefs): Promise<RecipeCard[]> => gate.pool(['main', 'breakfast'], prefs);
 
 /** Safe alternatives for a slot: same role, same category or cuisine first, "avoid" items last. */
 export async function similarRecipes(base: RecipeCard | null, role: 'breakfast' | 'main', exclude: number[], prefs: FoodPrefs, count = 8): Promise<RecipeCard[]> {
-  const { data, error } = await supabase.rpc('safe_recipes').select(CARD_COLUMNS).eq('meal_role', role).limit(400);
-  if (error) throw new Error(error.message);
   const skip = new Set(exclude);
   const check = recipeChecker(prefs);
-  const pool = filterRecipes((data ?? []) as RecipeCard[], prefs).filter(r => !skip.has(r.id));
+  const pool = (await gate.pool([role], prefs)).filter(r => !skip.has(r.id));
   const score = (r: RecipeCard) => (base && r.category === base.category ? 2 : 0) + (base && r.area === base.area ? 1 : 0) + Math.random() - (check(r).avoids.length ? 10 : 0);
   return pool.sort((a, b) => score(b) - score(a)).slice(0, count);
 }
 
-/** Three dinner photos for the signed-out preview panel; the same ones all day. */
-export async function previewRecipes(): Promise<RecipeCard[]> {
-  const { data } = await supabase.from('recipes').select(CARD_COLUMNS).eq('meal_role', 'main').not('thumb_url', 'is', null).order('id').limit(120);
-  const rows = (data ?? []) as RecipeCard[];
+const NO_SETTINGS: FoodPrefs = { allergies: [], skip_ingredients: [] };
+
+/** Three dinner photos for the welcome panel's example week; the same ones all day. */
+export async function previewRecipes(prefs: FoodPrefs = NO_SETTINGS): Promise<RecipeCard[]> {
+  const rows = await gate.sample(120, prefs).catch(() => [] as RecipeCard[]);
   if (rows.length < 3) return rows;
   const day = Math.floor(Date.now() / 86_400_000);
   return [0, 1, 2].map(i => rows[(day * 7 + i * 37) % rows.length]);
 }
+
+// ── Not for the screen ─────────────────────────────────────────────────────
+
+/**
+ * Recipes by id, NOT filtered. For code that judges recipes the family already holds
+ * (checking a saved plan, reading the family's history) and never shows them as they are.
+ * Screens and components must not import this; tests/allergyPaths.test.ts enforces it.
+ */
+export const lookupCards = (ids: readonly number[]): Promise<Map<number, RecipeCard>> => gate.lookup(ids);
+
+/** The ingredient lists of planned recipes, for building the grocery list. */
+export const recipeIngredients = ingredientsOf;
 
 /** Grocery aisle per lowercased ingredient name. */
 export async function ingredientAisles(names: string[]): Promise<Map<string, string>> {

@@ -2,14 +2,14 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { supabase } from '../lib/supabase';
-import { getCards, recipeTitle } from '../lib/catalog';
+import { recipeTitle, safeCardMap } from '../lib/catalog';
 import { Button, Card, Checkbox, Input, ListSkeleton, PageContainer } from '../components/ds';
 import { fetchCollections, recipeCount, type CollectionRow } from '../lib/collections';
 
 // Add a recipe to collections: tick the ones it belongs in, create new ones, Save.
 
 export function Collections({ id }: { id: number }) {
-  const { userId, back } = useApp();
+  const { userId, back, prefs } = useApp();
   const [collections, setCollections] = useState<CollectionRow[] | null>(null);
   const [initial, setInitial] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -20,7 +20,7 @@ export function Collections({ id }: { id: number }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getCards([id]).then(m => { const c = m.get(id); if (c) setTitle(recipeTitle(c)); }).catch(() => {});
+    safeCardMap([id], prefs).then(m => { const c = m.get(id); if (c) setTitle(recipeTitle(c)); }).catch(() => {});
     Promise.all([
       fetchCollections(userId),
       supabase.from('collection_recipes').select('collection_id').eq('recipe_id', id),
@@ -30,7 +30,7 @@ export function Collections({ id }: { id: number }) {
       setInitial(inThese);
       setSelected(new Set(inThese));
     }).catch(() => setError("Couldn't load your collections. Check your connection."));
-  }, [id, userId]);
+  }, [id, userId, prefs]);
 
   const create = async (e: FormEvent) => {
     e.preventDefault();

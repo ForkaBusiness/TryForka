@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, FolderHeart, Heart } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { supabase } from '../lib/supabase';
-import { getCards, type RecipeCard } from '../lib/catalog';
+import { safeCards, type RecipeCard } from '../lib/catalog';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { Button, EmptyState, ListGroup, ListRow, ListSkeleton, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, Segmented } from '../components/ds';
 import { fetchCollections, recipeCount, type CollectionRow } from '../lib/collections';
 
@@ -11,20 +12,28 @@ import { fetchCollections, recipeCount, type CollectionRow } from '../lib/collec
 type Tab = 'favorites' | 'collections';
 
 function TileGrid({ ids, emptyText }: { ids: number[]; emptyText: React.ReactNode }) {
-  const { go, favorites, toggleFavorite } = useApp();
-  const [cards, setCards] = useState<Map<number, RecipeCard> | null>(null);
+  const { go, favorites, toggleFavorite, prefs } = useApp();
+  const [cards, setCards] = useState<RecipeCard[] | null>(null);
   const key = ids.join(',');
   useEffect(() => {
     let cancelled = false;
-    getCards(ids).then(m => { if (!cancelled) setCards(m); }).catch(() => { if (!cancelled) setCards(new Map()); });
+    // Saved recipes the family can no longer eat stay saved, but aren't shown.
+    safeCards(ids, prefs).then(list => { if (!cancelled) setCards(list); }).catch(() => { if (!cancelled) setCards([]); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ids are keyed by `key`
-  }, [key]);
+  }, [key, prefs]);
   if (!ids.length) return <>{emptyText}</>;
   if (!cards) return <RecipeGridSkeleton count={Math.min(ids.length, 8)} />;
+  const hidden = ids.length - cards.length;
   return (
+    <>
+    {hidden > 0 && (
+      <p className="mb-4 text-small text-ink-muted">
+        {hidden === 1 ? '1 saved recipe is hidden' : `${hidden} saved recipes are hidden`} because {hidden === 1 ? "it doesn't" : "they don't"} fit your household's settings. {CHECK_INGREDIENTS}
+      </p>
+    )}
     <RecipeGrid>
-      {ids.map(id => cards.get(id)).filter((c): c is RecipeCard => !!c).map(r => (
+      {cards.map(r => (
         <li key={r.id}>
           <RecipeCardView
             recipe={r}
@@ -35,6 +44,7 @@ function TileGrid({ ids, emptyText }: { ids: number[]; emptyText: React.ReactNod
         </li>
       ))}
     </RecipeGrid>
+    </>
   );
 }
 

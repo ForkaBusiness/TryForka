@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { ingredientAisles } from './catalog';
+import { ingredientAisles, recipeIngredients } from './catalog';
 import { planEntries, type SavedWeekPlan } from './plan';
 import { AISLES, combine, LIST_VERSION, type Aisle, type GroceryItem, type MergeIngredient } from './groceryMerge';
 
@@ -44,12 +44,10 @@ export async function buildItems(saved: SavedWeekPlan): Promise<GroceryItem[]> {
   const entries = planEntries(saved.plan);
   const ids = [...new Set(entries.map(e => e.entry.id))];
   if (!ids.length) return [];
-  const { data, error } = await supabase.from('recipes').select('id, name, display_name, ingredients').in('id', ids);
-  if (error) throw new Error(error.message);
-  const byId = new Map((data ?? []).map(r => [r.id as number, r]));
+  const byId = new Map((await recipeIngredients(ids)).map(r => [r.id, r]));
   const recipes = entries.flatMap(({ entry }) => {
     const r = byId.get(entry.id);
-    return r ? [{ id: entry.id, title: (r.display_name as string) || (r.name as string), ingredients: r.ingredients as MergeIngredient[] }] : [];
+    return r ? [{ id: entry.id, title: r.display_name || r.name, ingredients: r.ingredients }] : [];
   });
   const aisles = await ingredientAisles(recipes.flatMap(r => r.ingredients.map(i => i.name)));
   return combine(recipes, name => {

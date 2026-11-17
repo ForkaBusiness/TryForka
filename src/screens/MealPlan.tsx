@@ -1,22 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftRight, BookOpen, CalendarDays, CalendarPlus, ChefHat, Clock, Lightbulb, UtensilsCrossed } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { getCards, minutesLabel, photo, recipeTitle, type RecipeCard } from '../lib/catalog';
-import { DAYS, DAY_LONG, DAY_SHORT, generateWeekPlan, planEntries, slotKey, SLOT_LABEL, todayKey, type Day, type PlanEntry, type Slot } from '../lib/plan';
+import { minutesLabel, photo, recipeTitle, safeCardMap, type RecipeCard } from '../lib/catalog';
+import type { Preferences } from '../lib/preferences';
+import { DAYS, DAY_LONG, DAY_SHORT, planEntries, slotKey, SLOT_LABEL, todayKey, type Day, type PlanEntry, type Slot } from '../lib/plan';
+import { CheckIn } from '../components/CheckIn';
 import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
 
 // Home: answers "what's for dinner tonight" first. The selected day's dinner as the one
 // bold card, the week as a strip of day cards under it, then breakfast/lunch and the rest
 // of the week.
 
-function useCards(entries: PlanEntry[]): Map<number, RecipeCard> {
+function useCards(entries: PlanEntry[], prefs: Preferences): Map<number, RecipeCard> {
   const [cards, setCards] = useState<Map<number, RecipeCard>>(new Map());
   const ids = entries.map(e => e.id).sort().join(',');
   useEffect(() => {
     let cancelled = false;
-    getCards(ids ? ids.split(',').map(Number) : []).then(m => { if (!cancelled) setCards(m); }).catch(() => {});
+    safeCardMap(ids ? ids.split(',').map(Number) : [], prefs).then(m => { if (!cancelled) setCards(m); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [ids]);
+  }, [ids, prefs]);
   return cards;
 }
 
@@ -108,7 +110,7 @@ function dayLine(day: Day, minutes?: number | null) {
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, planReview, setPlanReview, undoPlanReview, go, openSuggestions } = useApp();
+  const { weekPlan, prefs, planNewWeek, planReview, undoPlanReview, go, openSuggestions } = useApp();
   const today = todayKey();
   const [day, setDay] = useState<Day>(today);
   const [planning, setPlanning] = useState(false);
@@ -116,16 +118,14 @@ export function MealPlan() {
   const [error, setError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
   const entries = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
-  const cards = useCards(entries);
+  const cards = useCards(entries, prefs);
 
   const planWeek = async () => {
     setConfirmReplace(false);
     setError(null);
     setPlanning(true);
     try {
-      const week = await generateWeekPlan(prefs);
-      await saveWeek(week.plan, true);
-      setPlanReview({ notice: week.notice, blocked: week.blocked });
+      await planNewWeek();
       setDay(today);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't plan your week. Try again.");
@@ -181,7 +181,7 @@ export function MealPlan() {
             </div>
           }
         >
-          {planning ? 'Picking dinners that fit your household. This takes a few seconds.' : "We'll pick a week of dinners that fit your household, and make the grocery list."}
+          {planning ? 'Picking dinners that fit your household.' : "We'll pick a week of dinners that fit your household, and make the grocery list."}
         </EmptyState>
         {error && <p role="alert" className="mt-4 text-small text-terracotta-deep">{error}</p>}
         {notice && <div className="mt-4">{notice}</div>}
@@ -205,6 +205,7 @@ export function MealPlan() {
     <PageContainer title={headline} intro={dayLine(day, dinnerCard?.total_minutes)}>
       {error && <p role="alert" className="mb-4 text-small text-terracotta-deep">{error}</p>}
       {notice && <div className="mb-4">{notice}</div>}
+      <CheckIn />
 
       <DinnerHero
         day={day}

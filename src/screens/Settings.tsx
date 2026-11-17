@@ -5,9 +5,10 @@ import { signOutToWebsite, supabase } from '../lib/supabase';
 import { saveProfile, type Preferences, type Profile } from '../lib/preferences';
 import { callFunction } from '../lib/plan';
 import { AllergyPicker, DietPicker, PlanningPicker, SkipList } from '../components/PrefControls';
+import { FamilySettings } from '../components/FamilySettings';
 import { BottomSheet, Button, Card, Input, ListGroup, ListRow, PageContainer, SaveStatus, Segmented, Stepper } from '../components/ds';
 
-// One scrolling page of grouped cards: Household, Allergies, Diet, Ingredients we skip,
+// One scrolling page of grouped cards: Household, Family, Allergies, Diet, Ingredients we skip,
 // Planning, Units, Account, About. Every change saves on its own with a quiet "Saved".
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -32,7 +33,8 @@ function Avatar({ url, name }: { url?: string; name: string }) {
 }
 
 export function Settings() {
-  const { session, userId, prefs, updatePrefs, profile, setProfile, go } = useApp();
+  // The saved household settings: each person's own allergies are edited under Family.
+  const { session, userId, householdPrefs: prefs, updatePrefs, profile, setProfile, go, familyAvailable } = useApp();
   const [state, setState] = useState<SaveState>('idle');
   const [draft, setDraft] = useState<Profile>(profile);
   const [avatar, setAvatar] = useState<string | undefined>(session.user.user_metadata?.avatar_url);
@@ -101,7 +103,13 @@ export function Settings() {
         </div>
       </Section>
 
-      <Section id="allergies" title="Allergies" intro="Recipes with these are never shown, anywhere in the app.">
+      {familyAvailable && (
+        <Section id="family" title="Family" intro="Add each person and the plan learns what they eat. After dinner we ask who ate it.">
+          <FamilySettings />
+        </Section>
+      )}
+
+      <Section id="allergies" title="Household allergies" intro={`Recipes with these are never shown, anywhere in the app.${familyAvailable ? " Each person's own allergies are under Family." : ''}`}>
         <AllergyPicker value={prefs.allergies} onChange={allergies => savePrefs({ allergies })} />
       </Section>
 

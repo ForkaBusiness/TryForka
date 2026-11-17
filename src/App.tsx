@@ -4,6 +4,10 @@ import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSI
 import { useMediaQuery } from './lib/useMediaQuery';
 import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, foodSettings, savePreferences, type FoodSettings, type Preferences, type Profile } from './lib/preferences';
 import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
+import { fetchMembers, removeMember, saveMember, withFamilyAllergies, type FamilyMember, type MemberDraft } from './lib/family';
+import { generateWeekPlan, updateAfterCheckin, type Family } from './lib/learning';
+import { markChosen, planEdits } from './lib/planner';
+import { logPlanEvents, saveCheckin, type CheckinAnswer } from './lib/signals';
 import { fetchGroceryList, rebuildGroceryList } from './lib/groceries';
 import { AppContext, type AppState, type FavoriteEntry, type Screen, type SuggestionsTarget } from './app/AppContext';
 import { AppFrame } from './components/Shell';
@@ -33,6 +37,9 @@ const TABS: NavId[] = ['mealplan', 'groceries', 'favorites', 'settings'];
 /** Screens with a sticky bottom action bar: it takes the tab bar's place, and the timer tray sits above it. */
 const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking'];
 
+const allergiesByMember = (members: FamilyMember[]): Record<string, string[]> => Object.fromEntries(members.map(m => [m.id, m.allergies]));
+const sameIds = (a: Record<string, unknown>, b: Record<string, unknown>) => Object.keys(a).sort().join() === Object.keys(b).sort().join();
+
 /** Blank while the session check runs or while leaving for the website's log-in page. */
 function Blank() {
   return <div className="h-dvh bg-cream" aria-busy="true" />;
@@ -57,6 +64,8 @@ function SignedIn({ session }: { session: Session }) {
   const userId = session.user.id;
   const isPhone = useMediaQuery('(max-width: 767px)');
   const [prefs, setPrefs] = useState<Preferences | null | undefined>(undefined);
+  const [members, setMembers] = useState<FamilyMember[] | undefined>(undefined);
+  const [familyAvailable, setFamilyAvailable] = useState(false);
   const [profile, setProfile] = useState<Profile>({ full_name: '', household_name: '', household_size: 1 });
   const [weekPlan, setWeekPlan] = useState<SavedWeekPlan | null | undefined>(undefined);
   const [planChecked, setPlanChecked] = useState(false);
@@ -70,13 +79,15 @@ function SignedIn({ session }: { session: Session }) {
   const planRef = useRef<SavedWeekPlan | null | undefined>(undefined);
   planRef.current = weekPlan;
   /** The settings the plan last passed; null until the first check. */
-  const checkedFood = useRef<FoodSettings | null>(null);
+  const checkedSettings = useRef<{ food: FoodSettings; memberAllergies: Record<string, string[]> } | null>(null);
   const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
 
   useEffect(() => {
     let cancelled = false;
     setLoadError(false);
     fetchPreferences(userId).then(p => { if (!cancelled) setPrefs(p); }).catch(() => { if (!cancelled) { setPrefs(null); setLoadError(true); } });
+    // A family that can't be read is a load error: its allergies must not drop out of the filter.
+    fetchMembers(userId).then(f => { if (!cancelled) { setMembers(f.members); setFamilyAvailable(f.available); } }).catch(() => { if (!cancelled) { setMembers([]); setLoadError(true); } });
     fetchProfile(userId).then(p => { if (!cancelled) setProfile({ ...p, full_name: p.full_name || metaName }); }).catch(() => {});
     fetchWeekPlan(userId).then(p => { if (!cancelled) setWeekPlan(p); }).catch(() => { if (!cancelled) setWeekPlan(null); });
     supabase.from('favorites').select('recipe_id, recipe_title, recipe_image').eq('user_id', userId).order('created_at', { ascending: false })
@@ -104,8 +115,14 @@ function SignedIn({ session }: { session: Session }) {
     await savePreferences(userId, updates);
   }, [userId]);
 
-  const saveWeek = useCallback(async (plan: WeekPlan, fresh: boolean) => {
-    const saved = await saveWeekPlan(userId, plan, planRef.current ?? null, fresh);
+  // Everything that filters recipes reads these: the household's settings plus each person's allergies.
+  const shownPrefs = useMemo(() => (prefs && members ? withFamilyAllergies(prefs, members) : null), [prefs, members]);
+
+  const saveWeek = useCallback(async (plan: WeekPlan, fresh: boolean, opts?: { quiet?: boolean }) => {
+    const before = planRef.current ?? null;
+    // What the household puts in the plan by hand is theirs: the daily update won't move it.
+    const saved = await saveWeekPlan(userId, opts?.quiet ? plan : markChosen(before?.plan ?? null, plan), before, fresh);
+    if (!opts?.quiet) logPlanEvents(userId, planEdits(before?.plan ?? null, plan));
     planRef.current = saved;
     setWeekPlan(saved);
     // Any edit to the plan means Undo would no longer restore what the household sees.
@@ -120,49 +137,118 @@ function SignedIn({ session }: { session: Session }) {
   // it again when it loads (before it's shown) and whenever the settings change. The short
   // wait after a change means a mis-tapped allergy doesn't cost the household a planned meal.
   const planLoaded = weekPlan !== undefined;
-  const foodKey = prefs ? JSON.stringify(foodSettings(prefs)) : null;
+  const foodKey = prefs && members ? JSON.stringify([foodSettings(prefs), allergiesByMember(members)]) : null;
   useEffect(() => {
-    if (!prefs || !planLoaded) return;
-    const food = foodSettings(prefs);
-    const before = checkedFood.current;
+    if (!prefs || !members || !shownPrefs || !planLoaded) return;
+    const settings = { food: foodSettings(prefs), memberAllergies: allergiesByMember(members) };
+    const before = checkedSettings.current;
     let cancelled = false;
+    // From the moment the settings change until the plan has passed them again, no screen
+    // gets the plan: a dinner with a new allergen in it is never shown, not even briefly.
+    const firstCheck = before === null;
+    setPlanChecked(false);
     const id = window.setTimeout(() => {
       const current = planRef.current;
-      if (!current) { checkedFood.current = food; setPlanChecked(true); return; }
-      enforcePlan(current.plan, prefs)
+      if (!current) { checkedSettings.current = settings; setPlanChecked(true); return; }
+      enforcePlan(current.plan, shownPrefs)
         .then(async result => {
           if (cancelled) return;
-          checkedFood.current = food;
+          checkedSettings.current = settings;
           if (!result.changed) {
             // Settings moved on, so Undo would also take back this newer change (it could be
             // an allergy). Changing them back by hand still leaves Undo for the meals.
-            setPlanReview(r => (r.undo && JSON.stringify(r.undo.food) !== foodKey ? { ...r, undo: undefined } : r));
+            setPlanReview(r => (r.undo?.settings && JSON.stringify([r.undo.settings.food, r.undo.settings.memberAllergies]) !== foodKey ? { ...r, undo: undefined } : r));
             return;
           }
-          await saveWeek(result.plan, false).catch(() => setWeekPlan({ ...current, plan: result.plan }));
-          // Nothing to go back to on the first check: the change came from another session.
+          await saveWeek(result.plan, false, { quiet: true }).catch(() => setWeekPlan({ ...current, plan: result.plan }));
+          // Nothing to go back to on the first check (the change came from another session),
+          // or when someone was added or removed since: Undo can't bring a person back.
           setPlanReview({
             notice: planNotice(result.replaced, result.blocked.length), blocked: result.blocked,
-            undo: before ? { plan: current.plan, food: before } : undefined,
+            undo: before && sameIds(before.memberAllergies, settings.memberAllergies) ? { plan: current.plan, settings: before } : undefined,
           });
         })
         .catch(err => console.error('[plan] check failed:', err))
         .finally(() => { if (!cancelled) setPlanChecked(true); });
-    }, planChecked ? 800 : 0);
+    }, firstCheck ? 0 : 800);
     return () => { cancelled = true; window.clearTimeout(id); };
-    // planChecked only picks the delay; a change to it must not start another check.
+    // The check runs on a change to the settings (foodKey), not on every new prefs object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [foodKey, planLoaded, saveWeek]);
 
   // Settings first: if that save fails, nothing has changed and the meals stay safe.
+  // Settings are only put back when a settings change is what's being undone. Undoing an
+  // update that just moved meals never writes settings, so it can't undo an allergy
+  // someone added in the meantime.
   const undoPlanReview = useCallback(async () => {
     const { undo } = planReview;
     if (!undo) return;
-    await savePreferences(userId, undo.food);
-    setPrefs(p => ({ ...(p ?? DEFAULT_PREFERENCES), ...undo.food }));
-    await saveWeek(undo.plan, false);
+    const { settings } = undo;
+    if (settings) {
+      await savePreferences(userId, settings.food);
+      const changed = (members ?? []).filter(m => settings.memberAllergies[m.id] && JSON.stringify(settings.memberAllergies[m.id]) !== JSON.stringify(m.allergies));
+      const restored = await Promise.all(changed.map(m => saveMember(userId, { ...m, allergies: settings.memberAllergies[m.id] }, m.position)));
+      setPrefs(p => ({ ...(p ?? DEFAULT_PREFERENCES), ...settings.food }));
+      if (restored.length) setMembers(list => (list ?? []).map(m => restored.find(r => r.id === m.id) ?? m));
+      await saveWeek(undo.plan, false, { quiet: true });
+    } else {
+      // The household wants these dinners back: mark them theirs, so tomorrow's update
+      // doesn't make the same swap again.
+      const current = planRef.current?.plan ?? null;
+      await saveWeek(markChosen(current, undo.plan), false, { quiet: true });
+      // What the update brought in was turned down: it isn't offered again this week.
+      logPlanEvents(userId, planEdits(current, undo.plan).filter(e => e.kind === 'swapped_out'));
+    }
     setPlanReview({ notice: null, blocked: [] });
-  }, [planReview, saveWeek, userId]);
+  }, [planReview, saveWeek, userId, members]);
+
+  const saveFamilyMember = useCallback(async (draft: MemberDraft) => {
+    const list = members ?? [];
+    const position = draft.id ? list.find(m => m.id === draft.id)?.position ?? 0 : (list.length ? list[list.length - 1].position + 1 : 0);
+    const saved = await saveMember(userId, draft, position);
+    setMembers(current => {
+      const now = current ?? [];
+      return now.some(m => m.id === saved.id) ? now.map(m => (m.id === saved.id ? saved : m)) : [...now, saved];
+    });
+  }, [members, userId]);
+
+  const removeFamilyMember = useCallback(async (id: string) => {
+    await removeMember(userId, id);
+    setMembers(current => (current ?? []).filter(m => m.id !== id));
+  }, [userId]);
+
+  const family: Family | null = useMemo(
+    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()] } : null),
+    [userId, shownPrefs, members, favorites],
+  );
+
+  const planNewWeek = useCallback(async () => {
+    if (!family) return null;
+    const week = await generateWeekPlan(family, planRef.current?.plan ?? null);
+    await saveWeek(week.plan, true, { quiet: true });
+    setPlanReview({ notice: week.notice, blocked: week.blocked });
+    return week.notice;
+  }, [family, saveWeek]);
+
+  // The daily update. The check-in itself is saved first and stands on its own: if the
+  // update can't run, the answer still counts next time.
+  const submitCheckin = useCallback(async (recipeId: number, date: string, answers: CheckinAnswer[]) => {
+    await saveCheckin(userId, recipeId, date, answers);
+    const current = planRef.current;
+    if (!family || !current) return false;
+    try {
+      const update = await updateAfterCheckin(family, current);
+      // The update was worked out from the plan as it was a moment ago. If the plan has
+      // changed since (an edit, another check), leave it: the next check-in will catch up.
+      if (!update || planRef.current !== current) return false;
+      await saveWeek(update.plan, false, { quiet: true });
+      setPlanReview(r => ({ notice: update.note, blocked: r.blocked, undo: { plan: current.plan } }));
+      return true;
+    } catch (err) {
+      console.error('[plan] daily update failed:', err);
+      return false;
+    }
+  }, [family, saveWeek, userId]);
 
   const toggleFavorite = useCallback(async (entry: FavoriteEntry) => {
     const has = favorites.has(entry.id);
@@ -176,14 +262,15 @@ function SignedIn({ session }: { session: Session }) {
     }
   }, [favorites, userId]);
 
-  const ctx: AppState | null = useMemo(() => (prefs ? {
-    session, userId, prefs, updatePrefs, profile, setProfile, favorites, toggleFavorite, go, replace, back, isPhone,
-    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planReview, setPlanReview, undoPlanReview,
+  const ctx: AppState | null = useMemo(() => (prefs && members && shownPrefs ? {
+    session, userId, prefs: shownPrefs, householdPrefs: prefs, updatePrefs, members, familyAvailable, saveFamilyMember, removeFamilyMember,
+    profile, setProfile, favorites, toggleFavorite, go, replace, back, isPhone,
+    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, submitCheckin, planReview, setPlanReview, undoPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, updatePrefs, profile, weekPlan, planChecked, saveWeek, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
+  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, submitCheckin, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
-  if (prefs === undefined) return <Loading />;
+  if (prefs === undefined || members === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {
     return (
       <div className="mx-auto flex h-dvh w-full max-w-column flex-col items-start justify-center px-gutter">
@@ -194,7 +281,7 @@ function SignedIn({ session }: { session: Session }) {
     );
   }
   if (!prefs.onboarded_at) {
-    return <Onboarding userId={userId} initial={prefs} onDone={p => setPrefs(p)} onSignOut={() => void signOutToWebsite()} />;
+    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
   }
 
   let content: React.ReactNode;

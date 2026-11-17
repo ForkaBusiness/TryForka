@@ -28,7 +28,7 @@ export interface AmountLine { family: string; value: number }
 export interface NoteLine { text: string; recipe: string }
 
 /** Bumped when the way lists are built changes, so saved lists rebuild themselves. */
-export const LIST_VERSION = 3;
+export const LIST_VERSION = 4;
 
 export interface GroceryItem {
   /** LIST_VERSION the item was built with. */
@@ -42,6 +42,8 @@ export interface GroceryItem {
   notes: NoteLine[];
   /** Titles of the planned meals that use it (one per meal, in plan order). */
   meals: string[];
+  /** Ids of those meals' recipes, in the same order. */
+  recipes: number[];
 }
 
 // Things nobody buys for a recipe.
@@ -98,7 +100,7 @@ export function itemKey(nameUs: string): string {
 }
 
 export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Aisle | undefined): GroceryItem[] {
-  const byKey = new Map<string, { name: string; aisle: Aisle; totals: Map<string, number>; notes: NoteLine[]; meals: string[] }>();
+  const byKey = new Map<string, { name: string; aisle: Aisle; totals: Map<string, number>; notes: NoteLine[]; meals: string[]; recipes: number[] }>();
   for (const recipe of recipes) {
     for (const ing of recipe.ingredients) {
       const key = itemKey(ing.name_us || ing.name);
@@ -106,10 +108,11 @@ export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Ai
       let entry = byKey.get(key);
       if (!entry) {
         const display = shoppingName(ing.name_us || ing.name);
-        entry = { name: display.charAt(0).toUpperCase() + display.slice(1), aisle: aisleOf(ing.name.toLowerCase()) ?? 'Other', totals: new Map(), notes: [], meals: [] };
+        entry = { name: display.charAt(0).toUpperCase() + display.slice(1), aisle: aisleOf(ing.name.toLowerCase()) ?? 'Other', totals: new Map(), notes: [], meals: [], recipes: [] };
         byKey.set(key, entry);
       }
       entry.meals.push(recipe.title);
+      entry.recipes.push(recipe.id);
       if (ing.quantity !== null && ing.quantity > 0) {
         // Ranges buy the upper amount.
         const qty = ing.quantity_max && ing.quantity_max > ing.quantity ? ing.quantity_max : ing.quantity;
@@ -128,7 +131,7 @@ export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Ai
     items.push({
       v: LIST_VERSION, key, name: e.name, aisle: e.aisle, staple: STAPLES.test(key),
       amounts: [...e.totals].map(([family, value]) => ({ family, value })),
-      notes, meals: e.meals,
+      notes, meals: e.meals, recipes: e.recipes,
     });
   }
   return items.sort((a, b) => AISLES.indexOf(a.aisle) - AISLES.indexOf(b.aisle) || a.name.localeCompare(b.name));
@@ -140,6 +143,15 @@ export function amountLines(item: Pick<GroceryItem, 'amounts'>, system: UnitSyst
     const text = formatBase(a.family, a.value, system);
     return a.family === 'count:' ? `${text} whole` : text;
   });
+}
+
+/**
+ * Recipes the household has started shopping for: any checked item on the list uses them.
+ * Staples don't count, or a ticked "Salt" would mark the whole week as bought.
+ */
+export function shoppedRecipeIds(items: readonly Pick<GroceryItem, 'key' | 'staple' | 'recipes'>[], checked: Iterable<string>): Set<number> {
+  const ticked = new Set(checked);
+  return new Set(items.filter(i => !i.staple && ticked.has(i.key)).flatMap(i => i.recipes ?? []));
 }
 
 /** Distinct meal titles, for "for 2 meals" and its expanded list. */
