@@ -3,9 +3,9 @@ import type { Session } from '@supabase/supabase-js';
 import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSITE_LOGIN, WEBSITE_RESET_PASSWORD } from './lib/supabase';
 import { useMediaQuery } from './lib/useMediaQuery';
 import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, foodSettings, savePreferences, type FoodSettings, type Preferences, type Profile } from './lib/preferences';
-import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
+import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
 import { fetchMembers, removeMember, saveMember, withFamilyAllergies, type FamilyMember, type MemberDraft } from './lib/family';
-import { generateWeekPlan, updateAfterCheckin, type Family } from './lib/learning';
+import { busyNightSwap, generateWeekPlan, updateAfterCheckin, type Family } from './lib/learning';
 import { markChosen, planEdits } from './lib/planner';
 import { logPlanEvents, saveCheckin, type CheckinAnswer } from './lib/signals';
 import { fetchGroceryList, rebuildGroceryList } from './lib/groceries';
@@ -230,6 +230,17 @@ function SignedIn({ session }: { session: Session }) {
     return week.notice;
   }, [family, saveWeek]);
 
+  // A busy night says nothing about taste, so the swap is saved quietly. Undo puts the dinner back.
+  const swapForBusyNight = useCallback(async (day: Day) => {
+    const current = planRef.current;
+    if (!family || !current) return false;
+    const swap = await busyNightSwap(family, current, day);
+    if (!swap || planRef.current !== current) return false;
+    await saveWeek(swap.plan, false, { quiet: true });
+    setPlanReview(r => ({ notice: swap.note, blocked: r.blocked, undo: { plan: current.plan } }));
+    return true;
+  }, [family, saveWeek]);
+
   // The daily update. The check-in itself is saved first and stands on its own: if the
   // update can't run, the answer still counts next time.
   const submitCheckin = useCallback(async (recipeId: number, date: string, answers: CheckinAnswer[]) => {
@@ -265,10 +276,10 @@ function SignedIn({ session }: { session: Session }) {
   const ctx: AppState | null = useMemo(() => (prefs && members && shownPrefs ? {
     session, userId, prefs: shownPrefs, householdPrefs: prefs, updatePrefs, members, familyAvailable, saveFamilyMember, removeFamilyMember,
     profile, setProfile, favorites, toggleFavorite, go, replace, back, isPhone,
-    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, submitCheckin, planReview, setPlanReview, undoPlanReview,
+    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, planReview, setPlanReview, undoPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, submitCheckin, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
+  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
   if (prefs === undefined || members === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {

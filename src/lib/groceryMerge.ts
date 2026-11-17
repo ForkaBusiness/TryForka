@@ -51,6 +51,9 @@ const SKIP = new Set(['ice', 'ice cube', 'ice cubes']);
 // Pantry staples: shown in "Probably have it". Matched on the normalized key.
 const STAPLES = /^(salt|sea salt|kosher salt|table salt|flaky sea salt|coarse salt|(black |white |ground black |freshly ground black )?pepper|black peppercorns?|peppercorns?|water|cold water|hot water|warm water|boiling water|olive oil|extra virgin olive oil|vegetable oil|sunflower oil|canola oil|rapeseed oil|cooking oil|oil|groundnut oil|corn oil)$/;
 
+/** Salt, pepper, water, cooking oil: things a kitchen has without shopping for them. */
+export const isStaple = (key: string) => STAPLES.test(key);
+
 function singular(word: string): string {
   if (/(ss|us|is)$/.test(word) || word.length <= 3) return word;
   if (word.endsWith('oes')) return word.slice(0, -2);

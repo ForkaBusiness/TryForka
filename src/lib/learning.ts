@@ -1,11 +1,12 @@
-import { lookupCards, planningPool, type RecipeCard } from './catalog';
+import { lookupCards, planningPool, recipeIngredients, type RecipeCard } from './catalog';
 import type { Preferences } from './preferences';
 import type { FamilyMember } from './family';
 import { cookedSince, fetchSignals } from './signals';
 import { fetchGroceryList, listMatchesPlan, rebuildGroceryList } from './groceries';
-import { shoppedRecipeIds } from './groceryMerge';
-import { buildTaste, changeNote, openDays, planWeek, relaxedNotice, updatePlan, type Taste } from './planner';
-import { DAYS, enforcePlan, planEntries, planNotice, plannedSlots, slotKey, todayKey, type PlanReview, type SavedWeekPlan, type WeekPlan } from './plan';
+import { isStaple, itemKey, shoppedRecipeIds } from './groceryMerge';
+import { busyNightNote, fasterOptions, pickBusyNight } from './busyNight';
+import { buildTaste, changeNote, openDays, planWeek, relaxedNotice, scoreRecipe, updatePlan, type Taste } from './planner';
+import { DAYS, DAY_LONG, enforcePlan, entryFromCard, planEntries, planNotice, plannedSlots, slotKey, todayKey, withSlot, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './plan';
 
 // Where the planner meets the household's data: reads the recipes the family may eat and
 // everything they've told us, then asks the planner (planner.ts) for a new week or for
@@ -51,21 +52,44 @@ export async function generateWeekPlan(family: Family, current: WeekPlan | null)
   };
 }
 
+/** The grocery list for this plan, rebuilt first if it's out of date. */
+const groceryListFor = (userId: string, saved: SavedWeekPlan) =>
+  fetchGroceryList(userId).then(current => (listMatchesPlan(current, saved) ? current! : rebuildGroceryList(userId, saved, current)));
+
 /**
  * The daily update, run after a check-in: re-ranks the dinners of the days that are still
  * open. Returns null when nothing should change. If the cooked log or the grocery list
  * can't be read, nothing changes either: without them we can't tell which days are settled.
  */
 export async function updateAfterCheckin(family: Family, saved: SavedWeekPlan): Promise<{ plan: WeekPlan; note: string } | null> {
-  const [pool, cooked, list] = await Promise.all([
-    planningPool(family.prefs),
-    cookedSince(family.userId, saved.createdAt),
-    fetchGroceryList(family.userId).then(current => (listMatchesPlan(current, saved) ? current! : rebuildGroceryList(family.userId, saved, current))),
-  ]);
+  const [pool, cooked, list] = await Promise.all([planningPool(family.prefs), cookedSince(family.userId, saved.createdAt), groceryListFor(family.userId, saved)]);
   const days = openDays(saved.plan, todayKey(), cooked, shoppedRecipeIds(list.items, list.checked));
   if (!days.length) return null;
   const taste = await familyTaste(family, pool);
   const { plan, changes } = updatePlan({ plan: saved.plan, days, candidates: pool, taste, food: family.prefs, maxWeeknightMinutes: family.prefs.max_weeknight_minutes });
   const note = changeNote(changes);
   return note ? { plan, note } : null;
+}
+
+/**
+ * The busy-night swap: trades one day's dinner for something clearly faster that adds the
+ * least to the shopping. Null when nothing faster fits. The new dinner is marked as the
+ * household's own choice, so the daily update leaves it alone; a locked day stays locked.
+ */
+export async function busyNightSwap(family: Family, saved: SavedWeekPlan, day: Day): Promise<{ plan: WeekPlan; note: string } | null> {
+  const current = saved.plan[day].dinner;
+  if (!current) return null;
+  const [pool, list] = await Promise.all([planningPool(family.prefs), groceryListFor(family.userId, saved)]);
+  const card = pool.find(r => r.id === current.id) ?? (await lookupCards([current.id])).get(current.id);
+  const options = fasterOptions(card ?? { id: current.id, total_minutes: null }, pool, new Set(planEntries(saved.plan).map(e => e.entry.id)));
+  if (!options.length) return null;
+  const [details, taste] = await Promise.all([recipeIngredients(options.map(r => r.id)), familyTaste(family, pool)]);
+  const needs = new Map(details.map(d => [d.id, d.ingredients.map(i => itemKey(i.name_us || i.name)).filter(key => key && !isStaple(key))]));
+  const pick = pickBusyNight(
+    options.map(recipe => ({ recipe, needs: needs.get(recipe.id) ?? [], taste: scoreRecipe(recipe, taste).total })),
+    new Set(list.items.map(i => i.key)),
+  );
+  if (!pick) return null;
+  const entry = { ...entryFromCard(pick.recipe), chosen: true, ...(current.locked ? { locked: true } : {}) };
+  return { plan: withSlot(saved.plan, day, 'dinner', entry), note: busyNightNote(day === todayKey() ? 'tonight' : DAY_LONG[day], pick) };
 }
