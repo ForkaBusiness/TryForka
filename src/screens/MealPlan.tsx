@@ -462,7 +462,7 @@ export function MealPlan() {
         <ListGroup label="Plan" className="lg:col-span-3">
           <ListRow leading={<BookOpen {...icon} className="text-green" />} title="Browse recipes" chevron onClick={() => go({ name: 'browse' })} />
           <ListRow leading={<Refrigerator {...icon} className="text-green" />} title="Cook with what you have" chevron onClick={() => go({ name: 'pantry' })}
-            subtitle={usingUp.length ? `Using up ${usingUp.join(', ').toLowerCase()}` : undefined} />
+            subtitle={usingUp.length ? `Using up ${usingUp.length <= 1 ? usingUp.join('') : `${usingUp.slice(0, -1).join(', ')} and ${usingUp[usingUp.length - 1]}`}` : undefined} />
           <ListRow leading={<Lightbulb {...icon} className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
           {hasMeals && weekPlan && (
             <ListRow leading={<CalendarPlus {...icon} className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}

@@ -100,7 +100,8 @@ export async function rebuildGroceryList(userId: string, saved: SavedWeekPlan, p
   }, { onConflict: 'user_id' });
   if (error) throw new Error(error.message);
   if ((previous?.excluded ?? []).length !== excluded.length) await saveExcluded(userId, excluded).catch(() => {});
-  // A list for a new week counts as a new shopping list (for plan limits; nothing is blocked).
+  // A list for a new week counts as a shopping list (for plan limits; nothing is blocked). The
+  // server counts each calendar week once, so re-planning or two rebuilds at once don't add up.
   if (!previous || !sameWeek) recordUsage('shopping_lists');
   return { items, checked, custom, excluded, planCreatedAt: saved.createdAt, planUpdatedAt: saved.updatedAt };
 }

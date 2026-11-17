@@ -7,7 +7,7 @@ import { exactOption } from '../lib/ingredientSearch';
 import { useIngredientIndex } from '../lib/useIngredientIndex';
 import { IngredientInput } from '../components/IngredientInput';
 import { AllergyReminder } from '../components/AllergyReminder';
-import { Button, Card, EmptyState, PageContainer, Photo, RecipeGrid, RecipeGridSkeleton } from '../components/ds';
+import { Button, Card, cx, EmptyState, PageContainer, Photo, RecipeGrid, RecipeGridSkeleton } from '../components/ds';
 import { activeOnHand, ON_HAND_DAYS } from '../lib/onHand';
 
 // Cook with what you have: a few ingredients in, the recipes that use the most of them
@@ -59,7 +59,7 @@ export function CookWithWhatYouHave() {
     setPlanning(true); setPlanError(false); setPlanNote(null);
     try {
       const note = await planAroundOnHand(items);
-      setPlanNote(items.length ? note ?? (weekPlan ? 'Your open days already fit. New weeks will favor them too.' : 'Your next plan will favor them.') : null);
+      setPlanNote(items.length ? note ?? (weekPlan ? 'Saved. Meals that use them move up as your plan updates.' : 'Your next plan will favor them.') : null);
     } catch {
       setPlanError(true);
     } finally {
@@ -81,7 +81,7 @@ export function CookWithWhatYouHave() {
 
       {have.length > 0 && (
         <Card className="mb-6 p-4">
-          {usingThese ? (
+          {using.length > 0 && (
             <div className="flex items-start gap-3">
               <CalendarCheck size={20} strokeWidth={1.75} aria-hidden className="mt-0.5 shrink-0 text-green" />
               <div className="min-w-0 flex-1">
@@ -90,9 +90,12 @@ export function CookWithWhatYouHave() {
               </div>
               <Button variant="ghost" size="sm" loading={planning} onClick={() => void planAround([])}>Stop</Button>
             </div>
-          ) : (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <p className="min-w-0 flex-1 text-small text-ink-muted">Want these used up? Meals that use them move up in your week, for the next {ON_HAND_DAYS} days.</p>
+          )}
+          {!usingThese && (
+            <div className={cx('flex flex-col gap-3 sm:flex-row sm:items-center', using.length > 0 && 'mt-3 border-t border-line pt-3')}>
+              <p className="min-w-0 flex-1 text-small text-ink-muted">
+                {using.length ? 'Use these instead?' : 'Want these used up?'} Meals that use them move up in your week, for the next {ON_HAND_DAYS} days.
+              </p>
               <Button variant="secondary" icon={CalendarCheck} loading={planning} onClick={() => void planAround(have)}>Plan around these</Button>
             </div>
           )}

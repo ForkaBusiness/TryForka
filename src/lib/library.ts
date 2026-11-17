@@ -21,7 +21,7 @@ export const QUICK_MINUTES = 30;
 
 export interface Searchable { title: string; area: string | null; category: string | null; total_minutes: number | null }
 
-const words = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').split(/[^a-z0-9]+/).filter(Boolean);
+const words = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
 /** Whether a saved recipe shows under a filter and a search ("thai chicken": every word must be found). */
 export function inLibraryView(entry: LibraryEntry, recipe: Searchable, filter: LibraryFilter, search: string): boolean {

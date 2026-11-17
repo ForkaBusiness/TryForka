@@ -109,6 +109,8 @@ const WEAK_MEAL = -1;
 const LIKED_ITSELF = 1.25;
 const LIKED_BY_RESEMBLANCE = 2.5;
 const GAIN_TO_REPLACE = 1.25;
+/** The lift for the on-hand ingredients a recipe uses that no other meal in the week uses yet. */
+const onHandLift = (uses: readonly string[], covered: ReadonlySet<string>) => Math.min(ON_HAND_MAX, uses.filter(t => !covered.has(t)).length * ON_HAND_EACH);
 /** Each ingredient on hand a recipe uses lifts it this much, up to the cap: enough to plan it this week. */
 const ON_HAND_EACH = 2;
 const ON_HAND_MAX = 4;
@@ -371,8 +373,11 @@ export function planWeek(input: PlanWeekInput): { plan: PlannerWeek; relaxed: Se
   const uses = new Map<number, number>();
   const categories = new Map<string, number>();
   const areas = new Map<string, number>();
+  // Ingredients on hand that a planned meal already uses: one meal per leftover is enough.
+  const covered = new Set<string>();
   const note = (r: PlannerRecipe | undefined) => {
     if (!r) return;
+    for (const term of scoreRecipe(r, taste).usesOnHand) covered.add(term);
     uses.set(r.id, (uses.get(r.id) ?? 0) + 1);
     if (r.category) categories.set(r.category, (categories.get(r.category) ?? 0) + 1);
     if (r.area) areas.set(r.area, (areas.get(r.area) ?? 0) + 1);
@@ -389,7 +394,7 @@ export function planWeek(input: PlanWeekInput): { plan: PlannerWeek; relaxed: Se
   const tooLong = (r: PlannerRecipe, day: PlanDay, slot: PlanSlot) =>
     slot === 'dinner' && !!maxMinutes && WEEKNIGHTS.has(day) && (r.total_minutes ?? Infinity) > maxMinutes;
   const value = (c: { recipe: PlannerRecipe; score: Score }) =>
-    c.score.total + JITTER * jitter(seed, c.recipe.id)
+    c.score.total - c.score.onHand + onHandLift(c.score.usesOnHand, covered) + JITTER * jitter(seed, c.recipe.id)
     - SAME_CATEGORY_IN_WEEK * (categories.get(c.recipe.category ?? '') ?? 0)
     - SAME_AREA_IN_WEEK * (areas.get(c.recipe.area ?? '') ?? 0)
     - (lastWeek.has(c.recipe.id) ? LAST_WEEK_PENALTY : 0);
@@ -562,20 +567,25 @@ export function updatePlan(input: UpdateInput): { plan: PlannerWeek; changes: Pl
         : 0);
       const currentSameness = sameness(currentRecipe);
       const weak = currentTotal <= WEAK_MEAL;
+      // On-hand ingredients the rest of the week already uses: they don't lift a second meal.
+      const covered = new Set(others.flatMap(o => scoreRecipe(o, taste).usesOnHand));
       for (const c of ranked) {
         // Ranked best first: once the taste gain is too small, nothing after it qualifies.
-        const tasteGain = c.score.total - currentTotal;
-        if (tasteGain < GAIN_TO_REPLACE) break;
+        if (c.score.total - currentTotal < GAIN_TO_REPLACE) break;
+        const usesNew = c.score.usesOnHand.filter(t => !covered.has(t));
+        const score = { ...c.score, usesOnHand: usesNew, onHand: onHandLift(usesNew, new Set()), total: c.score.total - c.score.onHand + onHandLift(usesNew, new Set()) };
+        const tasteGain = score.total - currentTotal;
+        if (tasteGain < GAIN_TO_REPLACE) continue;
         // Not what's already in the week, and not what the household just took out of it.
         if (inPlan.has(c.recipe.id) || taste.takenOut.has(c.recipe.id)) continue;
         if (maxMinutes && WEEKNIGHTS.has(day) && (c.recipe.total_minutes ?? Infinity) > maxMinutes) continue;
         // Taste decides whether a swap is worth making; variety only decides which one.
         const lovedAtTheTable = (taste.direct.get(c.recipe.id)?.lovedBy.length ?? 0) > 0 && c.score.direct >= LIKED_ITSELF;
         // Using up what's on hand is a reason of its own, like a dinner they loved.
-        const liked = lovedAtTheTable || c.score.similar >= LIKED_BY_RESEMBLANCE || c.score.usesOnHand.length > 0;
+        const liked = lovedAtTheTable || c.score.similar >= LIKED_BY_RESEMBLANCE || usesNew.length > 0;
         if (!weak && !(liked && broughtIn < MAX_BROUGHT_IN_PER_UPDATE)) continue;
         const gain = tasteGain - (sameness(c.recipe) - currentSameness);
-        if (!best || gain > best.gain) best = { day, from: current, to: c, gain, fromScore, weak };
+        if (!best || gain > best.gain) best = { day, from: current, to: { recipe: c.recipe, score }, gain, fromScore, weak };
       }
     }
     if (!best) break;

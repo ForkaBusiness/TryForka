@@ -476,6 +476,33 @@ test('the update brings in one meal that uses what is on hand, and says so', () 
   assert.deepEqual(updatePlan({ plan: next, days: ['thursday', 'friday', 'saturday'], candidates: ALL, taste: t, food: none, maxWeeknightMinutes: null }).changes, []);
 });
 
+test('one meal per leftover: on-hand items do not take over the week', () => {
+  const spinach = ['Spinach pie', 'Spinach curry', 'Spinach pasta', 'Spinach soup'].map((name, i) => recipe(name, `Cat ${i}`, `Area ${i}`, ['spinach', `thing ${i}`]));
+  // A pool shaped like a real one: most dinners have nothing to do with spinach.
+  const fillers = Array.from({ length: 30 }, (_, i) => recipe(`Dinner ${i}`, `Kind ${i % 8}`, `Place ${i % 6}`, [`main ${i}`, `side ${i % 9}`]));
+  const pool = [...ALL, ...spinach, ...fillers];
+  const t = buildTaste(NO_SIGNALS, pool, FAMILY, NOW, [], ['spinach']);
+  // The daily update: once one spinach meal is in, the others are no reason to swap.
+  let plan = week({ thursday: chili, friday: pilaf, saturday: pasta, sunday: tacos });
+  const first = updatePlan({ plan, days: ['thursday', 'friday', 'saturday', 'sunday'], candidates: pool, taste: t, food: none, maxWeeknightMinutes: null });
+  assert.equal(first.changes.length, 1);
+  plan = first.plan;
+  for (let i = 0; i < 3; i++) {
+    const again = updatePlan({ plan, days: ['thursday', 'friday', 'saturday', 'sunday'], candidates: pool, taste: t, food: none, maxWeeknightMinutes: null });
+    assert.deepEqual(again.changes, [], `update ${i + 2} changes nothing more`);
+  }
+  // A new week: at least one spinach meal, and no pile-up of them.
+  let total = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const ids = Object.values(planWeek({ candidates: pool, taste: t, food: none, slots: ['dinner'], maxWeeknightMinutes: null, seed }).plan).map(d => d.dinner?.id);
+    const count = spinach.filter(s => ids.includes(s.id)).length;
+    assert.ok(count >= 1, `seed ${seed}: spinach is used`);
+    total += count;
+  }
+  // Without the fix every spinach recipe outranks every other dinner: all four, every week.
+  assert.ok(total / 30 < 2, `on average one or two spinach meals, not all four (${(total / 30).toFixed(1)})`);
+});
+
 test('nothing on hand changes nothing', () => {
   const t = buildTaste(NO_SIGNALS, ALL, FAMILY, NOW, [], []);
   for (const r of ALL) assert.equal(scoreRecipe(r, t).onHand, 0);

@@ -15,6 +15,8 @@ create table if not exists public.user_plans (
   -- a stored count could drift from what's actually saved.
   smart_imports_count  integer not null default 0 check (smart_imports_count >= 0),
   shopping_lists_count integer not null default 0 check (shopping_lists_count >= 0),
+  -- The week (its Monday) last counted as a shopping list: a week counts once, however often it's re-planned.
+  shopping_list_week   date,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
@@ -24,15 +26,18 @@ drop policy if exists "Users can read own plan" on public.user_plans;
 create policy "Users can read own plan" on public.user_plans for select using (auth.uid() = user_id);
 -- No insert, update or delete policies.
 
--- Counts one use for the signed-in user. Only these two kinds; only ever up by one.
+-- Counts one use for the signed-in user. Only these two kinds; only ever up by one. A
+-- shopping list counts once per calendar week (Monday to Sunday, UTC): re-planning the same
+-- week, or two screens building the same list at once, doesn't count again.
 create or replace function public.record_usage(p_kind text)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   uid uuid := auth.uid();
+  this_week date := date_trunc('week', now())::date;
 begin
   if uid is null then
     return;
@@ -40,12 +45,13 @@ begin
   if p_kind not in ('smart_imports', 'shopping_lists') then
     raise exception 'unknown usage kind: %', p_kind;
   end if;
-  insert into user_plans (user_id) values (uid) on conflict (user_id) do nothing;
-  update user_plans set
-    smart_imports_count  = smart_imports_count  + (case when p_kind = 'smart_imports'  then 1 else 0 end),
-    shopping_lists_count = shopping_lists_count + (case when p_kind = 'shopping_lists' then 1 else 0 end),
-    updated_at = now()
-  where user_id = uid;
+  insert into public.user_plans (user_id) values (uid) on conflict (user_id) do nothing;
+  if p_kind = 'smart_imports' then
+    update public.user_plans set smart_imports_count = smart_imports_count + 1, updated_at = now() where user_id = uid;
+  else
+    update public.user_plans set shopping_lists_count = shopping_lists_count + 1, shopping_list_week = this_week, updated_at = now()
+    where user_id = uid and (shopping_list_week is null or shopping_list_week < this_week);
+  end if;
 end;
 $$;
 
@@ -73,4 +79,5 @@ as $$
     coalesce((select p.shopping_lists_count from user_plans p where p.user_id = auth.uid()), 0)
 $$;
 
+revoke all on function public.usage_summary() from public, anon;
 grant execute on function public.usage_summary() to authenticated;
