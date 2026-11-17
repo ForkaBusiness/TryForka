@@ -1,14 +1,58 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, X } from 'lucide-react';
+import { useHandsFree, type HandsFreeStatus } from '../lib/useHandsFree';
+import { handsFreeSupport } from '../lib/handTracking';
 import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
-import { Button, IconButton, Progress, Skeleton } from '../components/ds';
+import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip } from '../components/ds';
 
 // A cookbook propped on the counter: one step per screen in type you can read from a few
 // feet away, and big targets for next and back. Arrow keys and space move on desktop; the
-// screen stays awake while this is open.
+// screen stays awake while this is open. With Hands-free on, a wave in front of the camera
+// moves a step: left for next, right for back (see useHandsFree and lib/swipe).
+
+const HANDS_FREE_INTRO_KEY = 'forka_hands_free_intro_seen';
+const HANDS_FREE_PROMISE = 'Wave left for the next step, right to go back. Your camera only looks for your hand. Nothing is recorded, saved or sent.';
+
+/** Why hands-free isn't running, in plain words, and what still works. */
+const HANDS_FREE_PROBLEM: Partial<Record<HandsFreeStatus, string>> = {
+  unsupported: "This browser can't use the camera for hands-free. Tap Next and Back instead.",
+  denied: 'Camera access is blocked for this site, so hands-free is off. To use it, allow the camera in your browser settings. Until then, tap Next and Back.',
+  'no-camera': 'No camera found, so hands-free is off. Tap Next and Back instead.',
+  busy: 'Another app is using the camera, so hands-free is off. Close it and try again, or tap Next and Back.',
+  failed: "Hands-free couldn't start. Try again, or tap Next and Back.",
+};
+
+function introSeen(): boolean {
+  try { return localStorage.getItem(HANDS_FREE_INTRO_KEY) === '1'; } catch { return false; }
+}
+
+/**
+ * While the camera is on: a small mirrored preview so the cook can see their hand is in
+ * frame, a green dot, and what the camera last did. The preview is the live <video> the
+ * tracker reads from; it is never captured or stored.
+ */
+function HandsFreeIndicator({ videoRef, status, handSeen, swipe }: {
+  videoRef: React.RefObject<HTMLVideoElement | null>; status: HandsFreeStatus; handSeen: boolean; swipe: 'next' | 'back' | null;
+}) {
+  const text = swipe === 'next' ? 'Next step' : swipe === 'back' ? 'Back a step'
+    : status === 'paused' ? 'Camera paused'
+    // Until the tracker is actually running, it isn't watching yet.
+    : status !== 'on' ? 'Starting the camera'
+    : handSeen ? 'Hand seen' : 'Wave to change steps';
+  return (
+    <div className="mt-3 flex w-fit max-w-full items-center gap-2.5 rounded-full border border-line bg-surface py-1 pr-4 pl-1 shadow-sm">
+      <video ref={videoRef} muted playsInline autoPlay aria-hidden className="h-8 w-11 shrink-0 -scale-x-100 rounded-full bg-line object-cover" />
+      <span aria-hidden className={status === 'on' ? 'size-2 shrink-0 rounded-full bg-green' : 'size-2 shrink-0 rounded-full bg-ink-muted/50'} />
+      <span role="status" aria-live="polite" className="truncate text-small font-semibold text-ink">
+        {swipe ? <span className="text-green">{text}</span> : text}
+        <span className="sr-only">{status === 'on' ? '. Camera on.' : ''}</span>
+      </span>
+    </div>
+  );
+}
 
 function useWakeLock() {
   useEffect(() => {
@@ -39,6 +83,10 @@ export function CookingMode({ id }: { id: number }) {
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Hands-free: off every time cooking mode opens.
+  const [handsFree, setHandsFree] = useState(false);
+  const [introOpen, setIntroOpen] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   useWakeLock();
 
   useEffect(() => { getRecipe(id).then(setRecipe).catch(() => setRecipe(null)); }, [id]);
@@ -61,6 +109,35 @@ export function CookingMode({ id }: { id: number }) {
 
   const next = useCallback(() => { if (last) void finish(); else setStep(s => Math.min(total - 1, s + 1)); }, [last, finish, total]);
   const prev = useCallback(() => setStep(s => Math.max(0, s - 1)), []);
+
+  // The camera runs only while hands-free is on and there are steps to move through.
+  const handsFreeOn = handsFree && !finished && total > 0;
+  const camera = useHandsFree(handsFreeOn, swipe => (swipe === 'next' ? next() : prev()));
+  const { status: cameraStatus, lastSwipe, clearSwipe } = camera;
+  // A camera that can't be used turns hands-free off and says why; touch keeps working.
+  useEffect(() => {
+    const message = HANDS_FREE_PROBLEM[cameraStatus];
+    if (message) { setProblem(message); setHandsFree(false); }
+  }, [cameraStatus]);
+  // Swipe feedback shows for a moment.
+  useEffect(() => {
+    if (!lastSwipe) return;
+    const t = window.setTimeout(clearSwipe, 900);
+    return () => window.clearTimeout(t);
+  }, [lastSwipe, clearSwipe]);
+
+  const toggleHandsFree = () => {
+    setProblem(null);
+    if (handsFree) { setHandsFree(false); return; }
+    // No point explaining the camera to a browser that can't use one.
+    if (handsFreeSupport() !== 'ok') { setProblem(HANDS_FREE_PROBLEM.unsupported!); return; }
+    if (introSeen()) setHandsFree(true); else setIntroOpen(true);
+  };
+  const startAfterIntro = () => {
+    try { localStorage.setItem(HANDS_FREE_INTRO_KEY, '1'); } catch { /* shown again next time */ }
+    setIntroOpen(false);
+    setHandsFree(true);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -117,7 +194,10 @@ export function CookingMode({ id }: { id: number }) {
         <div className="flex items-center gap-3">
           <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
           <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</p>
+          <ToggleChip selected={handsFree} onToggle={toggleHandsFree}>Hands-free</ToggleChip>
         </div>
+        {handsFree && <HandsFreeIndicator videoRef={camera.videoRef} status={cameraStatus} handSeen={camera.handSeen} swipe={lastSwipe?.swipe ?? null} />}
+        {problem && <p role="alert" className="mt-3 text-small text-terracotta-deep">{problem}</p>}
         <div className="mt-4">
           <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />
         </div>
@@ -142,6 +222,21 @@ export function CookingMode({ id }: { id: number }) {
           <Button size="lg" iconEnd={last ? Check : ArrowRight} className="h-16 flex-2" onClick={next} loading={saving}>{last ? 'Done' : 'Next'}</Button>
         </div>
       </div>
+
+      <BottomSheet
+        open={introOpen}
+        onClose={() => setIntroOpen(false)}
+        title="Hands-free cooking"
+        side="bottom"
+        footer={
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button size="lg" variant="secondary" onClick={() => setIntroOpen(false)}>Not now</Button>
+            <Button size="lg" onClick={startAfterIntro}>Turn on camera</Button>
+          </div>
+        }
+      >
+        <p className="text-body text-ink">{HANDS_FREE_PROMISE}</p>
+      </BottomSheet>
     </div>
   );
 }

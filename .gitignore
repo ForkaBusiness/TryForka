@@ -36,3 +36,6 @@ supabase/.temp/
 
 # Deploy secrets, filled in by hand
 .env.deploy
+
+# MediaPipe wasm, copied from node_modules at build time (scripts/copy-mediapipe.mjs)
+public/mediapipe/wasm/
