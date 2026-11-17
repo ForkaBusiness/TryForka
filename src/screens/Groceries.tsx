@@ -41,7 +41,7 @@ function RecipeToggle({ recipe, on, onToggle }: { recipe: WeekRecipe; on: boolea
   return (
     <li className="w-28 shrink-0 md:w-32">
       <button type="button" role="switch" aria-checked={on} onClick={onToggle}
-        aria-label={`${recipe.title}, ${dayList(recipe.days)}. Ingredients ${on ? 'on' : 'off'} the list`}
+        aria-label={`${recipe.title}, ${dayList(recipe.days)}: ingredients on the list`}
         className="block w-full cursor-pointer text-left transition-transform duration-150 ease-spring active:scale-98">
         <span className="relative block">
           <Photo src={photo(recipe.image, 'small')} className={cx('aspect-square w-full rounded-photo transition-opacity duration-150', !on && 'opacity-45')} />
@@ -193,7 +193,7 @@ export function Groceries() {
     await copy();
   };
 
-  if (weekPlan === null || (status === 'ready' && !list && !custom.length)) {
+  if (weekPlan === null || (status === 'ready' && !custom.length && (!list || !recipes.length))) {
     return (
       <PageContainer title="Grocery list">
         <EmptyState icon={ShoppingBasket} title="No grocery list yet" action={<Button size="lg" icon={CalendarPlus} onClick={() => go({ name: 'mealplan' })}>Plan your week</Button>}>
@@ -253,7 +253,7 @@ export function Groceries() {
             <section aria-labelledby="week-recipes" className="mb-6">
               <h2 id="week-recipes" className="label mb-1">This week</h2>
               <p className="mb-3 text-small text-ink-muted">Tap a recipe to take its ingredients off the list, or put them back.</p>
-              <ul className="no-scrollbar -mx-gutter flex gap-3 overflow-x-auto px-gutter pb-1">
+              <ul className="no-scrollbar -mx-gutter flex gap-3 overflow-x-auto px-gutter pt-1 pb-1">
                 {recipes.map(r => <RecipeToggle key={r.id} recipe={r} on={!excluded.has(r.id)} onToggle={() => toggleRecipe(r.id)} />)}
               </ul>
             </section>
@@ -284,7 +284,7 @@ export function Groceries() {
             </section>
           )}
 
-          {!items.length && !custom.length && (
+          {!items.length && !custom.length && recipes.length > 0 && (
             <p className="mb-8 text-body text-ink-muted">Nothing on the list. Tap a recipe above to put its ingredients back, or add an item.</p>
           )}
 
@@ -297,7 +297,7 @@ export function Groceries() {
               <button type="button" aria-expanded={staplesOpen} onClick={() => setStaplesOpen(o => !o)}
                 className="flex min-h-11 w-full cursor-pointer items-center gap-2 border-b border-line pb-2 text-left">
                 <span className="label flex-1">{STAPLES_GROUP}</span>
-                <span className="text-small text-ink-muted">{staples.length} items</span>
+                <span className="text-small text-ink-muted">{staples.length === 1 ? '1 item' : `${staples.length} items`}</span>
                 <ChevronDown size={20} strokeWidth={1.75} aria-hidden className={cx('text-ink-muted transition-transform duration-150', staplesOpen && 'rotate-180')} />
               </button>
               {staplesOpen && <ul>{staples.map(row)}</ul>}

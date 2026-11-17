@@ -8,7 +8,7 @@
 // off the list and put back, and the list can be shown recipe by recipe, without building
 // it again. Pure: no network, unit-tested in tests/.
 
-import { formatBase, toBase, type UnitSystem } from '../../supabase/functions/_shared/catalog/units.ts';
+import { COUNT_UNITS, COUNT_WORDS, formatBase, NUMBER_RE, toBase, type UnitSystem } from '../../supabase/functions/_shared/catalog/units.ts';
 
 export const AISLES = ['Produce', 'Meat and seafood', 'Dairy and eggs', 'Bakery', 'Pantry', 'Spices', 'Frozen', 'Other'] as const;
 export type Aisle = typeof AISLES[number];
@@ -32,7 +32,7 @@ export interface AmountLine { family: string; value: number }
 export interface NoteLine { text: string; recipe: string }
 
 /** Bumped when the way lists are built changes, so saved lists rebuild themselves. */
-export const LIST_VERSION = 5;
+export const LIST_VERSION = 6;
 
 /** What one planned meal needs of an item. `family` is null when its measure has no amount. */
 export interface ItemPart { recipe: number; title: string; family: string | null; value: number; note: string }
@@ -111,6 +111,23 @@ export function itemKey(nameUs: string): string {
   return ALIASES[key] ?? key;
 }
 
+const LEADING_NUMBER = new RegExp(String.raw`^\s*${NUMBER_RE}(?:\s*(?:-|to)\s*${NUMBER_RE})?`);
+
+/**
+ * What a number with no recognized unit is counting. The measure parser leaves the unit
+ * empty when a describing word comes first ("5 chopped cloves", "2 large tins"), and some
+ * words it doesn't know at all ("2 x 400g", "2 kaffir leaves"). Only a number followed by
+ * nothing but describing words ("2", "1 large") is a count of whole things; a known unit
+ * after them is that unit; anything else is kept as written. Null: don't add it up.
+ */
+export function countUnit(measureRaw: string): string | null {
+  const rest = measureRaw.toLowerCase().replace(LEADING_NUMBER, '').replace(/\([^)]*\)/g, ' ');
+  const words = rest.split(/[\s,]+/).filter(Boolean).filter(w => !COUNT_WORDS.has(w));
+  if (!words.length) return '';
+  if (words.length === 1 && COUNT_UNITS[words[0]]) return COUNT_UNITS[words[0]];
+  return null;
+}
+
 /** The totals for a set of parts: amounts summed per unit family, and the measures that can't be summed. */
 function summed(parts: readonly ItemPart[]): Pick<GroceryItem, 'amounts' | 'notes' | 'meals' | 'recipes'> {
   const totals = new Map<string, number>();
@@ -139,7 +156,13 @@ export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Ai
       if (ing.quantity !== null && ing.quantity > 0) {
         // Ranges buy the upper amount.
         const qty = ing.quantity_max && ing.quantity_max > ing.quantity ? ing.quantity_max : ing.quantity;
-        const { family, value } = toBase(qty, ing.unit || IMPLIED_UNIT[baseKey(ing.name_us || ing.name)] || '');
+        const unit = ing.unit || IMPLIED_UNIT[baseKey(ing.name_us || ing.name)] || countUnit(ing.measure_raw);
+        if (unit === null) {
+          // A number we can't say what it counts: kept as written, beside the amounts that add up.
+          entry.parts.push({ recipe: recipe.id, title: recipe.title, family: null, value: 0, note: ing.measure_raw.trim() });
+          continue;
+        }
+        const { family, value } = toBase(qty, unit);
         entry.parts.push({ recipe: recipe.id, title: recipe.title, family, value, note: '' });
       } else {
         entry.parts.push({ recipe: recipe.id, title: recipe.title, family: null, value: 0, note: ing.measure_raw.trim() });

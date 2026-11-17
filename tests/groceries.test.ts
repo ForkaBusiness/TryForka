@@ -245,3 +245,37 @@ test('amounts with nothing to add up stay as written, next to the amounts that d
   assert.deepEqual(amountLines(parsley, 'us'), ['1 bunch', '2 tbsp']);
   assert.deepEqual(parsley.notes, [{ text: 'to garnish', recipe: 'B' }]);
 });
+
+// ── Numbers with a word before the unit, or no unit we know ────────────────
+
+import { countUnit } from '../src/lib/groceryMerge.ts';
+
+test('a describing word before the unit does not turn it into whole items', () => {
+  assert.equal(countUnit('2'), '');
+  assert.equal(countUnit('1 large'), '');
+  assert.equal(countUnit('3 chopped'), '');
+  assert.equal(countUnit('5 chopped cloves'), 'clove');
+  assert.equal(countUnit('4 thick slices'), 'slice');
+  assert.equal(countUnit('2 small stalks'), 'stalk');
+  assert.equal(countUnit('2 x 400g'), null);
+  assert.equal(countUnit('2 fresh kaffir leaves'), null);
+  assert.equal(countUnit('3 400g Cans'), null);
+  assert.equal(countUnit('1 heaped tsp'), null);
+});
+
+test('real catalog cases: cans, kaffir leaves and chopped cloves are not added to whole ones', () => {
+  const raw = (name: string, measure: string, quantity: number): MergeIngredient => ({ name, name_us: name, measure_raw: measure, quantity, quantity_max: null, unit: '' });
+  const items = combine([
+    recipe(1, 'Braised beef chilli', raw('Plum Tomatoes', '2 x 400g', 2)),
+    recipe(2, 'Kefta', raw('Plum Tomatoes', '3', 3)),
+    recipe(3, 'Green curry', raw('Lime', '2 fresh kaffir leaves', 2)),
+    recipe(4, 'Pho', raw('Lime', '1', 1)),
+    recipe(5, 'Katsu', raw('Garlic', '5 chopped cloves', 5)),
+    recipe(6, 'Shakshouka', ing('Garlic', '4 cloves')),
+  ], aisle);
+  assert.deepEqual(amountLines(find(items, 'plum tomato'), 'us'), ['3 whole']);
+  assert.deepEqual(find(items, 'plum tomato').notes, [{ text: '2 x 400g', recipe: 'Braised beef chilli' }]);
+  assert.deepEqual(amountLines(find(items, 'lime'), 'us'), ['1 whole']);
+  assert.deepEqual(find(items, 'lime').notes, [{ text: '2 fresh kaffir leaves', recipe: 'Green curry' }]);
+  assert.deepEqual(amountLines(find(items, 'garlic'), 'us'), ['9 cloves']);
+});
