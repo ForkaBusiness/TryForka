@@ -8,6 +8,7 @@ import { minutesLabel, photo, recipeTitle, safeCardMap, type RecipeCard } from '
 import type { Preferences } from '../lib/preferences';
 import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, planEntries, slotKey, SLOT_LABEL, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
 import { CheckIn } from '../components/CheckIn';
+import { activeOnHand } from '../lib/onHand';
 import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
 
 // Home: the week as a calendar. Tonight's dinner is the one raised card with the photo;
@@ -236,7 +237,8 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions } = useApp();
+  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions, onHand } = useApp();
+  const usingUp = activeOnHand(onHand);
   const today = todayKey();
   const [sheetDay, setSheetDay] = useState<Day | null>(null);
   const [planning, setPlanning] = useState(false);
@@ -459,7 +461,8 @@ export function MealPlan() {
 
         <ListGroup label="Plan" className="lg:col-span-3">
           <ListRow leading={<BookOpen {...icon} className="text-green" />} title="Browse recipes" chevron onClick={() => go({ name: 'browse' })} />
-          <ListRow leading={<Refrigerator {...icon} className="text-green" />} title="Cook with what you have" chevron onClick={() => go({ name: 'pantry' })} />
+          <ListRow leading={<Refrigerator {...icon} className="text-green" />} title="Cook with what you have" chevron onClick={() => go({ name: 'pantry' })}
+            subtitle={usingUp.length ? `Using up ${usingUp.join(', ').toLowerCase()}` : undefined} />
           <ListRow leading={<Lightbulb {...icon} className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
           {hasMeals && weekPlan && (
             <ListRow leading={<CalendarPlus {...icon} className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}

@@ -8,6 +8,7 @@ import { fetchMembers, removeMember, saveMember, withFamilyAllergies, type Famil
 import { busyNightSwap, generateWeekPlan, updateAfterCheckin, type Family } from './lib/learning';
 import { markChosen, planEdits } from './lib/planner';
 import { logPlanEvents, saveCheckin, type CheckinAnswer } from './lib/signals';
+import { activeOnHand, fetchOnHand, NOTHING_ON_HAND, saveOnHand, type OnHand } from './lib/onHand';
 import { fetchGroceryList, rebuildGroceryList } from './lib/groceries';
 import { AppContext, type AppState, type FavoriteEntry, type Screen, type SuggestionsTarget } from './app/AppContext';
 import { AppFrame } from './components/Shell';
@@ -68,6 +69,7 @@ function SignedIn({ session }: { session: Session }) {
   const [prefs, setPrefs] = useState<Preferences | null | undefined>(undefined);
   const [members, setMembers] = useState<FamilyMember[] | undefined>(undefined);
   const [familyAvailable, setFamilyAvailable] = useState(false);
+  const [onHand, setOnHand] = useState<OnHand>(NOTHING_ON_HAND);
   const [profile, setProfile] = useState<Profile>({ full_name: '', household_name: '', household_size: 1 });
   const [weekPlan, setWeekPlan] = useState<SavedWeekPlan | null | undefined>(undefined);
   const [planChecked, setPlanChecked] = useState(false);
@@ -95,6 +97,8 @@ function SignedIn({ session }: { session: Session }) {
     fetchPreferences(userId).then(p => { if (!cancelled) setPrefs(p); }).catch(() => { if (!cancelled) { setPrefs(null); setLoadError(true); } });
     // A family that can't be read is a load error: its allergies must not drop out of the filter.
     fetchMembers(userId).then(f => { if (!cancelled) { setMembers(f.members); setFamilyAvailable(f.available); } }).catch(() => { if (!cancelled) { setMembers([]); setLoadError(true); } });
+    // Nice to have: without it the plan just doesn't lean on leftovers.
+    fetchOnHand(userId).then(o => { if (!cancelled) setOnHand(o); }).catch(() => {});
     fetchProfile(userId).then(p => { if (!cancelled) setProfile({ ...p, full_name: p.full_name || metaName }); }).catch(() => {});
     fetchWeekPlan(userId).then(p => { if (!cancelled) setWeekPlan(p); }).catch(() => { if (!cancelled) setWeekPlan(null); });
     supabase.from('favorites').select('recipe_id, recipe_title, recipe_image').eq('user_id', userId).order('created_at', { ascending: false })
@@ -243,8 +247,8 @@ function SignedIn({ session }: { session: Session }) {
   }, [userId]);
 
   const family: Family | null = useMemo(
-    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()] } : null),
-    [userId, shownPrefs, members, favorites],
+    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand) } : null),
+    [userId, shownPrefs, members, favorites, onHand],
   );
 
   const planNewWeek = useCallback(async () => {
@@ -270,6 +274,27 @@ function SignedIn({ session }: { session: Session }) {
     setPlanReview(r => ({ notice: swap.note, blocked: r.blocked, undo: { plan: current.plan } }));
     return 'swapped';
   }, [family, saveWeek]);
+
+  // Use what you have: save the list, then re-rank the open days around it right away,
+  // under the same rules as the daily update (today, locked, picked, cooked and shopped-for
+  // days stay). The note says what changed; Undo puts the meals back.
+  const planAroundOnHand = useCallback(async (items: string[]) => {
+    const saved = await saveOnHand(userId, items);
+    setOnHand(saved);
+    const current = planRef.current;
+    if (!family || !current || !items.length) return null;
+    const settings = settingsKey.current;
+    try {
+      const update = await updateAfterCheckin({ ...family, onHand: activeOnHand(saved) }, current);
+      if (!update || planRef.current !== current || settingsKey.current !== settings) return null;
+      await saveWeek(update.plan, false, { quiet: true });
+      setPlanReview(r => ({ notice: update.note, blocked: r.blocked, undo: { plan: current.plan } }));
+      return update.note;
+    } catch (err) {
+      console.error('[plan] update for on-hand items failed:', err);
+      return null;
+    }
+  }, [family, saveWeek, userId]);
 
   // The daily update. The check-in itself is saved first and stands on its own: if the
   // update can't run, the answer still counts next time.
@@ -307,10 +332,10 @@ function SignedIn({ session }: { session: Session }) {
   const ctx: AppState | null = useMemo(() => (prefs && members && shownPrefs ? {
     session, userId, prefs: shownPrefs, householdPrefs: prefs, updatePrefs, members, familyAvailable, saveFamilyMember, removeFamilyMember,
     profile, setProfile, favorites, toggleFavorite, go, replace, back, isPhone,
-    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, planReview, setPlanReview, undoPlanReview,
+    weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, setPlanReview, undoPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
+  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
   if (prefs === undefined || members === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {

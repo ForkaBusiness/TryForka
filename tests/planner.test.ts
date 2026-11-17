@@ -440,3 +440,43 @@ test('edits by hand: picks, swaps and removals are recorded; moving a meal is no
   assert.deepEqual(planEdits(before, week({ tuesday: curry, wednesday: chili, friday: tacos })), []);
   assert.deepEqual(planEdits(null, week({ monday: tacos })), [{ recipeId: tacos.id, kind: 'picked', day: 'monday' }]);
 });
+
+// ── Use what you have ──────────────────────────────────────────────────────
+
+test('a new week favors meals that use what is on hand', () => {
+  const withRice = buildTaste(NO_SIGNALS, ALL, FAMILY, NOW, [], ['rice']);
+  assert.ok(scoreRecipe(pilaf, withRice).onHand > 0, 'the lamb pilaf uses rice');
+  assert.deepEqual(scoreRecipe(pilaf, withRice).usesOnHand, ['rice']);
+  assert.equal(scoreRecipe(tacos, withRice).onHand, 0);
+  let planned = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const { plan } = planWeek({ candidates: ALL, taste: withRice, food: none, slots: ['dinner'], maxWeeknightMinutes: null, seed });
+    if (Object.values(plan).some(d => d.dinner?.id === pilaf.id)) planned++;
+  }
+  assert.equal(planned, 20, 'planned every time');
+});
+
+test('what is on hand never overrides an allergy', () => {
+  const t = buildTaste(NO_SIGNALS, ALL, FAMILY, NOW, [], ['peanut butter', 'noodles']);
+  assert.ok(scoreRecipe(satay, t).onHand > 0);
+  for (let seed = 1; seed <= 10; seed++) {
+    const { plan } = planWeek({ candidates: ALL, taste: t, food: { allergies: ['peanut'], skip_ingredients: [] }, slots: ['dinner'], maxWeeknightMinutes: null, seed });
+    assert.ok(!Object.values(plan).some(d => d.dinner?.id === satay.id), `seed ${seed}`);
+  }
+});
+
+test('the update brings in one meal that uses what is on hand, and says so', () => {
+  const t = buildTaste(NO_SIGNALS, ALL, FAMILY, NOW, [], ['rice']);
+  const plan = week({ thursday: chili, friday: tacos, saturday: curry });
+  const { changes, plan: next } = updatePlan({ plan, days: ['thursday', 'friday', 'saturday'], candidates: ALL, taste: t, food: none, maxWeeknightMinutes: null });
+  assert.equal(changes.length, 1);
+  assert.equal(Object.values(next).filter(d => d.dinner?.id === pilaf.id).length, 1);
+  assert.match(changes[0].reason, /^Swapped (Thursday|Friday|Saturday) for something that uses your rice\.$/);
+  // Already in the week: nothing more to do.
+  assert.deepEqual(updatePlan({ plan: next, days: ['thursday', 'friday', 'saturday'], candidates: ALL, taste: t, food: none, maxWeeknightMinutes: null }).changes, []);
+});
+
+test('nothing on hand changes nothing', () => {
+  const t = buildTaste(NO_SIGNALS, ALL, FAMILY, NOW, [], []);
+  for (const r of ALL) assert.equal(scoreRecipe(r, t).onHand, 0);
+});

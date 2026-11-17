@@ -4,6 +4,7 @@ import type { Preferences, Profile } from '../lib/preferences';
 import type { Day, PlanReview, SavedWeekPlan, Slot, WeekPlan } from '../lib/plan';
 import type { FamilyMember, MemberDraft } from '../lib/family';
 import type { CheckinAnswer } from '../lib/signals';
+import type { OnHand } from '../lib/onHand';
 
 // Shared state for the signed-in app. Navigation is still the currentScreen state
 // machine (App.tsx); `go` pushes a screen, `back` pops, tabs reset the stack.
@@ -58,6 +59,13 @@ export interface AppState {
    * while it was looking, so nothing was swapped.
    */
   swapForBusyNight: (day: Day) => Promise<'swapped' | 'none' | 'stale'>;
+  /** Ingredients to use up, and when they were set (they count for a week). */
+  onHand: OnHand;
+  /**
+   * Sets the ingredients to use up (an empty list stops) and re-ranks the days still open
+   * around them. Returns the note about what changed, or null.
+   */
+  planAroundOnHand: (items: string[]) => Promise<string | null>;
   /** Saves an after-dinner check-in, then updates the days still open. True when the plan changed. */
   submitCheckin: (recipeId: number, date: string, answers: CheckinAnswer[]) => Promise<boolean>;
   /** What the recipe filter last changed in the plan, and which slots it left empty. */

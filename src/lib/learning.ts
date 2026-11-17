@@ -19,6 +19,8 @@ export interface Family {
   prefs: Preferences;
   members: FamilyMember[];
   favorites: number[];
+  /** Ingredients to use up this week: meals that use them are favored. */
+  onHand: string[];
 }
 
 const NO_RECIPES = `No recipes match your settings. Check your allergies and skipped ingredients in Settings. ${CHECK_INGREDIENTS}`;
@@ -30,7 +32,7 @@ async function familyTaste(family: Family, pool: RecipeCard[]): Promise<Taste> {
   const missing = [...new Set(mentioned)].filter(id => !known.has(id));
   // Recipes the family has an opinion on but can no longer be shown still teach the profile.
   const extra = missing.length ? [...(await lookupCards(missing).catch(() => new Map<number, RecipeCard>())).values()] : [];
-  return buildTaste(signals, [...pool, ...extra], family.members, new Date(), family.prefs.avoid_ingredients);
+  return buildTaste(signals, [...pool, ...extra], family.members, new Date(), family.prefs.avoid_ingredients, family.onHand);
 }
 
 /** A new week from what the family eats, checked by the filter. Locked days stay as they are. */

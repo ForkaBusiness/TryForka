@@ -9,6 +9,7 @@
 //      The caller says which days those are; this file only ever touches the others.
 
 import { normalizeIngredient, pickReplacement, recipeChecker, type FoodPrefs } from '../../supabase/functions/_shared/catalog/recipeFilter.ts';
+import { usesIngredient } from './ingredientMatch.ts';
 
 export const PLAN_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 export type PlanDay = typeof PLAN_DAYS[number];
@@ -108,6 +109,9 @@ const WEAK_MEAL = -1;
 const LIKED_ITSELF = 1.25;
 const LIKED_BY_RESEMBLANCE = 2.5;
 const GAIN_TO_REPLACE = 1.25;
+/** Each ingredient on hand a recipe uses lifts it this much, up to the cap: enough to plan it this week. */
+const ON_HAND_EACH = 2;
+const ON_HAND_MAX = 4;
 /** A dinner the household took out of the plan isn't offered back by the update for this long. */
 const TAKEN_OUT_DAYS = 7;
 
@@ -135,6 +139,8 @@ export interface Taste {
   lastEaten: Map<number, Date>;
   /** Recipes the household swapped out or removed in the last week: the daily update doesn't bring them back. */
   takenOut: Set<number>;
+  /** Ingredients the household wants to use up (normalized names). */
+  onHand: string[];
   common: Set<string>;
   recipes: Map<number, PlannerRecipe>;
   avoids: (r: PlannerRecipe) => boolean;
@@ -159,7 +165,7 @@ function features(r: PlannerRecipe, common: ReadonlySet<string>): string[] {
  * Turns the family's history into a taste profile. `recipes` is every recipe the profile
  * may need to know about: the candidates, plus any recipe the history mentions.
  */
-export function buildTaste(signals: Signals, recipes: readonly PlannerRecipe[], members: readonly PlannerMember[], now: Date, avoidIngredients: readonly string[] = []): Taste {
+export function buildTaste(signals: Signals, recipes: readonly PlannerRecipe[], members: readonly PlannerMember[], now: Date, avoidIngredients: readonly string[] = [], onHand: readonly string[] = []): Taste {
   const byId = new Map(recipes.map(r => [r.id, r]));
   const counts = new Map<string, number>();
   for (const r of recipes) for (const n of new Set(r.ingredient_names.map(normalizeIngredient))) counts.set(n, (counts.get(n) ?? 0) + 1);
@@ -240,6 +246,7 @@ export function buildTaste(signals: Signals, recipes: readonly PlannerRecipe[], 
   return {
     now, members, direct, affinity, source, lastEaten, takenOut, common, recipes: byId,
     avoids: r => avoidMatch(r).length > 0,
+    onHand: [...new Set(onHand.map(normalizeIngredient).filter(Boolean))],
     memberTerms: members.map(member => ({ member, likes: termMatcher(member.likes), dislikes: termMatcher(member.dislikes) })),
   };
 }
@@ -256,6 +263,10 @@ export interface Score {
   people: number;
   /** Negative when it was eaten in the last few days. */
   recent: number;
+  /** Positive when it uses something the household wants to use up. */
+  onHand: number;
+  /** Which of the household's on-hand ingredients it uses. */
+  usesOnHand: string[];
   /** The feature that pulled hardest in each direction, for the note. */
   pull: { up: string | null; down: string | null };
   likedBy: Array<{ name: string; what: string }>;
@@ -296,7 +307,10 @@ export function scoreRecipe(r: PlannerRecipe, taste: Taste): Score {
   const age = eaten ? daysBetween(eaten, taste.now) : Infinity;
   const recent = age < REPEAT_WINDOW_DAYS ? -REPEAT_PENALTY * (1 - age / REPEAT_WINDOW_DAYS) : 0;
 
-  return { total: direct + similar + people + recent, direct, similar, people, recent, pull: { up: up[0], down: down[0] }, likedBy, dislikedBy };
+  const usesOnHand = taste.onHand.filter(term => r.ingredient_names.some(name => usesIngredient(name, term)));
+  const onHand = Math.min(ON_HAND_MAX, usesOnHand.length * ON_HAND_EACH);
+
+  return { total: direct + similar + people + recent + onHand, direct, similar, people, recent, onHand, usesOnHand, pull: { up: up[0], down: down[0] }, likedBy, dislikedBy };
 }
 
 /** Candidates that pass the hard filter, best first. The filter runs here so no caller can skip it. */
@@ -476,6 +490,10 @@ export function when(date: string, now: Date): string {
 function changeReason(day: PlanDay, from: PlannerRecipe | undefined, fromScore: Score | null, to: PlannerRecipe, toScore: Score, taste: Taste): string {
   const dayName = DAY_NAMES[day];
   const loved = taste.direct.get(to.id);
+  // What they asked for most recently: using up what's on hand.
+  if (toScore.usesOnHand.length && !(fromScore?.usesOnHand.length)) {
+    return `Swapped ${dayName} for something that uses your ${list(toScore.usesOnHand)}.`;
+  }
   // The new meal has its own history: the strongest and simplest reason.
   if (loved && loved.lovedBy.length && loved.date && toScore.direct > 0) {
     return `Swapped ${dayName} for something ${who(loved.lovedBy, taste.members)} loved ${when(loved.date, taste.now)}.`;
@@ -553,7 +571,8 @@ export function updatePlan(input: UpdateInput): { plan: PlannerWeek; changes: Pl
         if (maxMinutes && WEEKNIGHTS.has(day) && (c.recipe.total_minutes ?? Infinity) > maxMinutes) continue;
         // Taste decides whether a swap is worth making; variety only decides which one.
         const lovedAtTheTable = (taste.direct.get(c.recipe.id)?.lovedBy.length ?? 0) > 0 && c.score.direct >= LIKED_ITSELF;
-        const liked = lovedAtTheTable || c.score.similar >= LIKED_BY_RESEMBLANCE;
+        // Using up what's on hand is a reason of its own, like a dinner they loved.
+        const liked = lovedAtTheTable || c.score.similar >= LIKED_BY_RESEMBLANCE || c.score.usesOnHand.length > 0;
         if (!weak && !(liked && broughtIn < MAX_BROUGHT_IN_PER_UPDATE)) continue;
         const gain = tasteGain - (sameness(c.recipe) - currentSameness);
         if (!best || gain > best.gain) best = { day, from: current, to: c, gain, fromScore, weak };
