@@ -47,9 +47,10 @@ function serveWebsite(): Plugin {
 
 /**
  * Production builds only: a Content Security Policy that lets the app connect to its own
- * origin and to the Supabase project, and nowhere else. The browser itself blocks any
- * other request, so "nothing is sent" holds for hands-free cooking even if a library
- * update tried to phone home. Images, fonts and scripts are not restricted by it.
+ * origin and to the Supabase project, and nowhere else. The browser blocks any other
+ * fetch, XHR, WebSocket or beacon, which is how a library would phone home, so "nothing
+ * is sent" holds for hands-free cooking even if an update tried to. It does not restrict
+ * images, fonts, scripts or navigation.
  */
 function connectOnlyToOurselves(supabaseUrl: string | undefined): Plugin {
   const supabase = supabaseUrl ? new URL(supabaseUrl).origin : 'https://*.supabase.co';

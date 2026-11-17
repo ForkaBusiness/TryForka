@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, X } from 'lucide-react';
 import { useHandsFree, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
@@ -23,6 +23,7 @@ const HANDS_FREE_PROBLEM: Partial<Record<HandsFreeStatus, string>> = {
   'no-camera': 'No camera found, so hands-free is off. Tap Next and Back instead.',
   busy: 'Another app is using the camera, so hands-free is off. Close it and try again, or tap Next and Back.',
   failed: "Hands-free couldn't start. Try again, or tap Next and Back.",
+  interrupted: 'The camera stopped, so hands-free is off. Turn it on again, or tap Next and Back.',
 };
 
 function introSeen(): boolean {
@@ -94,7 +95,10 @@ export function CookingMode({ id }: { id: number }) {
   const total = recipe?.steps.length ?? 0;
   const last = step >= total - 1;
 
+  const finishing = useRef(false);
   const finish = useCallback(async () => {
+    if (finishing.current) return; // already saving
+    finishing.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -103,6 +107,7 @@ export function CookingMode({ id }: { id: number }) {
     } catch {
       setError("Couldn't mark it as cooked. Check your connection and try again.");
     } finally {
+      finishing.current = false;
       setSaving(false);
     }
   }, [userId, id]);
@@ -112,7 +117,14 @@ export function CookingMode({ id }: { id: number }) {
 
   // The camera runs only while hands-free is on and there are steps to move through.
   const handsFreeOn = handsFree && !finished && total > 0;
-  const camera = useHandsFree(handsFreeOn, swipe => (swipe === 'next' ? next() : prev()));
+  // A wave never finishes the recipe: on the last step only a tap on Done does, so a hand
+  // reaching across the counter can't mark it cooked.
+  const camera = useHandsFree(handsFreeOn, swipe => {
+    if (swipe === 'back') { if (step === 0) return false; prev(); return true; }
+    if (last) return false;
+    next();
+    return true;
+  });
   const { status: cameraStatus, lastSwipe, clearSwipe } = camera;
   // A camera that can't be used turns hands-free off and says why; touch keeps working.
   useEffect(() => {

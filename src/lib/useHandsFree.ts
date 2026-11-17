@@ -9,10 +9,10 @@ import { initialSwipeState, palmFromLandmarks, stepSwipe, type Swipe } from './s
 // component using this unmounts (leaving cooking mode). Frames are read from the video
 // element by the tracker in memory and dropped; nothing is recorded, stored or sent.
 
-export type HandsFreeStatus = 'off' | 'starting' | 'on' | 'paused' | 'unsupported' | CameraProblem;
+export type HandsFreeStatus = 'off' | 'starting' | 'on' | 'paused' | 'unsupported' | 'interrupted' | CameraProblem;
 
-/** About 12 frames a second: plenty to follow a wave, and easy on the battery. */
-const FRAME_MS = 83;
+/** Every frame of the 15 fps camera, at most about 16 a second: plenty to follow a wave, easy on the battery. */
+const FRAME_MS = 60;
 /** Starting (camera, download, tracker) that takes longer than this is given up, not left spinning. */
 const START_LIMIT_MS = 30_000;
 
@@ -21,7 +21,8 @@ type VideoWithFrameCallback = HTMLVideoElement & {
   cancelVideoFrameCallback?: (handle: number) => void;
 };
 
-export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => void) {
+/** `onSwipe` returns false when it ignored the swipe, so no feedback is shown for it. */
+export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolean) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [status, setStatus] = useState<HandsFreeStatus>('off');
   const [handSeen, setHandSeen] = useState(false);
@@ -60,9 +61,11 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => void) 
         else cancelAnimationFrame(frameHandle);
         frameHandle = null;
       }
-      stream?.getTracks().forEach(track => track.stop());
+      const mine = stream;
       stream = null;
-      if (video) video.srcObject = null;
+      mine?.getTracks().forEach(track => track.stop());
+      // Only this run's stream: a newer run may already be showing its own on this video.
+      if (video && mine && video.srcObject === mine) video.srcObject = null;
     };
 
     // A start that never finishes (a stuck download, a GPU that never answers) ends here.
@@ -84,18 +87,37 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => void) 
         return;
       }
       if (cancelled) { stopCamera(); return; }
+      // The camera can be taken away while it runs: ended (revoked, or another app took it)
+      // turns hands-free off and says so; muted (iOS during a phone call) pauses it.
+      const track = stream.getVideoTracks()[0];
+      track?.addEventListener('ended', () => {
+        if (cancelled) return;
+        cancelled = true;
+        stopCamera();
+        setStatus('interrupted');
+      });
+      track?.addEventListener('mute', () => { if (!cancelled && frameHandle !== null) setStatus('paused'); });
+      track?.addEventListener('unmute', () => { if (!cancelled && frameHandle !== null) setStatus('on'); });
       // iOS Safari: the video must be inline and muted to play without going full screen.
       video.muted = true;
       video.playsInline = true;
       video.srcObject = stream;
-      let current: HandTracker;
       try {
         await video.play();
+      } catch (err) {
+        stopCamera();
+        if (cancelled) return; // switched off while starting: not a failure
+        console.error('[hands-free] the camera preview would not play:', err);
+        setStatus('failed');
+        return;
+      }
+      let current: HandTracker;
+      try {
         tracker.current ??= createHandTracker();
         current = await tracker.current;
       } catch (err) {
-        console.error('[hands-free] could not start:', err);
-        tracker.current = null;
+        console.error('[hands-free] could not start the tracker:', err);
+        tracker.current = null; // the tracker itself failed: try afresh next time
         stopCamera();
         if (!cancelled) setStatus('failed');
         return;
@@ -123,10 +145,7 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => void) 
             if (!!palm !== seen) { seen = !!palm; setHandSeen(seen); }
             const step = stepSwipe(swipeState, { t: now, x: palm?.x ?? null, y: palm?.y ?? null });
             swipeState = step.state;
-            if (step.swipe) {
-              setLastSwipe({ swipe: step.swipe, at: now });
-              onSwipeRef.current(step.swipe);
-            }
+            if (step.swipe && onSwipeRef.current(step.swipe)) setLastSwipe({ swipe: step.swipe, at: now });
           } catch (err) {
             // Some GPUs accept the tracker and then fail on the first frame: move to the CPU once.
             if (!fellBack) {
@@ -134,7 +153,7 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => void) 
               console.info('[hands-free] GPU failed while tracking, using the CPU:', err);
               current.landmarker.close();
               tracker.current = createHandTracker('CPU');
-              tracker.current.then(t => { current = t; if (!cancelled) schedule(); }).catch(() => { if (!cancelled) { stopCamera(); setStatus('failed'); } });
+              tracker.current.then(t => { current = t; if (!cancelled) schedule(); }).catch(() => { tracker.current = null; if (!cancelled) { stopCamera(); setStatus('failed'); } });
               return;
             }
             console.error('[hands-free] tracking failed:', err);
