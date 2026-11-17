@@ -59,15 +59,30 @@ export function NutritionCard({ recipe, servings }: { recipe: Recipe; servings: 
   const per = rounded(n.perServing);
   const total = rounded(n.total);
   const missing = [...n.unmatched, ...n.unweighed];
+  // Numbers built from almost nothing would mislead: say so instead.
+  const tooLittle = n.total.kcal <= 0 || n.counted * 2 < n.ingredients - n.noAmount.length;
+  if (tooLittle) {
+    return (
+      <section aria-labelledby="nutrition" className="mt-6">
+        {heading}
+        <Card className="p-4">
+          <p className="text-body font-medium text-ink">Not enough to estimate</p>
+          <p className="mt-1 text-small text-ink-muted">
+            We couldn't match or weigh enough of the ingredients{missing.length ? ` (${list(missing)})` : ''} to give a fair number for this recipe.
+          </p>
+        </Card>
+      </section>
+    );
+  }
   return (
     <section aria-labelledby="nutrition" className="mt-6">
       {heading}
       <Card className="p-4">
         <dl className="grid grid-cols-5 gap-1 text-center">
           {ROWS.map(r => (
-            <div key={r.key} className="min-w-0">
-              <dd className="tabular text-heading font-semibold text-ink">{per[r.key]}{r.unit}</dd>
+            <div key={r.key} className="flex min-w-0 flex-col-reverse">
               <dt className="truncate text-caption text-ink-muted">{r.label}</dt>
+              <dd className="tabular text-heading font-semibold text-ink">{per[r.key]}{r.unit}</dd>
             </div>
           ))}
         </dl>

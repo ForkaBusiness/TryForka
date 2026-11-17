@@ -29,8 +29,14 @@ export async function recipeFacts(recipeId: number, ingredients: readonly Measur
   const facts = new Map(((data ?? []) as unknown as Facts[]).map(f => [f.key, f]));
   if (keys.every(key => facts.has(key))) return facts;
   // Some ingredients haven't been looked up yet: the function asks USDA and caches them.
-  const looked = await callFunction<{ facts: Facts[] }>('nutrition', { recipe_id: recipeId });
-  for (const f of looked.facts) facts.set(f.key, f);
+  // If it can't (not deployed yet, busy, offline), what's cached is still shown and the
+  // rest is named as not counted.
+  try {
+    const looked = await callFunction<{ facts: Facts[] }>('nutrition', { recipe_id: recipeId });
+    for (const f of looked.facts) facts.set(f.key, f);
+  } catch (err) {
+    console.error('[nutrition] lookup failed:', err);
+  }
   return facts;
 }
 

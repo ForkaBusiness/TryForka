@@ -1,5 +1,5 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
-import { factsFromFdc, hasNoCalories, nutritionKey, pickFood, type Facts, type FdcFoodDetail, type FdcSearchFood } from '../_shared/nutrition.ts';
+import { factsFromFdc, hasNoCalories, nutritionKey, pickFood, searchTermFor, type Facts, type FdcFoodDetail, type FdcSearchFood } from '../_shared/nutrition.ts';
 
 // Nutrition facts for a recipe's ingredients, from USDA FoodData Central.
 //   { recipe_id } -> { facts: Facts[] }   (one per ingredient that needs a lookup)
@@ -20,7 +20,8 @@ const RETRY_UNMATCHED_DAYS = 30;
 const COLUMNS = 'key, matched, fdc_id, description, kcal, protein_g, carbs_g, fat_g, fiber_g, portions';
 
 async function fdc<T>(path: string, apiKey: string): Promise<T> {
-  const res = await fetch(`${FDC}${path}${path.includes('?') ? '&' : '?'}api_key=${apiKey}`);
+  // The key goes in a header, so it never appears in a URL or a log line.
+  const res = await fetch(`${FDC}${path}`, { headers: { 'X-Api-Key': apiKey } });
   if (res.status === 429) throw new AppError('Nutrition is busy right now. Try again in a few minutes.', 429);
   if (!res.ok) {
     console.error('[nutrition] USDA answered', res.status, path.split('?')[0]);
@@ -29,14 +30,21 @@ async function fdc<T>(path: string, apiKey: string): Promise<T> {
   return await res.json() as T;
 }
 
-/** One ingredient: search, pick the plain food, read its household portions. */
-async function lookup(key: string, name: string, apiKey: string): Promise<Facts> {
-  const search = await fdc<{ foods?: FdcSearchFood[] }>(`/foods/search?query=${encodeURIComponent(name)}&dataType=${encodeURIComponent('Foundation,SR Legacy')}&pageSize=25`, apiKey);
-  const food = pickFood(name, search.foods ?? []);
-  if (!food) return factsFromFdc(key, null);
-  // Portions are only on the food's own record. Without them weights still work.
-  const detail = await fdc<FdcFoodDetail>(`/food/${food.fdcId}`, apiKey).catch(() => null);
-  return factsFromFdc(key, food, detail);
+/**
+ * One ingredient: search, pick the plain food, read its household portions. `cache` is
+ * false when part of the answer is missing because USDA failed (not because the food has
+ * no portions): that answer is used once but not kept, so the next request tries again.
+ */
+async function lookup(key: string, apiKey: string): Promise<{ facts: Facts; cache: boolean }> {
+  const query = searchTermFor(key);
+  const search = await fdc<{ foods?: FdcSearchFood[] }>(`/foods/search?query=${encodeURIComponent(query)}&dataType=${encodeURIComponent('Foundation,SR Legacy')}&pageSize=25&requireAllWords=true`, apiKey);
+  const food = pickFood(query, search.foods ?? []);
+  if (!food) return { facts: factsFromFdc(key, null), cache: true };
+  try {
+    return { facts: factsFromFdc(key, food, await fdc<FdcFoodDetail>(`/food/${food.fdcId}`, apiKey)), cache: true };
+  } catch {
+    return { facts: factsFromFdc(key, food, null), cache: false };
+  }
 }
 
 serve(async (body, req) => {
@@ -51,9 +59,8 @@ serve(async (body, req) => {
 
   const names = new Map<string, string>();
   for (const ing of (recipe.ingredients ?? []) as Array<{ name_us?: string; name?: string }>) {
-    const name = (ing.name_us || ing.name || '').trim();
-    const key = nutritionKey(name);
-    if (key && !hasNoCalories(key) && !names.has(key)) names.set(key, name);
+    const key = nutritionKey((ing.name_us || ing.name || '').trim());
+    if (key && !hasNoCalories(key) && !names.has(key)) names.set(key, key);
   }
   if (!names.size) return { facts: [] };
 
@@ -64,22 +71,30 @@ serve(async (body, req) => {
     throw new AppError('Nutrition is not set up on the server.', 500);
   }
   const stale = Date.now() - RETRY_UNMATCHED_DAYS * 86_400_000;
-  const known = new Map((cached ?? []).filter(row => row.matched || new Date(row.checked_at as string).getTime() > stale).map(row => [row.key as string, row]));
+  // Unmatched rows, and matched rows saved without portions, are looked up again after a while: USDA adds data.
+  const settled = (row: { matched: boolean; portions: Record<string, number> | null }) => row.matched && Object.keys(row.portions ?? {}).length > 0;
+  const known = new Map((cached ?? []).filter(row => settled(row as never) || new Date(row.checked_at as string).getTime() > stale).map(row => [row.key as string, row]));
   const missing = [...names].filter(([key]) => !known.has(key)).slice(0, MAX_LOOKUPS);
 
-  const found: Facts[] = [];
+  const found: Array<{ facts: Facts; cache: boolean }> = [];
   if (missing.length) {
     const apiKey = Deno.env.get('FDC_API_KEY');
     if (!apiKey) throw new AppError('Nutrition is not set up on the server.', 500);
+    let failed = 0;
     for (let i = 0; i < missing.length; i += TOGETHER) {
-      found.push(...await Promise.all(missing.slice(i, i + TOGETHER).map(([key, name]) => lookup(key, name, apiKey))));
+      // One ingredient failing doesn't lose the others: it's left out and tried again next time.
+      for (const result of await Promise.allSettled(missing.slice(i, i + TOGETHER).map(([key]) => lookup(key, apiKey)))) {
+        if (result.status === 'fulfilled') found.push(result.value); else failed++;
+      }
     }
-    const { error: saveError } = await admin.from('ingredient_nutrition')
-      .upsert(found.map(f => ({ ...f, checked_at: new Date().toISOString() })), { onConflict: 'key' });
-    // The answer is still good for this request; it will be looked up again next time.
-    if (saveError) console.error('[nutrition] cache write failed:', saveError);
-    console.log(`[nutrition] recipe ${recipeId}: looked up ${found.length}, matched ${found.filter(f => f.matched).length}`);
+    const keep = found.filter(f => f.cache).map(f => ({ ...f.facts, checked_at: new Date().toISOString() }));
+    if (keep.length) {
+      const { error: saveError } = await admin.from('ingredient_nutrition').upsert(keep, { onConflict: 'key' });
+      // The answer is still good for this request; it will be looked up again next time.
+      if (saveError) console.error('[nutrition] cache write failed:', saveError);
+    }
+    console.log(`[nutrition] recipe ${recipeId}: looked up ${found.length}, matched ${found.filter(f => f.facts.matched).length}, failed ${failed}`);
   }
-  const facts = [...known.values()].map(({ checked_at: _checked, ...row }) => row as unknown as Facts).concat(found);
+  const facts = [...known.values()].map(({ checked_at: _checked, ...row }) => row as unknown as Facts).concat(found.map(f => f.facts));
   return { facts };
 });

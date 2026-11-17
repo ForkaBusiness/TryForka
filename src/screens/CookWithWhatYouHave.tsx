@@ -17,6 +17,7 @@ import { activeOnHand, ON_HAND_DAYS } from '../lib/onHand';
 
 const HAVE_KEY = 'forka_have';
 const MAX_SHOWN_MISSING = 4;
+const MAX_RESULTS = 40;
 
 function savedHave(): string[] {
   try { return (JSON.parse(localStorage.getItem(HAVE_KEY) ?? '[]') as unknown[]).filter((v): v is string => typeof v === 'string'); } catch { return []; }
@@ -47,7 +48,7 @@ export function CookWithWhatYouHave() {
     return () => { cancelled = true; };
   }, [prefs, attempt]);
 
-  const results = useMemo(() => (pool ? matchRecipes(pool, r => r.ingredients, have) : []), [pool, have]);
+  const results = useMemo(() => (pool ? matchRecipes(pool, r => r.ingredients, have, MAX_RESULTS) : []), [pool, have]);
   const using = activeOnHand(onHand);
   const usingThese = using.length > 0 && using.length === have.length && using.every(i => have.includes(i));
   const listed = (items: string[]) => {
@@ -116,7 +117,7 @@ export function CookWithWhatYouHave() {
       ) : (
         <>
           <p role="status" className="mb-3 text-small text-ink-muted">
-            {results.length === 1 ? '1 recipe' : `${results.length} recipes`} use{results.length === 1 ? 's' : ''} what you have, the closest first.
+            {results.length >= MAX_RESULTS ? `The ${MAX_RESULTS} closest recipes, best first.` : `${results.length === 1 ? '1 recipe uses' : `${results.length} recipes use`} what you have, the closest first.`}
           </p>
           <AllergyReminder className="mb-4" />
           <RecipeGrid>

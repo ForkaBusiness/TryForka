@@ -57,11 +57,45 @@ const ENERGY_KCAL = 1008;
 const ENERGY_ATWATER = [2047, 2048];
 const PROTEIN = 1003, FAT = 1004, CARBS = 1005, FIBER = 1079;
 
-const tokens = (text: string) => normalizeIngredient(text).split(' ').filter(Boolean);
+/** Words, singular. A hyphenated word stays one word: "Sugar-apples" is not sugar. */
+const tokens = (text: string) => normalizeIngredient(text.replace(/-/g, '')).split(' ').filter(Boolean);
+/** The food itself: the words before the first comma ("Onions" in "Onions, raw"). */
+const head = (description: string) => tokens(description.split(',')[0]);
+
+/**
+ * How USDA names the plain version of common catalog ingredients, so the search finds it
+ * and the match must contain those words. "egg" alone ties egg white with whole egg, and
+ * plain cow's milk isn't in the first results for "milk". Keyed by nutritionKey().
+ */
+export const SEARCH_AS: Record<string, string> = {
+  egg: 'egg whole raw fresh', 'large egg': 'egg whole raw fresh', 'free range egg': 'egg whole raw fresh',
+  sugar: 'sugars granulated', 'caster sugar': 'sugars granulated', 'granulated sugar': 'sugars granulated', 'white sugar': 'sugars granulated',
+  'brown sugar': 'sugars brown', 'light brown sugar': 'sugars brown', 'dark brown sugar': 'sugars brown',
+  'powdered sugar': 'sugars powdered', 'icing sugar': 'sugars powdered',
+  milk: 'milk whole milkfat', 'whole milk': 'milk whole milkfat',
+  rice: 'rice white longgrain regular raw', 'white rice': 'rice white longgrain regular raw', 'basmati rice': 'rice white longgrain regular raw',
+  'long grain rice': 'rice white longgrain regular raw', 'jasmine rice': 'rice white longgrain regular raw', 'brown rice': 'rice brown longgrain raw',
+  tomato: 'tomatoes red ripe raw', 'cherry tomato': 'tomatoes red ripe raw', 'plum tomato': 'tomatoes red ripe raw',
+  'chicken breast': 'chicken broilers or fryers breast meat only raw', 'chicken thigh': 'chicken broilers or fryers thigh meat only raw',
+  butter: 'butter without salt', 'unsalted butter': 'butter without salt', 'salted butter': 'butter salted',
+  'chicken stock': 'soup stock chicken', 'beef stock': 'soup stock beef',
+  garlic: 'garlic raw', 'garlic clove': 'garlic raw',
+  'heavy cream': 'cream fluid heavy whipping', 'double cream': 'cream fluid heavy whipping', 'whipping cream': 'cream fluid heavy whipping',
+  parmesan: 'cheese parmesan hard', 'parmesan cheese': 'cheese parmesan hard', 'cheddar cheese': 'cheese cheddar',
+  'ground beef': 'beef ground lean meat fat raw', 'minced beef': 'beef ground lean meat fat raw', 'lean ground beef': 'beef ground lean meat fat raw',
+  'soy sauce': 'soy sauce shoyu',
+  flour: 'wheat flour white allpurpose enriched', 'plain flour': 'wheat flour white allpurpose enriched', 'all purpose flour': 'wheat flour white allpurpose enriched',
+  potato: 'potatoes flesh and skin raw', carrot: 'carrots raw', 'lemon juice': 'lemon juice raw', 'lime juice': 'lime juice raw',
+};
+/** What to search USDA for, for an ingredient key. */
+export const searchTermFor = (key: string) => SEARCH_AS[key] ?? key;
+
 /** Words in a USDA description that don't change what the food is. */
-const NEUTRAL = new Set(['raw', 'fresh', 'all', 'purpose', 'whole', 'nfs', 'or', 'and', 'with', 'without', 'salt', 'added', 'unsalted', 'salted', 'plain', 'regular', 'commercial', 'commercially', 'prepared', 'salad', 'cooking', 'mature', 'seed', 'unenriched', 'enriched', 'white', 'year', 'round', 'average', 'variety', 'type', 'grade', 'large', 'medium', 'small', 'skin', 'pulp', 'only', 'meat', 'separable', 'lean', 'fat', 'trimmed', 'to', 'select', 'choice', 'broiler', 'fryer', 'fluid', 'vitamin', 'd', 'a', 'ground']);
+const NEUTRAL = new Set(['raw', 'fresh', 'all', 'purpose', 'whole', 'nfs', 'or', 'and', 'with', 'without', 'salt', 'added', 'unsalted', 'salted', 'plain', 'regular', 'commercial', 'commercially', 'prepared', 'salad', 'cooking', 'mature', 'seed', 'unenriched', 'enriched', 'year', 'round', 'average', 'variety', 'type', 'grade', 'large', 'medium', 'small', 'skin', 'pulp', 'only', 'meat', 'separable', 'lean', 'fat', 'trimmed', 'to', 'select', 'choice', 'broiler', 'fryer', 'fluid', 'vitamin', 'd', 'a', 'ground']);
 /** A different product from the plain ingredient, unless the recipe asked for it. */
 const PROCESSED = new Set(['dehydrated', 'dried', 'powder', 'canned', 'frozen', 'cooked', 'boiled', 'fried', 'roasted', 'baked', 'pickled', 'juice', 'flake', 'ring', 'chip', 'sauce', 'soup', 'babyfood', 'restaurant', 'fast', 'candied', 'sweetened', 'concentrate', 'imitation', 'substitute', 'snack', 'breaded', 'stewed', 'drained', 'microwaved', 'braised', 'grilled', 'smoked', 'cured']);
+/** Part of the food, not the food: an egg white isn't an egg, and skin changes the numbers. */
+const PART = new Set(['yolk', 'skin', 'heart', 'liver', 'giblet', 'neck', 'back', 'wing']);
 const BRANDED_CATEGORIES = /restaurant|fast food|baby food|snack|sweets|meals, entrees|breakfast cereal|beverage/i;
 
 const nutrient = (food: FdcSearchFood, ...ids: number[]): number | null => {
@@ -79,7 +113,9 @@ export function per100g(food: FdcSearchFood): Nutrients | null {
   // Foundation foods often list no energy: the standard 4-4-9 factors fill it in.
   if (kcal === null && protein !== null && fat !== null && carbs !== null) kcal = 4 * protein + 4 * carbs + 9 * fat;
   if (kcal === null) return null;
-  return { kcal, protein: protein ?? 0, carbs: carbs ?? 0, fat: fat ?? 0, fiber: nutrient(food, FIBER) ?? 0 };
+  // USDA's carbs are "by difference" and can come out slightly below zero.
+  const floor = (n: number | null) => Math.max(0, n ?? 0);
+  return { kcal: Math.max(0, kcal), protein: floor(protein), carbs: floor(carbs), fat: floor(fat), fiber: floor(nutrient(food, FIBER)) };
 }
 
 /**
@@ -96,9 +132,11 @@ export function pickFood(query: string, foods: readonly FdcSearchFood[]): FdcSea
     if (!per100g(food)) continue;
     const words = tokens(food.description);
     if (!wanted.every(w => words.includes(w))) continue;
+    // The food itself must be one of the words asked for: "Toaster pastries, brown-sugar-cinnamon" isn't sugar.
+    if (!head(food.description).some(w => wanted.includes(w))) continue;
     const extra = words.filter(w => !wanted.includes(w));
     let score = 0;
-    for (const w of extra) score -= PROCESSED.has(w) ? 6 : NEUTRAL.has(w) ? 0.25 : 2;
+    for (const w of extra) score -= PROCESSED.has(w) ? 6 : PART.has(w) ? 4 : NEUTRAL.has(w) ? 0.25 : 2;
     if (words.includes('raw') && !wanted.includes('raw')) score += 1.5;
     if (words[0] === wanted[0] || words[0] === wanted[wanted.length - 1]) score += 1;
     if (BRANDED_CATEGORIES.test(food.foodCategory ?? '')) score -= 8;
@@ -147,7 +185,7 @@ export function factsFromFdc(key: string, food: FdcSearchFood | null, detail?: F
 export interface MeasuredIngredient { name_us: string; quantity: number | null; quantity_max?: number | null; unit: string }
 
 /** Amounts too small to matter, whatever they're of. */
-const TRACE_UNITS = new Set(['pinch', 'dash', 'drop', 'splash']);
+const TRACE_UNITS = new Set(['pinch', 'dash', 'drop']);
 /** Millilitres in each unit a food's portions may be given in. */
 const PORTION_ML: Array<[string, number]> = [['cup', VOLUME.cup], ['tbsp', VOLUME.tbsp], ['tsp', VOLUME.tsp], ['fl oz', VOLUME['fl oz']]];
 

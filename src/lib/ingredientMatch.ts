@@ -10,12 +10,25 @@ import { isStaple, itemKey, shoppingName } from './groceryMerge.ts';
  * chicken stock isn't chicken, rice vinegar isn't rice. Unless the person typed the word
  * themselves ("chicken stock").
  */
-const PRODUCTS = new Set(['stock', 'broth', 'vinegar', 'powder', 'sauce', 'oil', 'paste', 'flour', 'wine', 'extract', 'juice', 'cube', 'seasoning', 'syrup']);
+const PRODUCTS = new Set([
+  'stock', 'broth', 'vinegar', 'powder', 'sauce', 'oil', 'paste', 'flour', 'wine', 'extract', 'juice', 'cube', 'seasoning', 'syrup',
+  'concentrate', 'gravy', 'ketchup', 'starch', 'salt', 'noodle', 'wrapper', 'tortilla', 'chocolate', 'krispy', 'cordial', 'roll',
+  'paper', 'sheet', 'bean', 'pea',
+]);
+/** Fruit whose juice or zest is the fruit as far as a shopper is concerned. */
+const FRUIT = new Set(['lemon', 'lime', 'orange', 'grapefruit']);
 
 /** Foods named after another food that aren't it: green onions aren't onions. */
 const DIFFERENT: Record<string, string[]> = {
   onion: ['green onion', 'spring onion'],
   potato: ['sweet potato'],
+  milk: ['coconut milk', 'almond milk', 'soy milk', 'soya milk', 'oat milk'],
+  butter: ['peanut butter', 'almond butter', 'palm butter'],
+  cream: ['ice cream', 'cream cheese', 'cream of tartar', 'sour cream'],
+  pepper: ['black pepper', 'white pepper', 'cayenne pepper', 'chili pepper', 'chilli pepper', 'pepper flake'],
+  sugar: ['sugar snap'],
+  beef: ['beef tomato'],
+  salt: ['salt cod'],
 };
 
 /** Does a recipe's ingredient count as something the person has? Whole words only ("egg" isn't "eggplant"). */
@@ -28,6 +41,7 @@ export function usesIngredient(ingredient: string, have: string): boolean {
   const typed = term.split(' ');
   if (DIFFERENT[term]?.some(other => ` ${name} `.includes(` ${other} `))) return false;
   // "chicken stock" for "chicken": a different product, unless they asked for that product.
+  if ((last === 'juice' || last === 'zest') && FRUIT.has(term)) return true;
   return !(PRODUCTS.has(last) && !typed.includes(last));
 }
 
@@ -55,7 +69,8 @@ export function matchRecipes<T extends { id: number }>(recipes: readonly T[], in
     const missing = new Map<string, string>();
     for (const ingredient of ingredientsOf(recipe)) {
       const key = itemKey(ingredient);
-      if (!key) continue;
+      // Salt, pepper, oil and water are in every kitchen: never what someone "has" to use up, never "missing".
+      if (!key || isStaple(key)) continue;
       const hit = terms.filter(t => usesIngredient(ingredient, t));
       if (hit.length) {
         hit.forEach(t => usedTerms.add(t));

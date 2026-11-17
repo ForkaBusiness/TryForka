@@ -19,6 +19,27 @@ test('an ingredient matches by whole words, and a product named after it does no
   assert.ok(usesIngredient('Green onions', 'green onion'));
 });
 
+test('real catalog names: products named after a food are not the food', () => {
+  const not: Array<[string, string]> = [
+    ['Chicken Stock Concentrate', 'chicken'], ['Beef Stock Concentrate', 'beef'], ['Beef Gravy', 'beef'], ['Beef tomatoes', 'beef'],
+    ['Coconut Milk', 'milk'], ['Almond Milk', 'milk'], ['Soya Milk', 'milk'], ['Milk Chocolate', 'milk'],
+    ['Peanut Butter', 'butter'], ['Butter Beans', 'butter'], ['Ice Cream', 'cream'], ['Cream Cheese', 'cream'], ['Cream Of Tartar', 'cream'],
+    ['Egg Noodles', 'egg'], ['Egg Rolls', 'egg'], ['Egg Roll Wrappers', 'egg'], ['Rice Noodles', 'rice'], ['Rice Krispies', 'rice'], ['Rice Paper Sheets', 'rice'],
+    ['Sugar Snap Peas', 'sugar'], ['Tomato Ketchup', 'tomato'], ['Potato Starch', 'potato'], ['Onion Salt', 'onion'], ['Corn Tortillas', 'corn'],
+    ['Salt Cod', 'salt'], ['Black Pepper', 'pepper'], ['Ground Black Pepper', 'pepper'],
+  ];
+  for (const [name, have] of not) assert.ok(!usesIngredient(name, have), `${name} is not ${have}`);
+  for (const [name, have] of [['Red Pepper', 'pepper'], ['Milk', 'milk'], ['Double Cream', 'cream'], ['Lemon Juice', 'lemon'], ['Lime zest', 'lime'], ['Unsalted Butter', 'butter']]) {
+    assert.ok(usesIngredient(name, have), `${name} is ${have}`);
+  }
+});
+
+test('salt, pepper, oil and water are never listed as had or missing', () => {
+  const [r] = matchRecipes([{ id: 1, ingredients: ['Chicken', 'Salt', 'Black pepper', 'Olive oil', 'Water', 'Thyme'] }], x => x.ingredients, ['chicken', 'salt']);
+  assert.deepEqual(r.have, ['Chicken']);
+  assert.deepEqual(r.missing, ['Thyme']);
+});
+
 const recipes = [
   { id: 1, name: 'Chicken fried rice', ingredients: ['Chicken breast', 'Rice', 'Eggs', 'Soy sauce', 'Green onion', 'Vegetable oil', 'Salt'] },
   { id: 2, name: 'Chicken soup', ingredients: ['Chicken thighs', 'Carrots', 'Celery', 'Onion', 'Chicken stock', 'Salt', 'Water'] },

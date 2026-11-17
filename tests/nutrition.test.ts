@@ -194,3 +194,40 @@ test('keys are the normalized US name, and water and salt need no lookup', () =>
   assert.ok(hasNoCalories('water') && hasNoCalories('salt') && hasNoCalories('sea salt'));
   assert.ok(!hasNoCalories('olive oil') && !hasNoCalories('sugar'), 'oil and sugar are staples in a kitchen, not in the numbers');
 });
+
+// ── Matching cases from review (descriptions as USDA writes them) ──────────
+
+import { searchTermFor } from '../supabase/functions/_shared/nutrition.ts';
+const food = (fdcId: number, description: string, kcal = 100, carbs = 10): FdcSearchFood => ({ fdcId, description, dataType: 'SR Legacy', foodNutrients: n(kcal, 5, 5, carbs) });
+
+test('a hyphenated word is not the ingredient: sugar-apples are not sugar', () => {
+  const results = [food(1, 'Sugar-apples, (sweetsop), raw', 94), food(2, 'Toaster pastries, brown-sugar-cinnamon', 412), food(3, 'Sugars, granulated', 387)];
+  assert.equal(pickFood(searchTermFor('sugar'), results)?.fdcId, 3);
+  assert.equal(pickFood('sugar', [results[0], results[1]]), null, 'neither is sugar');
+  assert.equal(pickFood(searchTermFor('brown sugar'), [results[1], food(4, 'Sugars, brown', 380)])?.fdcId, 4);
+});
+
+test('an egg is a whole egg, not an egg white', () => {
+  const results = [food(1, 'Egg, white, raw, fresh', 52), food(2, 'Egg, yolk, raw, fresh', 322), food(3, 'Egg, whole, raw, fresh', 143)];
+  assert.equal(pickFood(searchTermFor('egg'), results)?.fdcId, 3);
+  assert.equal(pickFood('egg', results)?.fdcId, 3, 'even without the search term');
+});
+
+test('common ingredients search for the plain food by USDA\'s own words', () => {
+  assert.equal(pickFood(searchTermFor('milk'), [food(1, 'Milk, sheep, fluid'), food(2, 'Milk, buttermilk, fluid, whole'), food(3, 'Milk, whole, 3.25% milkfat, with added vitamin D')])?.fdcId, 3);
+  assert.equal(pickFood(searchTermFor('rice'), [food(1, 'Wild rice, raw'), food(2, 'Rice, white, long-grain, regular, raw, enriched')])?.fdcId, 2);
+  assert.equal(pickFood(searchTermFor('tomato'), [food(1, 'Tomatoes, green, raw'), food(2, 'Tomatoes, red, ripe, raw, year round average')])?.fdcId, 2);
+  assert.equal(pickFood(searchTermFor('chicken breast'), [food(1, 'Chicken, broilers or fryers, breast, meat and skin, raw'), food(2, 'Chicken, broilers or fryers, breast, meat only, raw')])?.fdcId, 2);
+  assert.equal(pickFood(searchTermFor('unsalted butter'), [food(1, 'Butter, salted'), food(2, 'Butter, without salt')])?.fdcId, 2);
+  assert.equal(pickFood(searchTermFor('chicken stock'), [food(1, 'Soup, stock, chicken, home-prepared')])?.fdcId, 1);
+  assert.equal(searchTermFor('basmati rice'), searchTermFor('rice'));
+  assert.equal(searchTermFor('dragon fruit'), 'dragon fruit', 'anything else is searched as named');
+});
+
+test('a slightly negative value from USDA is read as zero', () => {
+  assert.equal(per100g({ fdcId: 1, description: 'Chicken, breast', foodNutrients: n(120, 22.5, 2.6, -0.428) })!.carbs, 0);
+});
+
+test('a splash is not a trace: it can\'t be weighed', () => {
+  assert.equal(gramsOf(ing('Olive oil', '1 splash'), { tbsp: 13.5 }), null);
+});
