@@ -97,7 +97,7 @@ async function suggestions(db: ReturnType<typeof userClient>, body: Record<strin
   const roles = slot === 'breakfast' ? ['breakfast'] : slot ? ['main'] : ['main', 'breakfast'];
   const prefs = await foodPrefs(db);
   const list = (await candidates(db, roles, prefs)).filter(c => !exclude.has(c.id));
-  if (!list.length) throw new AppError('No recipes match your settings. Check your allergies and skipped ingredients in Settings.', 404);
+  if (!list.length) throw new AppError('No recipes match your settings. Check your allergies and skipped ingredients in Settings. Always check the ingredients yourself.', 404);
   const pool = shuffle(list).slice(0, 400);
   const byId = new Map(pool.map(c => [c.id, c]));
   const hints = await tasteHints(db);

@@ -14,7 +14,7 @@ import { Button, Card, cx } from './ds';
 
 /** Minutes after midnight when dinner is taken to be over if nobody marked it cooked: 7:30 pm. */
 const AFTER_DINNER = 19 * 60 + 30;
-/** A plan made after this hour yesterday didn't decide yesterday's dinner. */
+/** A plan made after this hour didn't decide that day's dinner. */
 const DINNER_DECIDED_HOUR = 17;
 const RECHECK_MS = 5 * 60_000;
 const SKIPPED_KEY = 'forka_checkin_skipped';
@@ -114,8 +114,12 @@ export function CheckIn() {
       ]);
       const open = (d: Dinner | null) => !!d && !answered.has(dinnerKey(d)) && !skipped().includes(skipKey(d));
       const time = new Date();
+      // Dinner time only says dinner is over for a plan that was there before dinner: a
+      // week planned this evening hasn't had tonight's dinner cooked from it.
+      const plannedBeforeDinner = !!weekPlan && new Date(weekPlan.createdAt) < new Date(time.getFullYear(), time.getMonth(), time.getDate(), DINNER_DECIDED_HOUR);
+      const dinnerOver = plannedBeforeDinner && time.getHours() * 60 + time.getMinutes() >= AFTER_DINNER;
       // Once tonight's dinner is cooked or dinner time has passed, last night's is behind us.
-      if (tonight && (cooked || time.getHours() * 60 + time.getMinutes() >= AFTER_DINNER)) return open(tonight) ? tonight : null;
+      if (tonight && (cooked || dinnerOver)) return open(tonight) ? tonight : null;
       return open(lastNight) ? lastNight : null;
     })().then(d => {
       if (cancelled) return;

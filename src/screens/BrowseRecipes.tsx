@@ -4,6 +4,7 @@ import { useApp } from '../app/AppContext';
 import { availableFilters, browseRecipes, BROWSE_FILTERS, type BrowseFilter, type RecipeCard } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, entryFromCard, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
 import { AllergyReminder } from '../components/AllergyReminder';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { Button, Card, EmptyState, IconButton, Input, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, ToggleChip } from '../components/ds';
 
 // Build a meal plan: browse the catalog (already filtered for the household's
@@ -122,7 +123,7 @@ export function BrowseRecipes() {
       {prefs.allergies.length === 0 && (
         <p className="mb-4 text-small text-ink-muted">
           <button type="button" onClick={() => go({ name: 'settings' })} className="cursor-pointer font-semibold text-green hover:underline">Add allergies in Settings</button>
-          {' '}and we'll hide recipes that contain them.
+          {' '}and we'll hide recipes that contain them. {CHECK_INGREDIENTS}
         </p>
       )}
 

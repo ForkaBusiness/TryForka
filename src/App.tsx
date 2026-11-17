@@ -38,6 +38,7 @@ const TABS: NavId[] = ['mealplan', 'groceries', 'favorites', 'settings'];
 const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking'];
 
 const allergiesByMember = (members: FamilyMember[]): Record<string, string[]> => Object.fromEntries(members.map(m => [m.id, m.allergies]));
+const PLAN_CHECK_RETRY_MS = 4000;
 const sameIds = (a: Record<string, unknown>, b: Record<string, unknown>) => Object.keys(a).sort().join() === Object.keys(b).sort().join();
 
 /** Blank while the session check runs or while leaving for the website's log-in page. */
@@ -69,6 +70,11 @@ function SignedIn({ session }: { session: Session }) {
   const [profile, setProfile] = useState<Profile>({ full_name: '', household_name: '', household_size: 1 });
   const [weekPlan, setWeekPlan] = useState<SavedWeekPlan | null | undefined>(undefined);
   const [planChecked, setPlanChecked] = useState(false);
+  /** Bumped to run the plan check again after it couldn't be completed. */
+  const [checkAttempt, setCheckAttempt] = useState(0);
+  const planShown = useRef(false);
+  planShown.current = planChecked;
+  const settingsKey = useRef<string | null>(null);
   const [planReview, setPlanReview] = useState<PlanReview>({ notice: null, blocked: [] });
   const [favorites, setFavorites] = useState<Map<number, FavoriteEntry>>(new Map());
   const [stack, setStack] = useState<Screen[]>([{ name: 'mealplan' }]);
@@ -120,6 +126,9 @@ function SignedIn({ session }: { session: Session }) {
 
   const saveWeek = useCallback(async (plan: WeekPlan, fresh: boolean, opts?: { quiet?: boolean }) => {
     const before = planRef.current ?? null;
+    // While a saved plan is hidden for its check, screens see "no plan". An edit made in
+    // that moment would be built on an empty week and overwrite the real one, so it waits.
+    if (!opts?.quiet && before && !planShown.current) throw new Error('Your week is still loading. Try again in a moment.');
     // What the household puts in the plan by hand is theirs: the daily update won't move it.
     const saved = await saveWeekPlan(userId, opts?.quiet ? plan : markChosen(before?.plan ?? null, plan), before, fresh);
     if (!opts?.quiet) logPlanEvents(userId, planEdits(before?.plan ?? null, plan));
@@ -138,6 +147,7 @@ function SignedIn({ session }: { session: Session }) {
   // wait after a change means a mis-tapped allergy doesn't cost the household a planned meal.
   const planLoaded = weekPlan !== undefined;
   const foodKey = prefs && members ? JSON.stringify([foodSettings(prefs), allergiesByMember(members)]) : null;
+  settingsKey.current = foodKey;
   useEffect(() => {
     if (!prefs || !members || !shownPrefs || !planLoaded) return;
     const settings = { food: foodSettings(prefs), memberAllergies: allergiesByMember(members) };
@@ -147,6 +157,10 @@ function SignedIn({ session }: { session: Session }) {
     // gets the plan: a dinner with a new allergen in it is never shown, not even briefly.
     const firstCheck = before === null;
     setPlanChecked(false);
+    // An Undo that only holds meals was worked out under the old settings: it could put
+    // back a dinner the new settings don't allow, so a settings change retires it.
+    if (!firstCheck) setPlanReview(r => (r.undo && !r.undo.settings ? { ...r, undo: undefined } : r));
+    let retry: number | undefined;
     const id = window.setTimeout(() => {
       const current = planRef.current;
       if (!current) { checkedSettings.current = settings; setPlanChecked(true); return; }
@@ -168,13 +182,18 @@ function SignedIn({ session }: { session: Session }) {
             undo: before && sameIds(before.memberAllergies, settings.memberAllergies) ? { plan: current.plan, settings: before } : undefined,
           });
         })
-        .catch(err => console.error('[plan] check failed:', err))
-        .finally(() => { if (!cancelled) setPlanChecked(true); });
-    }, firstCheck ? 0 : 800);
-    return () => { cancelled = true; window.clearTimeout(id); };
-    // The check runs on a change to the settings (foodKey), not on every new prefs object.
+        .then(() => { if (!cancelled) setPlanChecked(true); })
+        // A check that couldn't run is not a pass: the plan stays hidden and the check is
+        // tried again, rather than showing meals nobody has checked.
+        .catch(err => {
+          console.error('[plan] check failed:', err);
+          if (!cancelled) retry = window.setTimeout(() => setCheckAttempt(n => n + 1), PLAN_CHECK_RETRY_MS);
+        });
+    }, firstCheck || checkAttempt > 0 ? 0 : 800);
+    return () => { cancelled = true; window.clearTimeout(id); window.clearTimeout(retry); };
+    // The check runs on a change to the settings (foodKey) or a retry, not on every new prefs object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [foodKey, planLoaded, saveWeek]);
+  }, [foodKey, planLoaded, saveWeek, checkAttempt]);
 
   // Settings first: if that save fails, nothing has changed and the meals stay safe.
   // Settings are only put back when a settings change is what's being undone. Undoing an
@@ -193,14 +212,18 @@ function SignedIn({ session }: { session: Session }) {
       await saveWeek(undo.plan, false, { quiet: true });
     } else {
       // The household wants these dinners back: mark them theirs, so tomorrow's update
-      // doesn't make the same swap again.
+      // doesn't make the same swap again. What goes back is checked against today's
+      // settings first, like any saved plan.
       const current = planRef.current?.plan ?? null;
-      await saveWeek(markChosen(current, undo.plan), false, { quiet: true });
+      const safe = shownPrefs ? await enforcePlan(undo.plan, shownPrefs) : null;
+      if (!safe) return;
+      await saveWeek(markChosen(current, safe.plan), false, { quiet: true });
+      if (safe.changed) { setPlanReview({ notice: planNotice(safe.replaced, safe.blocked.length), blocked: safe.blocked }); return; }
       // What the update brought in was turned down: it isn't offered again this week.
       logPlanEvents(userId, planEdits(current, undo.plan).filter(e => e.kind === 'swapped_out'));
     }
     setPlanReview({ notice: null, blocked: [] });
-  }, [planReview, saveWeek, userId, members]);
+  }, [planReview, saveWeek, userId, members, shownPrefs]);
 
   const saveFamilyMember = useCallback(async (draft: MemberDraft) => {
     const list = members ?? [];
@@ -234,8 +257,9 @@ function SignedIn({ session }: { session: Session }) {
   const swapForBusyNight = useCallback(async (day: Day) => {
     const current = planRef.current;
     if (!family || !current) return false;
+    const settings = settingsKey.current;
     const swap = await busyNightSwap(family, current, day);
-    if (!swap || planRef.current !== current) return false;
+    if (!swap || planRef.current !== current || settingsKey.current !== settings) return false;
     await saveWeek(swap.plan, false, { quiet: true });
     setPlanReview(r => ({ notice: swap.note, blocked: r.blocked, undo: { plan: current.plan } }));
     return true;
@@ -248,10 +272,11 @@ function SignedIn({ session }: { session: Session }) {
     const current = planRef.current;
     if (!family || !current) return false;
     try {
+      const settings = settingsKey.current;
       const update = await updateAfterCheckin(family, current);
-      // The update was worked out from the plan as it was a moment ago. If the plan has
-      // changed since (an edit, another check), leave it: the next check-in will catch up.
-      if (!update || planRef.current !== current) return false;
+      // The update was worked out from the plan and the settings as they were a moment
+      // ago. If either has changed since, leave it: the next check-in will catch up.
+      if (!update || planRef.current !== current || settingsKey.current !== settings) return false;
       await saveWeek(update.plan, false, { quiet: true });
       setPlanReview(r => ({ notice: update.note, blocked: r.blocked, undo: { plan: current.plan } }));
       return true;

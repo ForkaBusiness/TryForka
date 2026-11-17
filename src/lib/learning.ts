@@ -1,6 +1,7 @@
 import { lookupCards, planningPool, recipeIngredients, type RecipeCard } from './catalog';
 import type { Preferences } from './preferences';
 import type { FamilyMember } from './family';
+import { CHECK_INGREDIENTS } from './familyPrefs';
 import { cookedSince, fetchSignals } from './signals';
 import { fetchGroceryList, listMatchesPlan, rebuildGroceryList } from './groceries';
 import { isStaple, itemKey, shoppedRecipeIds, withoutRecipes } from './groceryMerge';
@@ -20,7 +21,7 @@ export interface Family {
   favorites: number[];
 }
 
-const NO_RECIPES = 'No recipes match your settings. Check your allergies and skipped ingredients in Settings.';
+const NO_RECIPES = `No recipes match your settings. Check your allergies and skipped ingredients in Settings. ${CHECK_INGREDIENTS}`;
 
 async function familyTaste(family: Family, pool: RecipeCard[]): Promise<Taste> {
   const signals = await fetchSignals(family.userId, family.favorites);

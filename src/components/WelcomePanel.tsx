@@ -12,8 +12,13 @@ const DAYS = ['Mon', 'Tue', 'Wed'];
 function WeekPreview({ prefs }: { prefs?: FoodPrefs }) {
   const [recipes, setRecipes] = useState<RecipeCard[]>([]);
   const key = JSON.stringify(prefs ?? null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- prefs are keyed by `key`
-  useEffect(() => { previewRecipes(prefs).then(setRecipes).catch(() => setRecipes([])); }, [key]);
+  useEffect(() => {
+    // Quick taps on the allergy step each start a request: only the latest one may show.
+    let cancelled = false;
+    previewRecipes(prefs).then(r => { if (!cancelled) setRecipes(r); }).catch(() => { if (!cancelled) setRecipes([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefs are keyed by `key`
+  }, [key]);
   return (
     <Card role="img" aria-label="Example of a planned week: three dinners with photos" className="w-full p-5 shadow-lg">
       <p className="label mb-1">This week</p>

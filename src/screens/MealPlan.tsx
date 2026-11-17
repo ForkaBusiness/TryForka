@@ -14,15 +14,38 @@ import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListG
 // every other day is a row with its photo, name and time. Tapping a day opens its sheet:
 // swap, move, lock, remove, or trade it for something faster on a busy night.
 
-function useCards(entries: PlanEntry[], prefs: Preferences): Map<number, RecipeCard> {
-  const [cards, setCards] = useState<Map<number, RecipeCard>>(new Map());
+/**
+ * The planned recipes as the gate returns them: a recipe the family can't eat isn't in the
+ * map. Null until they've loaded; a failed load is tried again rather than treated as empty.
+ */
+function useCards(entries: PlanEntry[], prefs: Preferences): Map<number, RecipeCard> | null {
+  const [cards, setCards] = useState<{ ids: string; map: Map<number, RecipeCard> } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const ids = entries.map(e => e.id).sort().join(',');
   useEffect(() => {
     let cancelled = false;
-    safeCardMap(ids ? ids.split(',').map(Number) : [], prefs).then(m => { if (!cancelled) setCards(m); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [ids, prefs]);
-  return cards;
+    let retry: number | undefined;
+    safeCardMap(ids ? ids.split(',').map(Number) : [], prefs)
+      .then(map => { if (!cancelled) setCards({ ids, map }); })
+      .catch(() => { if (!cancelled) retry = window.setTimeout(() => setAttempt(n => n + 1), 4000); });
+    return () => { cancelled = true; window.clearTimeout(retry); };
+  }, [ids, prefs, attempt]);
+  // Cards loaded for an earlier version of the plan don't speak for this one.
+  return cards && cards.ids === ids ? cards.map : null;
+}
+
+/**
+ * The plan as it may be drawn. A plan entry carries its own title and photo, so it is only
+ * shown when its recipe came back from the gate: one the family can't eat, or that couldn't
+ * be checked, is an open day.
+ */
+function shownPlan(plan: WeekPlan, cards: Map<number, RecipeCard>): WeekPlan {
+  const out = emptyPlan();
+  for (const d of DAYS) for (const s of ['breakfast', 'lunch', 'dinner'] as const) {
+    const entry = plan[d][s];
+    out[d][s] = entry && cards.has(entry.id) ? entry : null;
+  }
+  return out;
 }
 
 const NO_SAFE_RECIPE = 'No recipe fits your settings for this meal';
@@ -210,8 +233,8 @@ export function MealPlan() {
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
-  const entries = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
-  const cards = useCards(entries, prefs);
+  const planned = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
+  const loadedCards = useCards(planned, prefs);
 
   const planWeek = async () => {
     setConfirmReplace(false);
@@ -238,7 +261,7 @@ export function MealPlan() {
     }
   };
 
-  if (weekPlan === undefined) {
+  if (weekPlan === undefined || loadedCards === null) {
     return (
       <PageContainer wide>
         <div aria-busy aria-label="Loading your week" className="md:grid md:grid-cols-5 md:gap-x-6">
@@ -253,8 +276,9 @@ export function MealPlan() {
     );
   }
 
-  const plan = weekPlan?.plan ?? emptyPlan();
-  const hasMeals = entries.length > 0;
+  const cards = loadedCards;
+  const plan = shownPlan(weekPlan?.plan ?? emptyPlan(), cards);
+  const hasMeals = planEntries(plan).length > 0;
   const isBlocked = (d: Day, s: Slot) => planReview.blocked.includes(slotKey(d, s));
   const plannedSlots: Slot[] = (['breakfast', 'lunch'] as const).filter(s => (s === 'breakfast' ? prefs.plan_breakfast : prefs.plan_lunch));
   const open = (id: number) => { setSheetDay(null); go({ name: 'recipe', id }); };

@@ -234,6 +234,22 @@ test('every catalog function that hands recipes to a screen takes the family set
   }
 });
 
+test('the saved plan has no way around the check', () => {
+  const app = FILES.find(f => f.path === 'App.tsx')!.text;
+  // Undo of an update re-checks the meals it puts back against today's settings.
+  assert.match(app, /await enforcePlan\(undo\.plan, shownPrefs\)/, 'Undo must check the plan it restores');
+  // A settings change retires an Undo that only holds meals.
+  assert.match(app, /r\.undo && !r\.undo\.settings \? \{ \.\.\.r, undo: undefined \}/, 'a settings change must retire a meals-only Undo');
+  // A check that fails does not mark the plan as checked.
+  const effect = app.slice(app.indexOf('enforcePlan(current.plan, shownPrefs)'), app.indexOf('const undoPlanReview'));
+  assert.doesNotMatch(effect, /finally/, 'a failed check must not end with the plan shown');
+  assert.match(effect, /\.catch\(err => \{[^}]*setCheckAttempt/s, 'a failed check is retried');
+  // The home screen draws a plan entry only when its recipe came back from the gate.
+  const home = FILES.find(f => f.path === 'screens/MealPlan.tsx')!.text;
+  assert.match(home, /const plan = shownPlan\(weekPlan\?\.plan \?\? emptyPlan\(\), cards\)/);
+  assert.match(home, /out\[d\]\[s\] = entry && cards\.has\(entry\.id\) \? entry : null/);
+});
+
 // ── The reminder ───────────────────────────────────────────────────────────
 
 test('wherever allergy filtering is shown, the user is told to check the ingredients', () => {

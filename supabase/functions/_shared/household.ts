@@ -7,10 +7,15 @@ import { canonicalAllergy, type FoodPrefs } from './catalog/recipeFilter.ts';
 
 /** The household's settings with each family member's allergies added. */
 export async function familyFood(db: SupabaseClient): Promise<FoodPrefs> {
-  const [{ data: prefs }, { data: members, error: membersError }] = await Promise.all([
+  const [{ data: prefs, error: prefsError }, { data: members, error: membersError }] = await Promise.all([
     db.from('user_preferences').select('diet, allergies, skip_ingredients, avoid_ingredients').maybeSingle(),
     db.from('family_members').select('allergies'),
   ]);
+  // Settings that can't be read are not "no allergies": the caller must stop.
+  if (prefsError) {
+    console.error('[household] settings read failed:', prefsError);
+    throw new Error('settings read failed');
+  }
   // A database without the family table yet has no per-person allergies to add.
   if (membersError && membersError.code !== 'PGRST205' && membersError.code !== '42P01') {
     console.error('[household] family read failed:', membersError);

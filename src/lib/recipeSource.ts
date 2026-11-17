@@ -39,12 +39,14 @@ const cleanSearch = (s: string) => s.replace(/[,()*%\\]/g, ' ').replace(/\s+/g, 
 let safeFunction: 'family_safe_recipes' | 'safe_recipes' = 'family_safe_recipes';
 const missingFunction = (error: { code?: string; message?: string }) => error.code === 'PGRST202' || /could not find the function/i.test(error.message ?? '');
 
-async function safeRecipes(build: (q: Query) => Query, options?: { head: true; count: 'exact' }): Promise<{ data: unknown; error: { message: string } | null; count?: number | null }> {
+async function safeRecipes(build: (q: Query) => Query, options?: { head: true; count: 'exact' }): Promise<{ data: unknown; error: { message: string } | null; count?: number | null; status?: number }> {
   // Read once: several requests can be in flight when the first of them finds the function missing.
   const called = safeFunction;
   let result = await build(supabase.rpc(called, {}, options));
-  // A count-only request has no body to carry the error code, so "not found" is read from the status.
-  if (result.error && called === 'family_safe_recipes' && (missingFunction(result.error) || result.status === 404)) {
+  // A count-only request has no body to carry an error: a missing function shows up as
+  // no count at all, so that falls back too.
+  const missing = result.error ? missingFunction(result.error) || result.status === 404 : !!options?.head && result.count == null;
+  if (missing && called === 'family_safe_recipes') {
     safeFunction = 'safe_recipes';
     result = await build(supabase.rpc(safeFunction, {}, options));
   }
