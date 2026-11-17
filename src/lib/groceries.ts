@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { recordUsage } from './usage';
 import { ingredientAisles, recipeIngredients } from './catalog';
 import { planEntries, type SavedWeekPlan } from './plan';
 import { AISLES, combine, LIST_VERSION, type Aisle, type GroceryItem, type MergeIngredient } from './groceryMerge';
@@ -100,9 +99,6 @@ export async function rebuildGroceryList(userId: string, saved: SavedWeekPlan, p
   }, { onConflict: 'user_id' });
   if (error) throw new Error(error.message);
   if ((previous?.excluded ?? []).length !== excluded.length) await saveExcluded(userId, excluded).catch(() => {});
-  // A list for a new week counts as a shopping list (for plan limits; nothing is blocked). The
-  // server counts each calendar week once, so re-planning or two rebuilds at once don't add up.
-  if (!previous || !sameWeek) recordUsage('shopping_lists');
   return { items, checked, custom, excluded, planCreatedAt: saved.createdAt, planUpdatedAt: saved.updatedAt };
 }
 

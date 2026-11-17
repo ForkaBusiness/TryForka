@@ -1,4 +1,9 @@
-// Plans and limits: the one place that knows what each plan allows. Nothing in the app is
+// Plans and limits: the one place that knows what each plan allows.
+//   saved_recipes   hearted or in a collection (imported, once imports exist). Never catalog
+//                   recipes that are only in the week plan.
+//   smart_imports   each import.
+//   shopping_lists  saved lists held at the same time. The weekly list built from the plan
+//                   never counts. Nothing in the app is
 // blocked by these yet; features and the paywall will ask checkLimit() (or checkUsage() in
 // usage.ts, which reads the numbers first). Pure, tested in tests/limits.test.ts.
 
@@ -30,4 +35,12 @@ export function checkLimit(usage: Usage, kind: LimitKind, adding = 1): LimitChec
   const limit = (PLAN_LIMITS[usage.plan] ?? PLAN_LIMITS.free)[kind];
   const used = Math.max(0, usage[kind] ?? 0);
   return { allowed: used + adding <= limit, used, limit, remaining: Math.max(0, limit - used) };
+}
+
+/**
+ * Saved recipes, as the limit counts them: each recipe hearted or in a collection, once.
+ * The week plan is not an input: catalog recipes that are only planned never count.
+ */
+export function savedRecipeCount(favorites: readonly number[], inCollections: ReadonlyArray<{ recipe_id: number }>): number {
+  return new Set([...favorites, ...inCollections.map(m => m.recipe_id)]).size;
 }

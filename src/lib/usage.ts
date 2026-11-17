@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { checkLimit, FREE_AND_UNUSED, type LimitCheck, type LimitKind, type PlanTier, type Usage } from './limits';
+import { checkLimit, FREE_AND_UNUSED, savedRecipeCount, type LimitCheck, type LimitKind, type PlanTier, type Usage } from './limits';
 import { fetchCollectionRecipes } from './collections';
 
 // The signed-in user's plan and usage, read from usage_summary() in the database, and the
@@ -20,8 +20,7 @@ export async function fetchUsage(userId: string): Promise<Usage> {
     fetchCollectionRecipes(),
   ]);
   if (favError) throw new Error(favError.message);
-  const saved = new Set([...(favorites ?? []).map(f => f.recipe_id as number), ...memberships.map(m => m.recipe_id)]);
-  return { ...FREE_AND_UNUSED, saved_recipes: saved.size };
+  return { ...FREE_AND_UNUSED, saved_recipes: savedRecipeCount((favorites ?? []).map(f => f.recipe_id as number), memberships) };
 }
 
 /**
@@ -34,8 +33,8 @@ export async function checkUsage(userId: string, kind: LimitKind, adding = 1): P
   return { ...checkLimit(usage, kind, adding), plan: usage.plan };
 }
 
-/** Counts one use. Never blocks or fails what's being counted. */
-export function recordUsage(kind: Exclude<LimitKind, 'saved_recipes'>): void {
+/** Counts one smart import. Never blocks or fails the import. Saved recipes and saved lists are counted live. */
+export function recordUsage(kind: 'smart_imports'): void {
   void supabase.rpc('record_usage', { p_kind: kind }).then(({ error }) => {
     if (error && !missingFunction(error)) console.error('[usage] not counted:', error.message);
   });

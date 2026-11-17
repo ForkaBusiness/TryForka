@@ -120,9 +120,8 @@ export function planNotice(replaced: number, blocked: number): string | null {
   const meals = (n: number) => (n === 1 ? '1 meal' : `${n} meals`);
   const notes: string[] = [];
   if (replaced) notes.push(`We replaced ${meals(replaced)} that didn't fit your allergies or preferences. ${CHECK_INGREDIENTS}`);
-  if (blocked) notes.push(`We couldn't find a recipe that fits your settings for ${meals(blocked)}, so ${blocked === 1 ? 'it stays' : 'they stay'} empty.`);
   // One reminder per note, whichever of the two was said.
-  if (blocked && !replaced) notes.push(CHECK_INGREDIENTS);
+  if (blocked) notes.push(`We couldn't find a recipe that fits your settings for ${meals(blocked)}, so ${blocked === 1 ? 'it stays' : 'they stay'} empty.${replaced ? '' : ` ${CHECK_INGREDIENTS}`}`);
   return notes.join(' ') || null;
 }
 

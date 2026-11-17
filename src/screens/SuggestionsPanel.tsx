@@ -7,6 +7,7 @@ import {
   type SuggestionPick,
 } from '../lib/plan';
 import { AllergyReminder } from '../components/AllergyReminder';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { RecipeCarousel } from '../components/RecipeCarousel';
 import { BottomSheet, Button, ChipButton, cx, Input, ListGroup, ListRow, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, Skeleton } from '../components/ds';
 
@@ -212,7 +213,7 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
             ? <Skeleton className="mt-3 h-80 rounded-card" />
             : ideas.length
               ? <div className="mt-3">{carousel(ideas)}</div>
-              : <p className="pt-3 text-body text-ink-muted">No other recipes fit this meal with your current settings.</p>}
+              : <p className="pt-3 text-body text-ink-muted">No other recipes fit this meal with your current settings. {CHECK_INGREDIENTS}</p>}
         </section>
       )}
     </BottomSheet>

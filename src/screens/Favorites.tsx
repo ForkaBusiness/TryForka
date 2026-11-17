@@ -100,7 +100,7 @@ export function Favorites() {
           ) : search.trim() ? (
             <EmptyState icon={SearchX} title={`Nothing saved matches "${search.trim()}"`}>Try another word, or clear the search.</EmptyState>
           ) : filter === 'all' ? (
-            <EmptyState icon={BookHeart} title="Nothing to show right now">Your saved recipes don't fit your household's settings at the moment.</EmptyState>
+            <EmptyState icon={BookHeart} title="Nothing to show right now">Your saved recipes don't fit your household's settings at the moment. {CHECK_INGREDIENTS}</EmptyState>
           ) : collectionName ? (
             <EmptyState icon={BookHeart} title={`Nothing in ${collectionName} yet`}>Open a recipe and choose Add to collection.</EmptyState>
           ) : (

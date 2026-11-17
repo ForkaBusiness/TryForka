@@ -9,6 +9,7 @@ import type { Preferences } from '../lib/preferences';
 import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, planEntries, slotKey, SLOT_LABEL, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
 import { CheckIn } from '../components/CheckIn';
 import { activeOnHand } from '../lib/onHand';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
 
 // Home: the week as a calendar. Tonight's dinner is the one raised card with the photo;
@@ -76,7 +77,7 @@ function Tonight({ entry, card, blocked, busy, onOpen, onCook, onMore, onBusy, o
       <section aria-label="Tonight" className="mb-6">
         <EmptyState icon={UtensilsCrossed} title={blocked ? NO_SAFE_RECIPE : 'Nothing planned tonight'}
           action={<Button size="lg" block icon={ArrowLeftRight} onClick={onFind}>Find a dinner</Button>}>
-          {blocked ? 'Pick one yourself, or loosen a setting.' : 'Pick a dinner for tonight and it goes on the grocery list.'}
+          {blocked ? `Pick one yourself, or loosen a setting. ${CHECK_INGREDIENTS}` : 'Pick a dinner for tonight and it goes on the grocery list.'}
         </EmptyState>
       </section>
     );
@@ -173,7 +174,7 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
           </div>
         </div>
       ) : (
-        <p className="mb-4 text-body text-ink-muted">{blocked(day, 'dinner') ? `${NO_SAFE_RECIPE}. Pick one yourself, or loosen a setting.` : `Nothing planned for ${day === today ? 'tonight' : DAY_LONG[day]} yet.`}</p>
+        <p className="mb-4 text-body text-ink-muted">{blocked(day, 'dinner') ? `${NO_SAFE_RECIPE}. Pick one yourself, or loosen a setting. ${CHECK_INGREDIENTS}` : `Nothing planned for ${day === today ? 'tonight' : DAY_LONG[day]} yet.`}</p>
       )}
 
       {/* Said aloud for screen readers: the row itself stops being a button while it works. */}

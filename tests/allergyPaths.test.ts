@@ -261,6 +261,16 @@ test('wherever allergy filtering is shown, the user is told to check the ingredi
     'components/PrefControls.tsx',    // the allergy picker: onboarding, Settings, each person
     'screens/BrowseRecipes.tsx', 'screens/SuggestionsPanel.tsx', 'screens/PhotoSearch.tsx', 'screens/Favorites.tsx',
     'screens/RecipeDetail.tsx', 'screens/CookingMode.tsx',
+    'screens/CookWithWhatYouHave.tsx', // search by ingredient
+    'screens/MealPlan.tsx',            // a planned slot left empty because nothing fits
     'lib/plan.ts',                    // the note when a planned meal is replaced
   ]) assert.ok(shows(path), `${path} shows allergy filtering without the reminder`);
+  // Every sentence that says recipes were left out for the household's settings carries it.
+  for (const f of FILES) {
+    for (const line of f.text.split('\n')) {
+      if (/fits? your (current )?settings|fit your household's settings|saved recipes? (is|are) hidden/.test(line) && !/CHECK_INGREDIENTS|NO_SAFE_RECIPE =/.test(line)) {
+        assert.fail(`${f.path}: "${line.trim().slice(0, 90)}" has no reminder`);
+      }
+    }
+  }
 });
