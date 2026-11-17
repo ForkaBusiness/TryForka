@@ -3,7 +3,7 @@ import type { Preferences } from './preferences';
 import type { FamilyMember } from './family';
 import { cookedSince, fetchSignals } from './signals';
 import { fetchGroceryList, listMatchesPlan, rebuildGroceryList } from './groceries';
-import { isStaple, itemKey, shoppedRecipeIds } from './groceryMerge';
+import { isStaple, itemKey, shoppedRecipeIds, withoutRecipes } from './groceryMerge';
 import { busyNightNote, fasterOptions, pickBusyNight } from './busyNight';
 import { buildTaste, changeNote, openDays, planWeek, relaxedNotice, scoreRecipe, updatePlan, type Taste } from './planner';
 import { DAYS, DAY_LONG, enforcePlan, entryFromCard, planEntries, planNotice, plannedSlots, slotKey, todayKey, withSlot, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './plan';
@@ -52,9 +52,11 @@ export async function generateWeekPlan(family: Family, current: WeekPlan | null)
   };
 }
 
-/** The grocery list for this plan, rebuilt first if it's out of date. */
+/** The grocery list for this plan (rebuilt first if it's out of date), without the recipes the household took off it. */
 const groceryListFor = (userId: string, saved: SavedWeekPlan) =>
-  fetchGroceryList(userId).then(current => (listMatchesPlan(current, saved) ? current! : rebuildGroceryList(userId, saved, current)));
+  fetchGroceryList(userId)
+    .then(current => (listMatchesPlan(current, saved) ? current! : rebuildGroceryList(userId, saved, current)))
+    .then(list => ({ ...list, items: withoutRecipes(list.items, new Set(list.excluded)) }));
 
 /**
  * The daily update, run after a check-in: re-ranks the dinners of the days that are still

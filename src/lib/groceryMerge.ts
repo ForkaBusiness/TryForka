@@ -1,8 +1,12 @@
 // Grocery list from the week's recipes: one item per ingredient, amounts summed across
-// meals where the units can be converted (all weights together, all volumes together,
-// each countable unit together), and kept as separate lines where they can't ("1 lb"
-// and "6 whole"). Measures with no amount ("handful", "to taste") or no measure at all
-// show which recipe needs them instead. Pure: no network, unit-tested in tests/.
+// meals where the units can be converted without guessing (all weights together, all
+// volumes together, each countable unit together), and kept as separate lines where they
+// can't ("1 lb" and "6 whole": nobody can say what six tomatoes weigh). Measures with no
+// amount ("handful", "to taste") or no measure at all show which recipe needs them.
+//
+// Each item keeps what every recipe contributes to it (`parts`), so a recipe can be taken
+// off the list and put back, and the list can be shown recipe by recipe, without building
+// it again. Pure: no network, unit-tested in tests/.
 
 import { formatBase, toBase, type UnitSystem } from '../../supabase/functions/_shared/catalog/units.ts';
 
@@ -28,7 +32,10 @@ export interface AmountLine { family: string; value: number }
 export interface NoteLine { text: string; recipe: string }
 
 /** Bumped when the way lists are built changes, so saved lists rebuild themselves. */
-export const LIST_VERSION = 4;
+export const LIST_VERSION = 5;
+
+/** What one planned meal needs of an item. `family` is null when its measure has no amount. */
+export interface ItemPart { recipe: number; title: string; family: string | null; value: number; note: string }
 
 export interface GroceryItem {
   /** LIST_VERSION the item was built with. */
@@ -44,6 +51,8 @@ export interface GroceryItem {
   meals: string[];
   /** Ids of those meals' recipes, in the same order. */
   recipes: number[];
+  /** One per planned meal that uses it, in plan order: what `amounts`, `notes`, `meals` and `recipes` are summed from. */
+  parts: ItemPart[];
 }
 
 // Things nobody buys for a recipe.
@@ -102,8 +111,21 @@ export function itemKey(nameUs: string): string {
   return ALIASES[key] ?? key;
 }
 
+/** The totals for a set of parts: amounts summed per unit family, and the measures that can't be summed. */
+function summed(parts: readonly ItemPart[]): Pick<GroceryItem, 'amounts' | 'notes' | 'meals' | 'recipes'> {
+  const totals = new Map<string, number>();
+  for (const p of parts) if (p.family !== null) totals.set(p.family, (totals.get(p.family) ?? 0) + p.value);
+  return {
+    amounts: [...totals].map(([family, value]) => ({ family, value })),
+    // A measure with no words and no amount only matters when nothing else says how much to buy.
+    notes: parts.filter(p => p.family === null && (p.note || !totals.size)).map(p => ({ text: p.note, recipe: p.title })),
+    meals: parts.map(p => p.title),
+    recipes: parts.map(p => p.recipe),
+  };
+}
+
 export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Aisle | undefined): GroceryItem[] {
-  const byKey = new Map<string, { name: string; aisle: Aisle; totals: Map<string, number>; notes: NoteLine[]; meals: string[]; recipes: number[] }>();
+  const byKey = new Map<string, { name: string; aisle: Aisle; parts: ItemPart[] }>();
   for (const recipe of recipes) {
     for (const ing of recipe.ingredients) {
       const key = itemKey(ing.name_us || ing.name);
@@ -111,33 +133,42 @@ export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Ai
       let entry = byKey.get(key);
       if (!entry) {
         const display = shoppingName(ing.name_us || ing.name);
-        entry = { name: display.charAt(0).toUpperCase() + display.slice(1), aisle: aisleOf(ing.name.toLowerCase()) ?? 'Other', totals: new Map(), notes: [], meals: [], recipes: [] };
+        entry = { name: display.charAt(0).toUpperCase() + display.slice(1), aisle: aisleOf(ing.name.toLowerCase()) ?? 'Other', parts: [] };
         byKey.set(key, entry);
       }
-      entry.meals.push(recipe.title);
-      entry.recipes.push(recipe.id);
       if (ing.quantity !== null && ing.quantity > 0) {
         // Ranges buy the upper amount.
         const qty = ing.quantity_max && ing.quantity_max > ing.quantity ? ing.quantity_max : ing.quantity;
         const { family, value } = toBase(qty, ing.unit || IMPLIED_UNIT[baseKey(ing.name_us || ing.name)] || '');
-        entry.totals.set(family, (entry.totals.get(family) ?? 0) + value);
+        entry.parts.push({ recipe: recipe.id, title: recipe.title, family, value, note: '' });
       } else {
-        const text = ing.measure_raw.trim();
-        entry.notes.push({ text, recipe: recipe.title });
+        entry.parts.push({ recipe: recipe.id, title: recipe.title, family: null, value: 0, note: ing.measure_raw.trim() });
       }
     }
   }
-  const items: GroceryItem[] = [];
-  for (const [key, e] of byKey) {
-    // A note only matters when it isn't already covered by a real amount from the same recipe.
-    const notes = e.notes.filter(n => n.text || !e.totals.size);
-    items.push({
-      v: LIST_VERSION, key, name: e.name, aisle: e.aisle, staple: STAPLES.test(key),
-      amounts: [...e.totals].map(([family, value]) => ({ family, value })),
-      notes, meals: e.meals, recipes: e.recipes,
-    });
-  }
+  const items: GroceryItem[] = [...byKey].map(([key, e]) => ({ v: LIST_VERSION, key, name: e.name, aisle: e.aisle, staple: STAPLES.test(key), ...summed(e.parts), parts: e.parts }));
   return items.sort((a, b) => AISLES.indexOf(a.aisle) - AISLES.indexOf(b.aisle) || a.name.localeCompare(b.name));
+}
+
+/**
+ * The list without some recipes: their share comes off every amount, and items only they
+ * needed drop out. Putting a recipe back is the same call without it.
+ */
+export function withoutRecipes(items: readonly GroceryItem[], excluded: ReadonlySet<number>): GroceryItem[] {
+  if (!excluded.size) return [...items];
+  return items.flatMap(item => {
+    const parts = (item.parts ?? []).filter(p => !excluded.has(p.recipe));
+    return parts.length ? [{ ...item, ...summed(parts), parts }] : [];
+  });
+}
+
+/** What one recipe needs, as list items carrying only that recipe's amounts (for the list grouped by recipe). */
+export function recipeItems(items: readonly GroceryItem[], recipeId: number): GroceryItem[] {
+  return items.flatMap(item => {
+    const parts = (item.parts ?? []).filter(p => p.recipe === recipeId);
+    // The meals stay the full list, so a row can say what else the item is for.
+    return parts.length ? [{ ...item, ...summed(parts), meals: item.meals, parts }] : [];
+  });
 }
 
 /** Display lines for an item's amounts: ["2 lb", "6 whole"]. */

@@ -5,7 +5,8 @@ import { AISLES, combine, LIST_VERSION, type Aisle, type GroceryItem, type Merge
 
 // The household's grocery list (one row per user in grocery_lists), built from the
 // saved week plan. Editing the plan rebuilds the list and keeps ticks for items that
-// are still on it. Items added by hand live in custom_items.
+// are still on it. Items added by hand live in custom_items; recipes whose ingredients
+// the household took off the list live in excluded_recipes.
 
 export interface CustomItem { key: string; name: string }
 
@@ -13,6 +14,8 @@ export interface SavedGroceryList {
   items: GroceryItem[];
   checked: string[];
   custom: CustomItem[];
+  /** Recipes of this week whose ingredients are off the list. */
+  excluded: number[];
   /** updated_at of the plan this list was built from. */
   planUpdatedAt: string | null;
 }
@@ -26,16 +29,35 @@ export function listMatchesPlan(list: SavedGroceryList | null, plan: SavedWeekPl
   return current && sameInstant(list.planUpdatedAt, plan.updatedAt);
 }
 
+// A database that doesn't have the excluded_recipes column yet: the choice is then kept
+// on this device instead, so the feature still works.
+let excludedColumn = true;
+const LOCAL_EXCLUDED = 'forka_grocery_excluded';
+const missingColumn = (error: { code?: string; message?: string }) =>
+  error.code === '42703' || error.code === 'PGRST204' || /excluded_recipes/.test(error.message ?? '');
+function localExcluded(): number[] {
+  try { return (JSON.parse(localStorage.getItem(LOCAL_EXCLUDED) ?? '[]') as unknown[]).filter((n): n is number => typeof n === 'number'); } catch { return []; }
+}
+
 export async function fetchGroceryList(userId: string): Promise<SavedGroceryList | null> {
-  const { data, error } = await supabase.from('grocery_lists')
-    .select('items, checked, custom_items, plan_updated_at').eq('user_id', userId).maybeSingle();
+  const read = (columns: string) => supabase.from('grocery_lists').select(columns).eq('user_id', userId).maybeSingle();
+  const BASE = 'items, checked, custom_items, plan_updated_at';
+  // Asked for at the start: another request may find the column missing while this one is in flight.
+  const withColumn = excludedColumn;
+  let { data, error } = await read(withColumn ? `${BASE}, excluded_recipes` : BASE);
+  if (error && withColumn && missingColumn(error)) {
+    excludedColumn = false;
+    ({ data, error } = await read(BASE));
+  }
   if (error) throw new Error(error.message);
   if (!data) return null;
+  const row = data as unknown as { items: GroceryItem[] | null; checked: string[] | null; custom_items: CustomItem[] | null; plan_updated_at: string | null; excluded_recipes?: number[] | null };
   return {
-    items: (data.items as GroceryItem[]) ?? [],
-    checked: (data.checked as string[]) ?? [],
-    custom: (data.custom_items as CustomItem[]) ?? [],
-    planUpdatedAt: data.plan_updated_at as string | null,
+    items: row.items ?? [],
+    checked: row.checked ?? [],
+    custom: row.custom_items ?? [],
+    excluded: excludedColumn ? row.excluded_recipes ?? [] : localExcluded(),
+    planUpdatedAt: row.plan_updated_at,
   };
 }
 
@@ -56,18 +78,32 @@ export async function buildItems(saved: SavedWeekPlan): Promise<GroceryItem[]> {
   });
 }
 
-/** Rebuilds the list for this plan and saves it, keeping ticks for items still on the list. */
+/** Rebuilds the list for this plan and saves it, keeping ticks for items still on the list and recipes still off it. */
 export async function rebuildGroceryList(userId: string, saved: SavedWeekPlan, previous: SavedGroceryList | null): Promise<SavedGroceryList> {
   const items = await buildItems(saved);
   const keys = new Set([...items.map(i => i.key), ...(previous?.custom ?? []).map(c => c.key)]);
   const checked = (previous?.checked ?? []).filter(k => keys.has(k));
   const custom = previous?.custom ?? [];
+  const planned = new Set(planEntries(saved.plan).map(e => e.entry.id));
+  const excluded = (previous?.excluded ?? []).filter(id => planned.has(id));
   const { error } = await supabase.from('grocery_lists').upsert({
     user_id: userId, items, checked, custom_items: custom,
     plan_created_at: saved.createdAt, plan_updated_at: saved.updatedAt, updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
   if (error) throw new Error(error.message);
-  return { items, checked, custom, planUpdatedAt: saved.updatedAt };
+  if ((previous?.excluded ?? []).length !== excluded.length) await saveExcluded(userId, excluded).catch(() => {});
+  return { items, checked, custom, excluded, planUpdatedAt: saved.updatedAt };
+}
+
+/** Saves which recipes are off the list. */
+export async function saveExcluded(userId: string, excluded: number[]): Promise<void> {
+  if (excludedColumn) {
+    const { error } = await supabase.from('grocery_lists').update({ excluded_recipes: excluded, updated_at: new Date().toISOString() }).eq('user_id', userId);
+    if (!error) return;
+    if (!missingColumn(error)) throw new Error(error.message);
+    excludedColumn = false;
+  }
+  try { localStorage.setItem(LOCAL_EXCLUDED, JSON.stringify(excluded)); } catch { /* stays for this visit only */ }
 }
 
 export async function saveChecked(userId: string, checked: string[]): Promise<void> {

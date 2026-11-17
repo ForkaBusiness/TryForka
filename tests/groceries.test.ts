@@ -111,3 +111,137 @@ test('prep words merge into the plain item; canned tomatoes stay separate', () =
   assert.ok(find(items, 'chopped tomato'));
   assert.ok(find(items, 'tomato'));
 });
+
+// ── Quantity math, unit conversion, and taking recipes off the list ────────
+
+import { recipeItems, shoppedRecipeIds, withoutRecipes } from '../src/lib/groceryMerge.ts';
+
+test('volumes in spoons, cups and millilitres add up to one amount', () => {
+  const items = combine([
+    recipe(1, 'A', ing('Soy Sauce', '2 tbsp')),
+    recipe(2, 'B', ing('Soy Sauce', '1 tsp')),
+    recipe(3, 'C', ing('Soy Sauce', '1/4 cup')),
+    recipe(4, 'D', ing('Soy Sauce', '30ml')),
+  ], aisle);
+  // 30 + 5 + 60 + 30 = 125 ml
+  assert.deepEqual(find(items, 'soy sauce').amounts, [{ family: 'volume', value: 125 }]);
+  assert.deepEqual(amountLines(find(items, 'soy sauce'), 'us'), ['1/2 cup']);
+  assert.deepEqual(amountLines(find(items, 'soy sauce'), 'metric'), ['125 ml']);
+});
+
+test('weights in grams, kilos, ounces and pounds add up to one amount', () => {
+  const items = combine([
+    recipe(1, 'A', ing('Minced Beef', '500g')),
+    recipe(2, 'B', ing('Minced Beef', '0.25kg')),
+    recipe(3, 'C', ing('Minced Beef', '8 oz')),
+    recipe(4, 'D', ing('Minced Beef', '1 lb')),
+  ], aisle);
+  const beef = items.find(i => i.amounts.some(a => a.family === 'mass'))!;
+  // 500 + 250 + 226.8 + 453.6 = 1430.4 g
+  assert.ok(Math.abs(beef.amounts[0].value - 1430.4) < 0.01);
+  assert.equal(beef.amounts.length, 1);
+  assert.deepEqual(amountLines(beef, 'us'), ['3 1/4 lb']);
+  assert.deepEqual(amountLines(beef, 'metric'), ['1.43 kg']);
+});
+
+test('a weight and a volume of the same thing are never added together', () => {
+  const items = combine([
+    recipe(1, 'A', ing('Sugar', '200g')),
+    recipe(2, 'B', ing('Sugar', '1 cup')),
+    recipe(3, 'C', ing('Sugar', '1/4 cup')),
+  ], aisle);
+  const sugar = find(items, 'sugar');
+  // 200 g stays 200 g; 240 ml + 60 ml = 300 ml. Nothing guesses what a cup of sugar weighs.
+  assert.deepEqual(sugar.amounts, [{ family: 'mass', value: 200 }, { family: 'volume', value: 300 }]);
+  assert.deepEqual(amountLines(sugar, 'us'), ['7 oz', '1 1/4 cups']);
+  assert.deepEqual(amountLines(sugar, 'metric'), ['200 g', '300 ml']);
+});
+
+test('things counted in different units stay on their own lines', () => {
+  const items = combine([
+    recipe(1, 'A', ing('Chopped Tomatoes', '2 cans')),
+    recipe(2, 'B', ing('Chopped Tomatoes', '400g')),
+    recipe(3, 'C', ing('Chopped Tomatoes', '1 can')),
+    recipe(4, 'D', ing('Lemon', '2')),
+    recipe(5, 'E', ing('Lemon', 'Juice of 1')),
+    recipe(6, 'F', ing('Lemon', '1 slice')),
+  ], aisle);
+  assert.deepEqual(amountLines(find(items, 'chopped tomato'), 'metric'), ['3 cans', '400 g']);
+  const lemon = find(items, 'lemon');
+  assert.ok(amountLines(lemon, 'us').includes('1 slice'), 'a slice is not a whole lemon');
+  assert.ok(!amountLines(lemon, 'us').some(l => /^4/.test(l)), 'the counts were not lumped into one number');
+});
+
+test('a range buys the upper amount, and a recipe planned twice counts twice', () => {
+  const twice = recipe(1, 'Stir fry', ing('Ginger', '1-2 tbsp'), ing('Rice', '300g'));
+  const items = combine([twice, twice], aisle);
+  assert.deepEqual(find(items, 'ginger').amounts, [{ family: 'volume', value: 60 }]);
+  assert.deepEqual(find(items, 'rice').amounts, [{ family: 'mass', value: 600 }]);
+  assert.deepEqual(find(items, 'rice').meals, ['Stir fry', 'Stir fry']);
+  assert.deepEqual(uniqueOf(find(items, 'rice').meals), ['Stir fry']);
+});
+const uniqueOf = (xs: string[]) => [...new Set(xs)];
+
+test('every item keeps what each recipe adds, and the totals are their sum', () => {
+  const items = combine([
+    recipe(1, 'Tacos', ing('Onion', '2'), ing('Lime', '1')),
+    recipe(2, 'Curry', ing('Onion', '1'), ing('Coconut Milk', '400ml')),
+    recipe(3, 'Soup', ing('Onion', '1 large'), ing('Lime', 'Juice of 1')),
+  ], aisle);
+  const onion = find(items, 'onion');
+  assert.deepEqual(onion.parts.map(p => [p.recipe, p.value]), [[1, 2], [2, 1], [3, 1]]);
+  assert.deepEqual(onion.amounts, [{ family: 'count:', value: 4 }]);
+  assert.deepEqual(onion.recipes, [1, 2, 3]);
+});
+
+test('taking a recipe off the list takes off its share and nothing else', () => {
+  const items = combine([
+    recipe(1, 'Tacos', ing('Onion', '2'), ing('Tortillas', '8'), ing('Beef', '500g')),
+    recipe(2, 'Curry', ing('Onion', '1'), ing('Coconut Milk', '400ml'), ing('Beef', '1 lb')),
+  ], aisle);
+  const withoutTacos = withoutRecipes(items, new Set([1]));
+  assert.deepEqual(amountLines(find(withoutTacos, 'onion'), 'us'), ['1 whole']);
+  assert.deepEqual(find(withoutTacos, 'onion').meals, ['Curry']);
+  assert.equal(withoutTacos.find(i => i.key === 'tortilla'), undefined, 'an item only that recipe needed is gone');
+  assert.deepEqual(amountLines(find(withoutTacos, 'beef'), 'us'), ['1 lb']);
+  assert.ok(find(withoutTacos, 'coconut milk'));
+  // Putting it back is the full list again, exactly.
+  assert.deepEqual(withoutRecipes(items, new Set()), items);
+  assert.deepEqual(withoutRecipes(items, new Set([1, 2])), []);
+  // The original list is untouched.
+  assert.deepEqual(amountLines(find(items, 'onion'), 'us'), ['3 whole']);
+});
+
+test('grouped by recipe, each recipe shows its own amounts and what else the item is for', () => {
+  const items = combine([
+    recipe(1, 'Tacos', ing('Onion', '2'), ing('Tortillas', '8')),
+    recipe(2, 'Curry', ing('Onion', '1'), ing('Coconut Milk', '400ml')),
+  ], aisle);
+  const tacos = recipeItems(items, 1);
+  assert.deepEqual(tacos.map(i => i.key).sort(), ['onion', 'tortilla']);
+  assert.deepEqual(amountLines(find(tacos, 'onion'), 'us'), ['2 whole']);
+  assert.deepEqual(find(tacos, 'onion').meals, ['Tacos', 'Curry'], 'the row can still say it is for two meals');
+  assert.equal(find(tacos, 'onion').key, find(items, 'onion').key, 'same key, so a tick in one view is a tick in the other');
+  assert.deepEqual(amountLines(find(recipeItems(items, 2), 'onion'), 'us'), ['1 whole']);
+  assert.deepEqual(recipeItems(items, 99), []);
+});
+
+test('a recipe taken off the list no longer counts as shopped for', () => {
+  const items = combine([
+    recipe(1, 'Tacos', ing('Onion', '2')),
+    recipe(2, 'Curry', ing('Onion', '1')),
+  ], aisle);
+  assert.deepEqual([...shoppedRecipeIds(items, ['onion'])].sort(), [1, 2]);
+  assert.deepEqual([...shoppedRecipeIds(withoutRecipes(items, new Set([1])), ['onion'])], [2]);
+});
+
+test('amounts with nothing to add up stay as written, next to the amounts that do', () => {
+  const items = combine([
+    recipe(1, 'A', ing('Parsley', '1 bunch')),
+    recipe(2, 'B', ing('Parsley', 'to garnish')),
+    recipe(3, 'C', ing('Parsley', '2 tbsp chopped')),
+  ], aisle);
+  const parsley = find(items, 'parsley');
+  assert.deepEqual(amountLines(parsley, 'us'), ['1 bunch', '2 tbsp']);
+  assert.deepEqual(parsley.notes, [{ text: 'to garnish', recipe: 'B' }]);
+});
