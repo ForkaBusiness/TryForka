@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, BookOpen, CalendarDays, CalendarPlus, ChefHat, ChevronRight, Clock, Lightbulb, Lock, LockOpen, MoreHorizontal, MoveRight, Plus, Trash2,
+  ArrowLeftRight, BookOpen, Refrigerator, CalendarDays, CalendarPlus, ChefHat, ChevronRight, Clock, Lightbulb, Lock, LockOpen, MoreHorizontal, MoveRight, Plus, Trash2,
   UtensilsCrossed, Zap,
 } from 'lucide-react';
 import { useApp } from '../app/AppContext';
@@ -459,6 +459,7 @@ export function MealPlan() {
 
         <ListGroup label="Plan" className="lg:col-span-3">
           <ListRow leading={<BookOpen {...icon} className="text-green" />} title="Browse recipes" chevron onClick={() => go({ name: 'browse' })} />
+          <ListRow leading={<Refrigerator {...icon} className="text-green" />} title="Cook with what you have" chevron onClick={() => go({ name: 'pantry' })} />
           <ListRow leading={<Lightbulb {...icon} className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
           {hasMeals && weekPlan && (
             <ListRow leading={<CalendarPlus {...icon} className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}

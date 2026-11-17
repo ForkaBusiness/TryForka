@@ -29,6 +29,7 @@ import { Settings } from './screens/Settings';
 import { SuggestionsPanel } from './screens/SuggestionsPanel';
 import { PhotoSearch } from './screens/PhotoSearch';
 import { Styleguide } from './screens/Styleguide';
+import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
 
 // Dev-only design system reference at /app/styleguide.
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
@@ -338,6 +339,7 @@ function SignedIn({ session }: { session: Session }) {
     case 'notes': content = <Notes id={screen.id} />; break;
     case 'rate': content = <RateRecipe id={screen.id} />; break;
     case 'collections': content = <Collections id={screen.id} />; break;
+    case 'pantry': content = <CookWithWhatYouHave />; break;
   }
 
   const root = stack[0].name as NavId;

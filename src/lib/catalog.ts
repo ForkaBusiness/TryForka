@@ -107,6 +107,31 @@ export async function previewRecipes(prefs: FoodPrefs = NO_SETTINGS): Promise<Re
   return [0, 1, 2].map(i => rows[(day * 7 + i * 37) % rows.length]);
 }
 
+export interface SearchableRecipe { id: number; recipe: RecipeCard; ingredients: string[] }
+const searchPools = new Map<string, Promise<SearchableRecipe[]>>();
+
+/**
+ * Every main and breakfast the family may eat, with its ingredient names, for searching
+ * by what's in the kitchen. Loaded once per session (per set of settings) and searched in
+ * memory after that.
+ */
+export function searchablePool(prefs: FoodPrefs): Promise<SearchableRecipe[]> {
+  const key = JSON.stringify([prefs.diet ?? 'none', [...prefs.allergies].sort(), [...prefs.skip_ingredients].sort(), [...(prefs.avoid_ingredients ?? [])].sort()]);
+  let pool = searchPools.get(key);
+  if (!pool) {
+    pool = (async () => {
+      const cards = await gate.pool(['main', 'breakfast'], prefs);
+      const names = new Map<number, string[]>();
+      for (let i = 0; i < cards.length; i += 150) {
+        for (const r of await ingredientsOf(cards.slice(i, i + 150).map(c => c.id))) names.set(r.id, (r.ingredients ?? []).map(ing => ing.name_us || ing.name));
+      }
+      return cards.flatMap(recipe => (names.has(recipe.id) ? [{ id: recipe.id, recipe, ingredients: names.get(recipe.id)! }] : []));
+    })().catch(err => { searchPools.delete(key); throw err; });
+    searchPools.set(key, pool);
+  }
+  return pool;
+}
+
 // ── Not for the screen ─────────────────────────────────────────────────────
 
 /**

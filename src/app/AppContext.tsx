@@ -19,7 +19,8 @@ export type Screen =
   | { name: 'cooking'; id: number }
   | { name: 'notes'; id: number }
   | { name: 'rate'; id: number }
-  | { name: 'collections'; id: number };
+  | { name: 'collections'; id: number }
+  | { name: 'pantry' };
 
 export interface FavoriteEntry { id: number; title: string; image: string }
 

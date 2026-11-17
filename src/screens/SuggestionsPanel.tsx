@@ -62,11 +62,8 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const submit = (e: FormEvent) => { e.preventDefault(); void ask(prompt); };
 
   const starter = (s: string) => {
-    if (s === "Uses what's in my fridge") {
-      setPrompt('Uses what I have: ');
-      requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(99, 99); });
-      return;
-    }
+    // Finding recipes by what's in the fridge is a search of our own recipes: no request needed.
+    if (s === "Uses what's in my fridge") { onClose(); go({ name: 'pantry' }); return; }
     setPrompt(s);
     void ask(s);
   };

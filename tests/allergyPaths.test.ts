@@ -228,7 +228,7 @@ test('no screen or component uses the unfiltered lookup or builds its own gate',
 
 test('every catalog function that hands recipes to a screen takes the family settings', () => {
   const catalog = FILES.find(f => f.path === 'lib/catalog.ts')!.text;
-  for (const name of ['browseRecipes', 'getRecipe', 'safeCards', 'safeCardMap', 'planningPool', 'similarRecipes', 'previewRecipes']) {
+  for (const name of ['browseRecipes', 'getRecipe', 'safeCards', 'safeCardMap', 'planningPool', 'similarRecipes', 'previewRecipes', 'searchablePool']) {
     const declaration = catalog.match(new RegExp(`export (?:async )?(?:function|const) ${name}\\b[^\\n]*`))?.[0] ?? '';
     assert.match(declaration, /prefs: FoodPrefs/, `${name} must take the family's settings`);
   }
