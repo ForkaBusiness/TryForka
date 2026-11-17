@@ -8,13 +8,14 @@ import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts
 import { TimerChip } from '../components/Timers';
 import { HiddenRecipe } from '../components/AllergyReminder';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
-import { BottomBar, BottomSheet, Button, Card, GlassIconButton, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, Segmented, Skeleton, Tag } from '../components/ds';
+import { BottomBar, BottomSheet, Button, Card, GlassIconButton, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, Segmented, Skeleton, Stepper, Tag } from '../components/ds';
+import { NutritionCard } from '../components/NutritionCard';
+import { BASE_SERVINGS, MAX_SERVINGS, MIN_SERVINGS, rememberServings, servingsFor, servingsMultiplier } from '../lib/nutrition';
 
 // One screen for a recipe: a full-bleed photo with glass controls floating on it, then a
 // cream sheet that overlaps the photo: name, tags, Ingredients / Steps.
 
 type Tab = 'ingredients' | 'steps';
-const MULTIPLIERS = [{ value: '1', label: '1x' }, { value: '2', label: '2x' }, { value: '3', label: '3x' }] as const;
 
 export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab }) {
   const { prefs, userId, back, go, favorites, toggleFavorite } = useApp();
@@ -22,7 +23,9 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
   /** Set when the family's settings don't allow this recipe: it isn't shown at all. */
   const [blockedBy, setBlockedBy] = useState<string[] | null>(null);
   const [tab, setTab] = useState<Tab>(initialTab ?? 'ingredients');
-  const [multiplier, setMultiplier] = useState<'1' | '2' | '3'>('1');
+  // The catalog has no servings: a recipe as written serves 4. Changing it rescales the amounts and the nutrition.
+  const [servings, setServingsState] = useState(() => servingsFor(id, BASE_SERVINGS));
+  const setServings = (n: number) => { setServingsState(n); rememberServings(id, n); };
   const [menu, setMenu] = useState(false);
   const [cooked, setCooked] = useState<string | null>(null);
   const [cookedBusy, setCookedBusy] = useState(false);
@@ -122,7 +125,7 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
             <section aria-label="Ingredients" className="mt-6">
               <div className="mb-3 flex items-center justify-between gap-4">
                 <p className="label px-1">{recipe.ingredients.length} ingredients</p>
-                <Segmented label="Recipe amount" value={multiplier} onChange={setMultiplier} options={[...MULTIPLIERS]} />
+                <Stepper label="Servings" value={servings} min={MIN_SERVINGS} max={MAX_SERVINGS} unit={n => (n === 1 ? 'serving' : 'servings')} onChange={setServings} />
               </div>
               <Card className="overflow-hidden">
                 <ul className="divide-y divide-line">
@@ -130,7 +133,7 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
                     const item = { name: '', ingredient_names: [ing.name, ing.name_us], allergens: ing.allergens };
                     const allergy = allergyCheck(item).blockedBy;
                     const dislike = dislikeCheck(item);
-                    const measure = formatMeasure({ quantity: ing.quantity, quantityMax: ing.quantity_max, unit: ing.unit, note: ing.note }, prefs.units, Number(multiplier));
+                    const measure = formatMeasure({ quantity: ing.quantity, quantityMax: ing.quantity_max, unit: ing.unit, note: ing.note }, prefs.units, servingsMultiplier(servings));
                     return (
                       <li key={i} className="flex min-h-14 items-center gap-3 px-4 py-2">
                         <img src={ingredientPhoto(ing.name)} alt="" loading="lazy" className="size-10 shrink-0 object-contain" />
@@ -149,6 +152,7 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
               <p className="mt-3 px-1 text-small text-ink-muted">
                 {prefs.allergies.length > 0 ? 'We hide recipes by their ingredient list. ' : ''}{CHECK_INGREDIENTS} Check product labels too if anyone has a severe allergy.
               </p>
+              <NutritionCard recipe={recipe} servings={servings} />
             </section>
           ) : (
             <section aria-label="Steps" className="mt-6">
