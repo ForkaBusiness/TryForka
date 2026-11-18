@@ -134,3 +134,16 @@ test('credits the creator', () => {
   assert.equal(platformName('pinterest'), 'Pinterest');
   assert.equal(platformName('facebook'), 'Facebook');
 });
+
+test('TikTok: caption, creator and cover from the post page data (oEmbed no longer has them)', async () => {
+  const { tiktokItem, tiktokHandleFromUrl, fromPageMeta } = await import('../supabase/functions/_shared/imports/social.ts');
+  const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': { itemInfo: { itemStruct: { id: '1', desc: 'Garlic noodles\n8 oz noodles\n4 tbsp butter', author: { uniqueId: 'cookwithmaya' }, video: { cover: 'https://p16.example/c.jpg' } } } } } };
+  const html = `<html><head><title>TikTok - Make Your Day</title></head><body><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(data)}</script></body></html>`;
+  assert.deepEqual(tiktokItem(html), { desc: 'Garlic noodles\n8 oz noodles\n4 tbsp butter', handle: 'cookwithmaya', cover: 'https://p16.example/c.jpg' });
+  const post = fromPageMeta('tiktok', { title: 'TikTok - Make Your Day', description: null, image: null }, html);
+  assert.equal(post.caption, 'Garlic noodles\n8 oz noodles\n4 tbsp butter');
+  assert.equal(post.handle, 'cookwithmaya');
+  // Without the page data, the generic page title is all there is; the URL still names the creator.
+  assert.equal(tiktokItem('<title>TikTok - Make Your Day</title>'), null);
+  assert.equal(tiktokHandleFromUrl('https://www.tiktok.com/@hi.itshollyb/video/7449895843156528414?lang=en'), 'hi.itshollyb');
+});

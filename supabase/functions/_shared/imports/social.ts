@@ -148,13 +148,51 @@ export function fromPageMeta(platform: SocialPlatform, meta: { title?: string | 
       }
       break;
     }
+    case 'tiktok': {
+      // TikTok's oEmbed no longer carries the caption; the post page does, in its public
+      // page data (webapp.video-detail): the caption, the creator and the cover image.
+      const item = html ? tiktokItem(html) : null;
+      if (item) {
+        caption = item.desc || caption;
+        handle = item.handle;
+        if (handle) authorUrl = `https://www.tiktok.com/@${handle}`;
+        return { caption: caption.trim(), title: item.desc ? '' : title, handle, author_url: authorUrl, thumbnail: item.cover || thumbnail };
+      }
+      caption = description || title;
+      break;
+    }
     case 'facebook':
     case 'pinterest':
-    case 'tiktok':
       caption = description || title;
       break;
   }
   return { caption: caption.trim(), title, handle, author_url: authorUrl, thumbnail };
+}
+
+/** A TikTok post page's own data: caption, creator handle and cover image. Null when it isn't there. */
+export function tiktokItem(html: string): { desc: string; handle: string | null; cover: string | null } | null {
+  const script = /<script[^>]*id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+  if (script) {
+    try {
+      const data = JSON.parse(script[1]) as { __DEFAULT_SCOPE__?: Record<string, { itemInfo?: { itemStruct?: Record<string, unknown> } }> };
+      const item = data.__DEFAULT_SCOPE__?.['webapp.video-detail']?.itemInfo?.itemStruct;
+      if (item) {
+        const author = item.author as { uniqueId?: string } | undefined;
+        const video = item.video as { cover?: string; originCover?: string } | undefined;
+        return { desc: str(item.desc), handle: str(author?.uniqueId) || null, cover: str(video?.originCover) || str(video?.cover) || null };
+      }
+    } catch { /* fall through to the field search */ }
+  }
+  const d = /"itemStruct":\{"id":"\d+","desc":"((?:[^"\\]|\\.)*)"/.exec(html);
+  if (!d) return null;
+  const u = /"uniqueId":"([A-Za-z0-9._-]+)"/.exec(html);
+  return { desc: jsonString(d[1]), handle: u ? u[1] : null, cover: null };
+}
+
+/** The handle in a TikTok post URL (/@handle/video/...), when nothing else names the creator. */
+export function tiktokHandleFromUrl(url: string): string | null {
+  const m = /tiktok\.com\/@([A-Za-z0-9._-]+)\//.exec(url);
+  return m ? m[1] : null;
 }
 
 /** The page a pin was saved from: og:see_also, the page JSON's "link", or the outbound anchor. */

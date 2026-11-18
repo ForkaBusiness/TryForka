@@ -2,7 +2,7 @@ import { AppError, claimRequest, serve, serviceClient, userClient } from '../_sh
 import { canonicalUrl, type DraftSource, type SocialPlatform } from '../_shared/imports/draft.ts';
 import { draftFromModel, draftUsable, flaggedFields } from '../_shared/imports/modelDraft.ts';
 import { host, importLink, importText, type ImportDeps, type ImportResult } from '../_shared/imports/pipeline.ts';
-import { safeFetch } from '../_shared/imports/safeFetch.ts';
+import { safeFetch, safeFetchBytes } from '../_shared/imports/safeFetch.ts';
 import { detectPlatform } from '../_shared/imports/social.ts';
 import { PHOTO_RETRY_MODEL, readPhotos, readText, unsureShare, type Photo } from '../_shared/imports/extract.ts';
 
@@ -48,6 +48,20 @@ function toBase64(bytes: Uint8Array): string {
 
 const mediaTypeOf = (path: string, type: string): Photo['mediaType'] =>
   /png/.test(type) || /\.png$/i.test(path) ? 'image/png' : /webp/.test(type) || /\.webp$/i.test(path) ? 'image/webp' : 'image/jpeg';
+
+/** A copy of a post's cover in the household's private folder, as a photo reference. The web link if that fails. */
+async function keepCover(url: string, userId: string, db: ReturnType<typeof userClient>): Promise<string> {
+  try {
+    const { bytes, contentType } = await safeFetchBytes(url, { resolve, fetch, maxBytes: 6_000_000 });
+    if (!/^image\/(jpeg|png|webp)/.test(contentType)) return url;
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const path = `${userId}/imports/cover-${crypto.randomUUID()}.${ext}`;
+    const { error } = await db.storage.from('recipe-photos').upload(path, bytes, { contentType: contentType.split(';')[0], upsert: false });
+    return error ? url : `storage:recipe-photos/${path}`;
+  } catch {
+    return url;
+  }
+}
 
 serve(async (body, req) => {
   const started = Date.now();
@@ -167,6 +181,10 @@ serve(async (body, req) => {
   const platform = url ? detectPlatform(url) : textSource?.platform ?? null;
 
   if (result.status === 'ok' || result.status === 'partial') {
+    // Social covers are signed links that stop working after a while: keep a private copy.
+    if (result.draft.source.kind === 'social' && result.draft.image_url?.startsWith('http')) {
+      result.draft.image_url = await keepCover(result.draft.image_url, user.id, db);
+    }
     // The page the link led to may be one the household already saved under its own address.
     const duplicate = result.draft.source.url !== url && body.allowDuplicate !== true ? await findSaved(result.draft.source.url) : null;
     const { error } = await db.rpc('record_usage', { p_kind: 'smart_imports' });

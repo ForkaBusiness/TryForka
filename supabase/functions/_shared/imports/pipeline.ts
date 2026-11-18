@@ -16,7 +16,7 @@ import { parseIngredientLine } from './ingredientLine.ts';
 import { pageText, parseRecipePage, type ParsedRecipe } from './jsonld.ts';
 import { draftFromModel, draftUsable, flaggedFields, type ModelRecipe } from './modelDraft.ts';
 import { FetchBlocked } from './safeFetch.ts';
-import { captionLooksLikeRecipe, detectPlatform, fromOembed, fromPageMeta, oembedUrl, pinterestOutboundLink, platformName, recipeLinks, type PostText } from './social.ts';
+import { captionLooksLikeRecipe, detectPlatform, fromOembed, fromPageMeta, oembedUrl, pinterestOutboundLink, platformName, recipeLinks, tiktokHandleFromUrl, type PostText } from './social.ts';
 
 export interface ImportDeps {
   /** Fetches a page through safeFetch (private addresses, redirects, size and time limits). */
@@ -150,8 +150,9 @@ export async function postText(platform: SocialPlatform, url: string, deps: Impo
       post = fromOembed(platform, JSON.parse(res.body) as Record<string, unknown>);
     } catch { /* fall back to the page */ }
   }
-  // YouTube's oEmbed has no description and Pinterest's no outbound link: read the page too.
-  if (!post.caption || platform === 'youtube' || platform === 'pinterest') {
+  // YouTube's oEmbed has no description, Pinterest's no outbound link, and TikTok's often
+  // nothing but the player: read the public page too.
+  if (!post.caption || platform === 'youtube' || platform === 'pinterest' || platform === 'tiktok') {
     try {
       const page = await deps.fetchPage(url);
       html = page.body;
@@ -167,6 +168,7 @@ export async function postText(platform: SocialPlatform, url: string, deps: Impo
       };
     } catch { /* what oEmbed gave, if anything */ }
   }
+  if (platform === 'tiktok' && !post.handle) post = { ...post, handle: tiktokHandleFromUrl(finalUrl) ?? tiktokHandleFromUrl(url) };
   return { post, html, finalUrl };
 }
 

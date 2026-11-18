@@ -41,6 +41,26 @@ Fixed while testing, with tests: doubled brackets and leading commas from WordPr
 recipe plugins, footnote asterisks, "scant/heaping" before the unit, "plus/minus N
 tablespoons", nested brackets, yields in dozens, " Recipe by Site" in titles.
 
+## Social posts (public text and metadata only)
+
+From `scripts/import-social.ts` on real public posts (2026-11-18). Never the video: only
+oEmbed, the page's metadata and, for TikTok and YouTube, the public post data in the page.
+
+| Post | Credit | What was read | Result without a model | In production |
+|---|---|---|---|---|
+| TikTok @dadthedish (chorizo pasta, recipe in caption) | From @dadthedish on TikTok | Full caption (796 chars), cover | Recognized as a recipe | Caption goes to the model |
+| TikTok @yashajj (tomato pasta, numbered steps in caption) | From @yashajj on TikTok | Full caption (1,433 chars), cover | Recognized as a recipe | Caption goes to the model |
+| TikTok @hi.itshollyb (link to her blog) | From @hi.itshollyb on TikTok | Caption, the recipe link | Link found and followed; the blog page has no structured data | The page's text goes to the model |
+| TikTok @feelgoodfoodie (an ad, no recipe) | From @feelgoodfoodie on TikTok | Caption | No recipe: "This post's caption doesn't include the recipe..." with Paste text / Add screenshots | Same |
+| YouTube compilation video | From @herzhaftundlecker on YouTube | Full description (2,010 chars) | No recipe: the description lists ingredients for three dishes but the method is only in the video | Same (offers text or screenshots) |
+| Pinterest video pin | From Pinterest | Title and description | No recipe and no outbound link on this pin | Same |
+| Instagram | - | Not tested on a real post: Instagram serves little to logged-out readers, and the post address used was made up | - | Caption from og:description when Instagram provides it, else text or screenshots |
+
+Found and fixed: TikTok's oEmbed now returns only the player (no caption, author or
+thumbnail), so every TikTok read as "TikTok - Make Your Day". The caption, handle and
+cover now come from the post page's public data, with the handle from the URL as a last
+resort. TikTok covers are signed links that expire, so the import keeps a private copy.
+
 ## Websites without structured data, captions, pasted text, photos
 
 These go to the model. Not measured in this session: measuring needs the project's
