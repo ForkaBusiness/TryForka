@@ -18,5 +18,11 @@ not a real hand. Add real photos here (and their truth in `truth.json`) and re-r
 | dim-angled.jpg | The typed card, dim and photographed at an angle |
 | no-recipe.jpg | A food photo with no recipe in it |
 
+Real photos: put them here with their ground truth in `truth.local.json` (same format as
+`truth.json`). Both are git-ignored and stay on the machine that has them; the report lists
+them with scores and flag counts only, never their recipe text.
+
 Run: `ANTHROPIC_API_KEY=... deno run --allow-env --allow-read --allow-write --allow-net scripts/eval-photo-import.ts`
-(writes `docs/imports/photo-eval.md`).
+(writes `docs/imports/photo-eval.md`, and the model's raw answers to the git-ignored `eval-raw.json`).
+Re-score the last run's answers with the current rules, without calling the model:
+`deno run --allow-env --allow-read --allow-write scripts/eval-photo-import.ts --rescore`.
