@@ -26,7 +26,9 @@ export type Screen =
   /** Write a recipe, edit the household's recipe `id`, or check an import (`draft`) before saving it. */
   | { name: 'editor'; id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } | null; note?: string | null }
   /** Import from a link, text or photos. Opened with something already shared or chosen, it starts right away. */
-  | { name: 'import'; url?: string; text?: string; files?: File[]; mode?: 'link' | 'photos' | 'text' };
+  | { name: 'import'; url?: string; text?: string; files?: File[]; mode?: 'link' | 'photos' | 'text';
+      /** Came from outside (the share sheet): shown ready to import, but never started without a tap. */
+      shared?: boolean };
 
 export interface FavoriteEntry { id: number; title: string; image: string }
 

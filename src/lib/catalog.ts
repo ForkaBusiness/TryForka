@@ -167,7 +167,7 @@ export const lookupCards = (ids: readonly number[]): Promise<Map<number, RecipeC
 
 // ── The household's own recipes: writes and id lookups (shown through the gate) ──
 
-export { householdRecipeIds, householdRecipeFrom, insertHouseholdRecipe, updateHouseholdRecipe, deleteHouseholdRecipe } from './recipeSource';
+export { householdRecipeIds, householdRecipeFrom, insertHouseholdRecipe, updateHouseholdRecipe, deleteHouseholdRecipe, householdRecipeForEdit, householdRecipeTitles } from './recipeSource';
 
 /** The ingredient lists of planned recipes, for building the grocery list. */
 export const recipeIngredients = ingredientsOf;

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, CalendarPlus, Check, ExternalLink, ImagePlus, ListPlus, Plus, Trash2, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { getRecipe } from '../lib/catalog';
+import { getRecipe, householdRecipeForEdit, isHouseholdRecipe } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { IMPORT_PHOTO, PhotoError, preparePhoto } from '../lib/photo';
 import { uploadPhoto } from '../lib/recipePhotos';
-import { addToGroceryList, reviewNote, draftBlockedBy, draftProblem, emptyDraft, groceryLines, rowToDraft, saveDraft, type DraftFlag, type DraftIngredient, type ImportDraft } from '../lib/householdRecipes';
+import { addToGroceryList, clearUnsaved, deleteRecipe, keepUnsaved, reviewNote, draftBlockedBy, draftProblem, emptyDraft, groceryLines, rowToDraft, saveDraft, type DraftFlag, type DraftIngredient, type ImportDraft } from '../lib/householdRecipes';
 import { parseIngredientLine, splitIngredientBlock, splitStepBlock } from '../../supabase/functions/_shared/imports/ingredientLine.ts';
 import { amountText, ingredientText } from '../../supabase/functions/_shared/imports/structure.ts';
 import { creditLine } from '../../supabase/functions/_shared/imports/social.ts';
@@ -48,14 +48,23 @@ export function RecipeEditor({ id, draft: incoming, duplicate, note }: { id?: nu
   const { userId, prefs, back, replace, weekPlan, saveWeek } = useApp();
   const [base, setBase] = useState<ImportDraft | null | undefined>(id ? undefined : incoming ?? emptyDraft());
   const [blockedOnOpen, setBlockedOnOpen] = useState<string[] | null>(null);
+  const [photoForDelete, setPhotoForDelete] = useState<string | null>(null);
   const reviewing = !id && !!incoming && incoming.source.kind !== 'manual';
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    getRecipe(id, prefs).then(r => {
+    getRecipe(id, prefs).then(async r => {
       if (cancelled) return;
+      // The household's own recipe stays theirs to fix or delete, even when their settings
+      // hide it; the editor says why it's hidden. Anything else hidden stays hidden.
+      if (r?.blockedBy && isHouseholdRecipe({ id })) {
+        const own = await householdRecipeForEdit(userId, id);
+        if (cancelled) return;
+        if (own) { setPhotoForDelete(own.thumb_url); setBase(rowToDraft(own as never)); return; }
+      }
       if (r?.blockedBy) setBlockedOnOpen(r.blockedBy);
+      if (r?.recipe) setPhotoForDelete(r.recipe.thumb_url);
       setBase(r?.recipe ? rowToDraft({ ...r.recipe, display_name: r.recipe.display_name, instructions_raw: r.recipe.instructions_raw ?? null } as never) : null);
     }).catch(() => { if (!cancelled) setBase(null); });
     return () => { cancelled = true; };
@@ -82,14 +91,14 @@ export function RecipeEditor({ id, draft: incoming, duplicate, note }: { id?: nu
       </PageContainer>
     );
   }
-  return <Editor id={id} base={base} reviewing={reviewing} duplicate={duplicate} note={note ?? null} {...{ userId, prefs, back, replace, weekPlan, saveWeek }} />;
+  return <Editor id={id} base={base} reviewing={reviewing} duplicate={duplicate} note={note ?? null} savedPhoto={photoForDelete} {...{ userId, prefs, back, replace, weekPlan, saveWeek }} />;
 }
 
 type EditorProps = Pick<ReturnType<typeof useApp>, 'userId' | 'prefs' | 'back' | 'replace' | 'weekPlan' | 'saveWeek'> & {
-  id?: number; base: ImportDraft; reviewing: boolean; duplicate?: { id: number; title: string }; note: string | null;
+  id?: number; base: ImportDraft; reviewing: boolean; duplicate?: { id: number; title: string }; note: string | null; savedPhoto?: string | null;
 };
 
-function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, replace, weekPlan, saveWeek }: EditorProps) {
+function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, prefs, back, replace, weekPlan, saveWeek }: EditorProps) {
   const [title, setTitle] = useState(base.title);
   const [servings, setServings] = useState(base.servings ? String(base.servings) : '');
   const [prep, setPrep] = useState(base.prep_minutes ? String(base.prep_minutes) : '');
@@ -108,6 +117,8 @@ function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, rep
   const [status, setStatus] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<'plan' | 'groceries' | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showDuplicate, setShowDuplicate] = useState(!!duplicate);
   const fileRef = useRef<HTMLInputElement>(null);
   const focusKey = useRef<string | null>(null);
@@ -126,6 +137,13 @@ function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, rep
   }), [base, title, notes, image, servings, prep, cook, lines, steps]);
 
   const blockedBy = useMemo(() => draftBlockedBy(draft, prefs), [draft, prefs]);
+
+  // A new recipe or an import not saved yet is kept on this device until it's saved or discarded.
+  useEffect(() => {
+    if (id || saved || !dirty && !reviewing) return;
+    const t = window.setTimeout(() => keepUnsaved({ ...draft, flags: base.flags }), 400);
+    return () => window.clearTimeout(t);
+  }, [draft, id, saved, dirty, reviewing, base.flags]);
   const openFlags = lines.filter(l => l.flag).length + steps.filter(s => s.flag).length + Object.values(fieldFlags).filter(Boolean).length;
   const source = sourceLabel(base);
 
@@ -204,6 +222,7 @@ function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, rep
     try {
       const savedId = await saveDraft(userId, draft, id);
       setDirty(false);
+      if (!id) clearUnsaved();
       if (id) { back(); return; }
       setSaved(savedId);
       setStatus(blockedBy.length ? 'Saved. It stays hidden while your settings exclude it.' : 'Saved to your Library.');
@@ -243,6 +262,23 @@ function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, rep
       setStatus("Couldn't update your grocery list. Check your connection and try again.");
     } finally {
       setBusyAction(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      await deleteRecipe(userId, id, savedPhoto);
+      const plan = weekPlan?.plan;
+      const there = plan ? findInPlan(plan, id) : null;
+      if (plan && there) await saveWeek(withSlot(plan, there.day, there.slot, null), false, { quiet: true }).catch(() => {});
+      setConfirmDelete(false);
+      back();
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+      setProblem("Couldn't delete. Check your connection and try again.");
     }
   };
 
@@ -399,6 +435,11 @@ function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, rep
               onChange={e => { setNotes(e.target.value); touch(); clearFlag('notes'); }} />
           </Flagged>
         </section>
+        {id && (
+          <div className="mt-8 border-t border-line pt-6">
+            <Button variant="ghost" icon={Trash2} onClick={() => setConfirmDelete(true)} className="text-terracotta-deep">Delete recipe</Button>
+          </div>
+        )}
       </div>
 
       <BottomBar>
@@ -411,10 +452,18 @@ function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, rep
         </div>
       </BottomBar>
 
+      <BottomSheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete this recipe?" side="bottom">
+        <p className="mb-5 text-body text-ink-muted">It comes out of your Library and your week. This can't be undone.</p>
+        <div className="flex flex-col gap-3 sm:flex-row-reverse">
+          <Button variant="danger" loading={deleting} onClick={remove}>Delete recipe</Button>
+          <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Keep it</Button>
+        </div>
+      </BottomSheet>
+
       <BottomSheet open={confirmLeave} onClose={() => setConfirmLeave(false)} title={id ? 'Discard your changes?' : 'Discard this recipe?'} side="bottom">
         <p className="mb-5 text-body text-ink-muted">{id ? 'The recipe stays as it was.' : 'Nothing has been saved yet.'}</p>
         <div className="flex flex-col gap-3 sm:flex-row-reverse">
-          <Button variant="danger" onClick={() => { setConfirmLeave(false); back(); }}>Discard</Button>
+          <Button variant="danger" onClick={() => { setConfirmLeave(false); if (!id) clearUnsaved(); back(); }}>Discard</Button>
           <Button variant="secondary" onClick={() => setConfirmLeave(false)}>Keep editing</Button>
         </div>
       </BottomSheet>

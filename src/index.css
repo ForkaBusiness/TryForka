@@ -330,12 +330,13 @@
   [class*='animate-[import-slide'] { animation: none; width: 100%; opacity: 0.5; }
 }
 
-/* Printing a recipe: only the print view (components/PrintView.tsx) is printed. */
+/* Printing a recipe: while a recipe is open (body.print-recipe), only its print view
+   (components/PrintView.tsx) is printed. Other screens print as they always have. */
 #print-root { display: none; }
 @media print {
   @page { margin: 12mm 15mm; }
-  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-  body > *:not(#print-root) { display: none !important; }
+  body.print-recipe, html:has(body.print-recipe) { background: #fff !important; height: auto !important; overflow: visible !important; }
+  body.print-recipe > *:not(#print-root) { display: none !important; }
   #print-root { display: block; padding-bottom: 9mm; font-family: var(--font-sans); color: var(--color-ink); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   /* The credit sits at the foot of every printed page, outside the recipe's flow. */
   #print-root .print-footer { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; background: #fff; }

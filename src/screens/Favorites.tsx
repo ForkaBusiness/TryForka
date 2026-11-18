@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookHeart, BookOpen, Plus, Search, SearchX } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { householdRecipeIds, recipeTitle, safeCards, type RecipeCard } from '../lib/catalog';
+import { householdRecipeIds, householdRecipeTitles, recipeTitle, safeCards, type RecipeCard } from '../lib/catalog';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { fetchCollectionRecipes, fetchCollections, type CollectionRow } from '../lib/collections';
 import { inLibraryView, libraryEntries, type LibraryFilter } from '../lib/library';
@@ -48,6 +48,16 @@ export function Favorites() {
     return () => { cancelled = true; };
   }, [ids, prefs, saved]);
 
+  // The household's own recipes its settings hide: listed by name so they can be fixed or deleted.
+  const hiddenOwn = cards ? entries.filter(e => e.own && !cards.has(e.id)).map(e => e.id).join(',') : '';
+  const [hiddenTitles, setHiddenTitles] = useState<Array<{ id: number; title: string }>>([]);
+  useEffect(() => {
+    if (!hiddenOwn) { setHiddenTitles([]); return; }
+    let cancelled = false;
+    householdRecipeTitles(userId, hiddenOwn.split(',').map(Number)).then(t => { if (!cancelled) setHiddenTitles(t); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [hiddenOwn, userId]);
+
   const browse = <Button size="lg" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>;
   const addRecipe = () => go({ name: 'import' });
   const loading = !error && (!saved || !cards);
@@ -90,6 +100,16 @@ export function Favorites() {
             <p className="mb-4 text-small text-ink-muted">
               {hidden === 1 ? '1 saved recipe is hidden' : `${hidden} saved recipes are hidden`} because {hidden === 1 ? "it doesn't" : "they don't"} fit your household's settings. {CHECK_INGREDIENTS}
             </p>
+          )}
+          {hiddenTitles.length > 0 && (
+            <ul className="mb-5 space-y-2">
+              {hiddenTitles.map(t => (
+                <li key={t.id} className="flex items-center justify-between gap-3 rounded-input border border-line bg-surface px-4 py-2">
+                  <span className="min-w-0 truncate text-body text-ink">{t.title} <span className="text-small text-ink-muted">(added by you)</span></span>
+                  <Button size="sm" variant="ghost" onClick={() => go({ name: 'editor', id: t.id })}>Edit</Button>
+                </li>
+              ))}
+            </ul>
           )}
           {shown.length ? (
             <RecipeGrid>

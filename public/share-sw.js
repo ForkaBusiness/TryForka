@@ -12,6 +12,14 @@ self.addEventListener('activate', event => event.waitUntil(self.clients.claim())
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'POST' || url.pathname !== '/app/share-target') return;
+  // The system share sheet posts with no referrer. A form on another website that still
+  // sends its address is turned away. (A page can hide its referrer, so this is a second
+  // line only: the app never starts a shared import without the household's tap.)
+  const referrer = event.request.referrer;
+  if (referrer && new URL(referrer).origin !== self.location.origin) {
+    event.respondWith(Response.redirect('/app/', 303));
+    return;
+  }
   event.respondWith((async () => {
     const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     try {

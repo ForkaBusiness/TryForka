@@ -1,4 +1,6 @@
 import { deleteHouseholdRecipe, householdRecipeFrom, insertHouseholdRecipe, updateHouseholdRecipe } from './catalog';
+import { supabase } from './supabase';
+import { isPhotoRef, removePhotos } from './recipePhotos';
 import { recipeChecker, type FoodPrefs } from './recipeFilter';
 import { fetchGroceryList, saveCustomItems, type CustomItem } from './groceries';
 import { formatMeasure, type UnitSystem } from '../../supabase/functions/_shared/catalog/units.ts';
@@ -36,7 +38,23 @@ export async function saveDraft(userId: string, draft: ImportDraft, id?: number)
   return insertHouseholdRecipe(userId, { ...row });
 }
 
-export const deleteRecipe = deleteHouseholdRecipe;
+/**
+ * Deletes the household's recipe, and what pointed at it: favorites, collections, notes,
+ * ratings, the cooked log and check-ins, and its own photo. Otherwise a deleted recipe
+ * would keep counting as saved. The recipe goes first; the rest is tidied after.
+ */
+export async function deleteRecipe(userId: string, id: number, photo?: string | null): Promise<void> {
+  await deleteHouseholdRecipe(userId, id);
+  await Promise.allSettled([
+    supabase.from('favorites').delete().eq('user_id', userId).eq('recipe_id', id),
+    supabase.from('collection_recipes').delete().eq('recipe_id', id),
+    supabase.from('notes').delete().eq('user_id', userId).eq('recipe_id', id),
+    supabase.from('recipe_ratings').delete().eq('user_id', userId).eq('recipe_id', id),
+    supabase.from('cooked_recipes').delete().eq('user_id', userId).eq('recipe_id', id),
+    supabase.from('meal_checkins').delete().eq('user_id', userId).eq('recipe_id', id),
+    isPhotoRef(photo) ? removePhotos([photo]) : Promise.resolve(),
+  ]);
+}
 
 /** The recipe the household already saved from this link, if any. */
 export async function alreadySaved(userId: string, url: string | null | undefined): Promise<{ id: number; title: string } | null> {
@@ -79,3 +97,24 @@ export function reviewNote(flags: DraftFlag[]): string {
   return `Got it. Check ${plural(flags.length, 'highlighted part', 'highlighted parts')} before saving.`;
 }
 
+
+// A recipe being checked or written that hasn't been saved yet is kept on this device, so a
+// refresh, a back swipe or a closed app doesn't lose an import. Cleared when it's saved or
+// discarded; kept for a week.
+const UNSAVED_KEY = 'forka_unsaved_recipe';
+const UNSAVED_DAYS = 7;
+
+export function keepUnsaved(draft: ImportDraft): void {
+  try { localStorage.setItem(UNSAVED_KEY, JSON.stringify({ at: Date.now(), draft })); } catch { /* this visit only */ }
+}
+export function readUnsaved(): ImportDraft | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UNSAVED_KEY) ?? 'null') as { at: number; draft: ImportDraft } | null;
+    if (!saved || Date.now() - saved.at > UNSAVED_DAYS * 86_400_000) return null;
+    const d = saved.draft;
+    return d && (d.title || d.ingredients?.length || d.steps?.length) ? d : null;
+  } catch { return null; }
+}
+export function clearUnsaved(): void {
+  try { localStorage.removeItem(UNSAVED_KEY); } catch { /* nothing kept */ }
+}

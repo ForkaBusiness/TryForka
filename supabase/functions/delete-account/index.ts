@@ -1,8 +1,24 @@
 import { AppError, serve, serviceClient } from '../_shared/http.ts';
 
 // Deletes the signed-in user. Every user table references auth.users with
-// ON DELETE CASCADE, so removing the auth user removes their rows too; their avatar
-// files are removed first because storage objects don't cascade.
+// ON DELETE CASCADE, so removing the auth user removes their rows too (their own recipes
+// included); their files are removed first because storage objects don't cascade: the
+// avatar, and every recipe photo (dish photos, imported pages and screenshots, covers).
+
+/** Every file under a folder, at any depth (storage lists one level at a time). */
+async function listAll(admin: ReturnType<typeof serviceClient>, bucket: string, folder: string): Promise<string[]> {
+  const out: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.storage.from(bucket).list(folder, { limit: 1000, offset });
+    if (error) throw error;
+    for (const item of data ?? []) {
+      const path = `${folder}/${item.name}`;
+      // Folders have no id; files do.
+      if (item.id) out.push(path); else out.push(...await listAll(admin, bucket, path));
+    }
+    if ((data ?? []).length < 1000) return out;
+  }
+}
 
 serve(async (body, req) => {
   if (body.confirm !== 'DELETE') throw new AppError('Confirm to delete your account.', 400);
@@ -14,6 +30,13 @@ serve(async (body, req) => {
 
   const { data: files } = await admin.storage.from('avatars').list(userId);
   if (files?.length) await admin.storage.from('avatars').remove(files.map(f => `${userId}/${f.name}`));
+  try {
+    const photos = await listAll(admin, 'recipe-photos', userId);
+    for (let i = 0; i < photos.length; i += 100) await admin.storage.from('recipe-photos').remove(photos.slice(i, i + 100));
+  } catch (err) {
+    // Photos that couldn't be removed are not a reason to keep the account: log and go on.
+    console.error('[delete-account] recipe photos not removed:', err);
+  }
 
   const { error: delErr } = await admin.auth.admin.deleteUser(userId);
   if (delErr) {

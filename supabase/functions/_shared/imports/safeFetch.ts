@@ -115,6 +115,9 @@ export function isPrivateAddress(ip: string): boolean {
   if ((g[0] & 0xffc0) === 0xfe80) return true;                              // fe80::/10
   if ((g[0] & 0xff00) === 0xff00) return true;                              // ff00::/8
   if (g[0] === 0x2001 && g[1] === 0x0db8) return true;                      // 2001:db8::/32
+  if (g[0] === 0x2001 && g[1] === 0x0000) return true;                      // 2001::/32 Teredo (tunnels to anywhere)
+  if (zeroHead(4) && g[4] === 0xffff && g[5] === 0) return privateV4(v4FromGroups(g[6], g[7])); // ::ffff:0:a.b.c.d (SIIT)
+  if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return true;          // 64:ff9b:1::/48 local-use NAT64
   if (g[0] === 0x2002) return privateV4(v4FromGroups(g[1], g[2]));          // 6to4 wraps an IPv4
   return false;
 }

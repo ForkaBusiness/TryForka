@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { usePhotoSrc } from '../lib/recipePhotos';
 import type { PrintData } from '../lib/printData';
@@ -9,6 +10,11 @@ import type { PrintData } from '../lib/printData';
 
 export function PrintView({ data }: { data: PrintData }) {
   const photo = usePhotoSrc(data.photo);
+  // While this view is on the page, printing gives the recipe and nothing else.
+  useEffect(() => {
+    document.body.classList.add('print-recipe');
+    return () => document.body.classList.remove('print-recipe');
+  }, []);
   return createPortal(
     <article id="print-root" aria-hidden className="print-recipe">
       <h1 className="display text-[26pt] leading-[1.1] text-ink">{data.title}</h1>

@@ -167,3 +167,11 @@ test('images come back as bytes with the same checks', async () => {
   assert.deepEqual([...img.bytes], [...png]);
   await assert.rejects(safeFetchBytes('http://192.168.0.1/a.png', opts), (e: unknown) => e instanceof FetchBlocked && e.code === 'blocked');
 });
+
+test('more IPv6 forms that can reach private addresses are blocked', async () => {
+  const { isPrivateAddress } = await import('../supabase/functions/_shared/imports/safeFetch.ts');
+  assert.equal(isPrivateAddress('::ffff:0:7f00:1'), true, 'SIIT-mapped 127.0.0.1');
+  assert.equal(isPrivateAddress('2001:0:4136:e378:8000:63bf:3fff:fdd2'), true, 'Teredo');
+  assert.equal(isPrivateAddress('64:ff9b:1::a00:1'), true, 'local-use NAT64');
+  assert.equal(isPrivateAddress('2606:4700:4700::1111'), false, 'a public IPv6 address');
+});

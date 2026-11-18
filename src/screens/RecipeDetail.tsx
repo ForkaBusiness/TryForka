@@ -137,7 +137,8 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
   const remove = async () => {
     setDeleting(true);
     try {
-      await deleteRecipe(userId, recipe.id);
+      await deleteRecipe(userId, recipe.id, recipe.thumb_url);
+      // The favorite row is gone; keep the app's list of favorites in step.
       if (favorites.has(recipe.id)) await toggleFavorite({ id: recipe.id, title, image: recipe.thumb_url ?? '' }).catch(() => {});
       const plan = weekPlan?.plan;
       const there = plan ? findInPlan(plan, recipe.id) : null;

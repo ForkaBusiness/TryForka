@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Camera, ClipboardPaste, Clock, FileText, ImagePlus, Link2, PenLine, SearchX, TriangleAlert, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { findLink, importFromLink, importFromPhotos, importFromText, MAX_IMPORT_PHOTOS, type ImportAnswer, type PhotoStep } from '../lib/imports';
+import { clearUnsaved, readUnsaved } from '../lib/householdRecipes';
 import { Button, Card, IconButton, Input, PageContainer, Spinner, Textarea, cx } from '../components/ds';
 import type { DraftSource } from '../../supabase/functions/_shared/imports/draft.ts';
 
@@ -32,7 +33,7 @@ async function quietClipboardLink(): Promise<string | null> {
   }
 }
 
-export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFiles, mode }: { url?: string; text?: string; files?: File[]; mode?: 'link' | 'photos' | 'text' }) {
+export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFiles, mode, shared }: { url?: string; text?: string; files?: File[]; mode?: 'link' | 'photos' | 'text'; shared?: boolean }) {
   const { userId, back, replace, go } = useApp();
   const [link, setLink] = useState(sharedUrl ?? '');
   const [text, setText] = useState(sharedText ?? '');
@@ -47,6 +48,13 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   const linkRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const started = useRef(false);
+  /** Shared from another app: shown here, imported on a tap. */
+  const [sharedLink, setSharedLink] = useState<string | null>(null);
+  /** A recipe being checked that wasn't saved (the app was closed or refreshed). */
+  const [unsaved, setUnsaved] = useState(() => readUnsaved());
+  // An answer that arrives after the household left this screen is dropped, not followed.
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   // After a while, say so: pages without recipe markup and photos take longer.
   useEffect(() => {
@@ -57,6 +65,7 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
 
   /** What every answer leads to: the review screen, or a state of its own here. */
   const handle = (answer: ImportAnswer, retry: () => void, linkUrl?: string) => {
+    if (!alive.current) return;
     switch (answer.status) {
       case 'ok':
       case 'partial':
@@ -105,6 +114,13 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+    if (shared) {
+      // From the share sheet: show it, ready to import. Nothing runs until the household taps.
+      if (sharedFiles?.length) setPhotos(sharedFiles.slice(0, MAX_IMPORT_PHOTOS));
+      else if (sharedUrl) { setLink(sharedUrl); setSharedLink(sharedUrl); }
+      else if (sharedText) setShowText(true);
+      return;
+    }
     if (sharedFiles?.length) { setPhotos(sharedFiles.slice(0, MAX_IMPORT_PHOTOS)); void runPhotos(sharedFiles.slice(0, MAX_IMPORT_PHOTOS)); return; }
     if (sharedUrl) { void runLink(sharedUrl); return; }
     if (sharedText) { void runText(sharedText, null); return; }
@@ -220,7 +236,26 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   // ── Start ──
   return (
     <PageContainer title="Import a recipe" onBack={back} intro="From a recipe site, a social post, or photos of a cookbook page or recipe card.">
-      {copied && copied !== link && (
+      {unsaved && !sharedLink && (
+        <Card className="mb-4 p-4">
+          <p className="text-body text-ink">You were checking <span className="font-semibold">{unsaved.title || 'a recipe'}</span>. It isn't saved yet.</p>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={() => replace({ name: 'editor', draft: unsaved })}>Continue checking</Button>
+            <Button variant="ghost" onClick={() => { clearUnsaved(); setUnsaved(null); }}>Discard it</Button>
+          </div>
+        </Card>
+      )}
+      {sharedLink && (
+        <Card className="mb-4 p-4">
+          <p className="text-body text-ink">Shared with Forka: <span className="font-semibold">{host(sharedLink)}</span></p>
+          <p className="mt-1 truncate text-small text-ink-muted">{sharedLink}</p>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={() => { setSharedLink(null); void runLink(sharedLink); }}>Import it</Button>
+            <Button variant="ghost" onClick={() => setSharedLink(null)}>Not now</Button>
+          </div>
+        </Card>
+      )}
+      {copied && copied !== link && !sharedLink && (
         <Card className="mb-4 flex items-center gap-3 p-4">
           <ClipboardPaste size={20} strokeWidth={1.75} aria-hidden className="shrink-0 text-green" />
           <p className="min-w-0 flex-1 truncate text-body text-ink">Import the link you copied from <span className="font-semibold">{host(copied)}</span>?</p>

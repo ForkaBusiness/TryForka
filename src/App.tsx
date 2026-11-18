@@ -123,7 +123,8 @@ function SignedIn({ session }: { session: Session }) {
     readPendingShare().then(share => {
       if (cancelled || !share) return;
       const next = share === 'failed' ? null : handleIncomingShare(share);
-      setStack(prev => [...prev, next ?? { name: 'import' }]);
+      // Shared from outside the app: ready to import, started only when the household taps Import.
+      setStack(prev => [...prev, next?.name === 'import' ? { ...next, shared: true } : { name: 'import' }]);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [ready]);

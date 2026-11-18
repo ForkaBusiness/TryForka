@@ -83,12 +83,16 @@ serve(async (body, req) => {
 
   // ── What was sent ──
   let url: string | null = null;
+  /** The link as pasted (fetched as is); `url` is its canonical form, for duplicates and storage. */
+  let pasted: string | null = null;
   let text = '';
   let paths: string[] = [];
   let textSource: DraftSource | undefined;
   if (kind === 'link') {
-    url = canonicalUrl(typeof body.url === 'string' ? body.url.slice(0, 2048) : '');
-    if (!url) {
+    const raw = typeof body.url === 'string' ? body.url.trim().slice(0, 2048) : '';
+    url = canonicalUrl(raw);
+    pasted = url ? new URL(raw).toString() : null;
+    if (!url || !pasted) {
       await log({ source_kind: 'website', outcome: 'failed', error_code: 'bad_url' });
       return { status: 'failed', message: "That doesn't look like a link. Check it and try again." };
     }
@@ -147,7 +151,7 @@ serve(async (body, req) => {
   let model: string | null = null;
   try {
     if (kind === 'link') {
-      result = await importLink(url!, deps);
+      result = await importLink(pasted!, deps);
     } else if (kind === 'text') {
       result = await importText(text, deps, textSource);
     } else {

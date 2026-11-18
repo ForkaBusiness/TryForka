@@ -149,3 +149,21 @@ export async function deleteHouseholdRecipe(userId: string, id: number): Promise
   const { error } = await supabase.from('recipes').delete().eq('id', id).eq('owner_id', userId);
   if (error) throw new Error(error.message);
 }
+
+/**
+ * One of the household's own recipes, for its owner to edit or delete, even when the
+ * family's settings hide it (the editor says so). Never for showing a recipe to cook.
+ */
+export async function householdRecipeForEdit(userId: string, id: number): Promise<Recipe | null> {
+  const { data, error } = await supabase.from('recipes').select(`${RECIPE_COLUMNS}, ${HOUSEHOLD_COLUMNS}`).eq('id', id).eq('owner_id', userId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as unknown as Recipe | null;
+}
+
+/** Names of the household's own recipes, for listing the ones its settings hide. */
+export async function householdRecipeTitles(userId: string, ids: readonly number[]): Promise<Array<{ id: number; title: string }>> {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from('recipes').select('id, name, display_name').eq('owner_id', userId).in('id', [...ids]);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(r => ({ id: r.id as number, title: (r.display_name as string) || (r.name as string) }));
+}
