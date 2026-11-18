@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, X } from 'lucide-react';
-import { useHandsFree, type HandsFreeStatus } from '../lib/useHandsFree';
+import { useHandsFree, type HandShape, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
 import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
-import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip } from '../components/ds';
+import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip, cx } from '../components/ds';
 
 // A cookbook propped on the counter: one step per screen in type you can read from a few
 // feet away, and big targets for next and back. Arrow keys and space move on desktop; the
@@ -30,27 +30,93 @@ function introSeen(): boolean {
   try { return localStorage.getItem(HANDS_FREE_INTRO_KEY) === '1'; } catch { return false; }
 }
 
+/** How long the live preview shows when the camera comes on, to aim the device. */
+const AIM_MS = 3000;
+
+/** MediaPipe's hand landmarks joined into a hand: wrist to each fingertip, and across the knuckles. */
+const BONES: ReadonlyArray<readonly [number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17],
+];
+const PALM_OUTLINE = [0, 1, 5, 9, 13, 17];
+const FINGERTIPS = new Set([4, 8, 12, 16, 20]);
+
 /**
- * While the camera is on: a small mirrored preview so the cook can see their hand is in
- * frame, a green dot, and what the camera last did. The preview is the live <video> the
- * tracker reads from; it is never captured or stored.
+ * The tracked hand, drawn from its 21 points: nothing when no hand is seen. It is laid over
+ * the preview the same way the video is (cropped to fill), so while the preview shows, the
+ * drawing sits on the hand.
  */
-function HandsFreeIndicator({ videoRef, status, handSeen, swipe }: {
+function HandDrawing({ subscribe }: { subscribe: (listener: (hand: HandShape | null) => void) => () => void }) {
+  const [hand, setHand] = useState<HandShape | null>(null);
+  useEffect(() => subscribe(setHand), [subscribe]);
+  if (!hand) return null;
+  const w = 100 * hand.aspect;
+  const at = (i: number) => ({ x: hand.points[i].x * w, y: hand.points[i].y * 100 });
+  return (
+    <svg viewBox={`0 0 ${w} 100`} preserveAspectRatio="xMidYMid slice" aria-hidden className="absolute inset-0 size-full">
+      <polygon points={PALM_OUTLINE.map(i => `${at(i).x},${at(i).y}`).join(' ')} className="fill-green-soft/80" />
+      {BONES.map(([a, b]) => (
+        <line key={`${a}-${b}`} x1={at(a).x} y1={at(a).y} x2={at(b).x} y2={at(b).y} strokeWidth={3} strokeLinecap="round" className="stroke-green" />
+      ))}
+      {hand.points.map((_, i) => (
+        <circle key={i} cx={at(i).x} cy={at(i).y} r={FINGERTIPS.has(i) ? 3.4 : 2} strokeWidth={1.2} className={FINGERTIPS.has(i) ? 'fill-green-deep stroke-surface' : 'fill-surface stroke-green'} />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * While hands-free is on: a small tile that shows the camera only while the cook aims the
+ * device (a few seconds after it comes on, or while Show camera is on). The rest of the
+ * time the video is fully transparent and the tile shows just the tracked hand, drawn from
+ * its points. The video stays in place because the tracker reads its frames from it; they
+ * are never captured or stored.
+ */
+function HandsFreePanel({ videoRef, status, handSeen, swipe, subscribeHand }: {
   videoRef: React.RefObject<HTMLVideoElement | null>; status: HandsFreeStatus; handSeen: boolean; swipe: 'next' | 'back' | null;
+  subscribeHand: (listener: (hand: HandShape | null) => void) => () => void;
 }) {
+  // Keeps the live preview showing until turned off again (and resets with hands-free).
+  const [showCamera, setShowCamera] = useState(false);
+  // Each time the camera comes on, the preview shows for a moment (from the very first
+  // frame), then fades out.
+  const [aimed, setAimed] = useState(false);
+  useEffect(() => {
+    if (status !== 'on') { setAimed(false); return; }
+    const t = window.setTimeout(() => setAimed(true), AIM_MS);
+    return () => window.clearTimeout(t);
+  }, [status]);
+  const preview = status === 'on' && (!aimed || showCamera);
+
   const text = swipe === 'next' ? 'Next step' : swipe === 'back' ? 'Back a step'
     : status === 'paused' ? 'Camera paused'
     // Until the tracker is actually running, it isn't watching yet.
     : status !== 'on' ? 'Starting the camera'
+    : preview && !showCamera ? 'Aim the camera at your hand'
     : handSeen ? 'Hand seen' : 'Wave to change steps';
   return (
-    <div className="mt-3 flex w-fit max-w-full items-center gap-2.5 rounded-full border border-line bg-surface py-1 pr-4 pl-1 shadow-sm">
-      <video ref={videoRef} muted playsInline autoPlay aria-hidden className="h-8 w-11 shrink-0 -scale-x-100 rounded-full bg-line object-cover" />
-      <span aria-hidden className={status === 'on' ? 'size-2 shrink-0 rounded-full bg-green' : 'size-2 shrink-0 rounded-full bg-ink-muted/50'} />
-      <span role="status" aria-live="polite" className="truncate text-small font-semibold text-ink">
-        {swipe ? <span className="text-green">{text}</span> : text}
-        <span className="sr-only">{status === 'on' ? '. Camera on.' : ''}</span>
-      </span>
+    <div className="mt-3 flex items-center gap-3">
+      <div aria-hidden className="relative aspect-4/3 w-24 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          autoPlay
+          data-preview={preview ? 'shown' : 'hidden'}
+          className={cx('absolute inset-0 size-full -scale-x-100 object-cover transition-opacity duration-700 ease-out', preview ? 'opacity-100' : 'opacity-0')}
+        />
+        <HandDrawing subscribe={subscribeHand} />
+      </div>
+      <div className="flex min-w-0 flex-col items-start gap-2">
+        <p className="flex max-w-full items-center gap-2">
+          <span aria-hidden className={status === 'on' ? 'size-2 shrink-0 rounded-full bg-green' : 'size-2 shrink-0 rounded-full bg-ink-muted/50'} />
+          <span role="status" aria-live="polite" className="truncate text-small font-semibold text-ink">
+            {swipe ? <span className="text-green">{text}</span> : text}
+            <span className="sr-only">{status === 'on' ? '. Camera on.' : ''}</span>
+          </span>
+        </p>
+        <ToggleChip selected={showCamera} onToggle={() => setShowCamera(v => !v)}>Show camera</ToggleChip>
+      </div>
     </div>
   );
 }
@@ -208,7 +274,15 @@ export function CookingMode({ id }: { id: number }) {
           <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</p>
           <ToggleChip selected={handsFree} onToggle={toggleHandsFree}>Hands-free</ToggleChip>
         </div>
-        {handsFree && <HandsFreeIndicator videoRef={camera.videoRef} status={cameraStatus} handSeen={camera.handSeen} swipe={lastSwipe?.swipe ?? null} />}
+        {handsFree && (
+          <HandsFreePanel
+            videoRef={camera.videoRef}
+            status={cameraStatus}
+            handSeen={camera.handSeen}
+            swipe={lastSwipe?.swipe ?? null}
+            subscribeHand={camera.subscribeHand}
+          />
+        )}
         {problem && <p role="alert" className="mt-3 text-small text-terracotta-deep">{problem}</p>}
         <div className="mt-4">
           <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />

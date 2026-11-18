@@ -61,6 +61,22 @@ test('two waves within the cooldown move one step, and the swing back does not c
   assert.deepEqual(swipes(t), ['next']);
 });
 
+test('waving back and forth without stopping is one step, even past the cooldown', () => {
+  // Five quick strokes, 1.5 seconds in all: longer than the cooldown, but one gesture.
+  const t = [...hold(0, 0.75, 250), ...wave(250, 0.75, 0.25, 300), ...wave(550, 0.25, 0.75, 300), ...wave(850, 0.75, 0.25, 300), ...wave(1150, 0.25, 0.75, 300), ...wave(1450, 0.75, 0.25, 300)];
+  assert.deepEqual(swipes(t), ['next']);
+  // A slower page: the third stroke starts inside the cooldown and ends after it.
+  const slow = [...hold(0, 0.75, 250), ...wave(250, 0.75, 0.25, 450), ...wave(700, 0.25, 0.75, 450), ...wave(1150, 0.75, 0.25, 450)];
+  assert.deepEqual(swipes(slow), ['next']);
+});
+
+test('after waving, the hand settling (or leaving) lets the next wave count', () => {
+  const settled = [...hold(0, 0.75, 250), ...wave(250, 0.75, 0.25), ...wave(600, 0.25, 0.75, 300), ...hold(900, 0.75, 800), ...wave(1700, 0.75, 0.25)];
+  assert.deepEqual(swipes(settled), ['next', 'next']);
+  const left = [...hold(0, 0.75, 250), ...wave(250, 0.75, 0.25), ...sequence(600, 900, () => ({ x: null })), ...hold(1500, 0.75, 250), ...wave(1750, 0.75, 0.25)];
+  assert.deepEqual(swipes(left), ['next', 'next']);
+});
+
 test('two waves with a pause between them are two steps', () => {
   // Wave left, bring the hand back slowly, wave left again.
   const t = [...hold(0, 0.75, 250), ...wave(250, 0.75, 0.25), ...hold(600, 0.25, 400), ...wave(1000, 0.25, 0.75, 1400), ...hold(2400, 0.75, 300), ...wave(2700, 0.75, 0.25)];

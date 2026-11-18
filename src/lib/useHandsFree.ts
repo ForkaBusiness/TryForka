@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CAMERA_CONSTRAINTS, cameraProblem, createHandTracker, handsFreeSupport, type CameraProblem, type HandTracker } from './handTracking';
-import { initialSwipeState, palmFromLandmarks, stepSwipe, type Swipe } from './swipe';
+import { initialSwipeState, mainHand, palmFromLandmarks, stepSwipe, type Swipe } from './swipe';
 
 // Runs the camera and the hand tracker while hands-free is on, and reports swipes.
 //
@@ -8,6 +8,13 @@ import { initialSwipeState, palmFromLandmarks, stepSwipe, type Swipe } from './s
 // toggle goes off, when the tab is hidden (and starts again on return), and when the
 // component using this unmounts (leaving cooking mode). Frames are read from the video
 // element by the tracker in memory and dropped; nothing is recorded, stored or sent.
+
+/**
+ * The tracked hand, for drawing: 21 points in the user's view (mirrored like the preview),
+ * 0..1 across and down the camera frame, and the frame's width over its height. Only these
+ * numbers leave the tracker; the frame itself is never drawn anywhere.
+ */
+export interface HandShape { points: ReadonlyArray<{ x: number; y: number }>; aspect: number }
 
 export type HandsFreeStatus = 'off' | 'starting' | 'on' | 'paused' | 'unsupported' | 'interrupted' | CameraProblem;
 
@@ -30,6 +37,13 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
   const onSwipeRef = useRef(onSwipe);
   onSwipeRef.current = onSwipe;
   const tracker = useRef<Promise<HandTracker> | null>(null);
+  // The hand drawing updates many times a second: listeners, not state, so only the
+  // drawing re-renders, not the whole screen.
+  const handListeners = useRef(new Set<(hand: HandShape | null) => void>());
+  const subscribeHand = useCallback((listener: (hand: HandShape | null) => void) => {
+    handListeners.current.add(listener);
+    return () => { handListeners.current.delete(listener); };
+  }, []);
   const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
 
   useEffect(() => {
@@ -51,6 +65,7 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
 
     let cancelled = false;
     let stream: MediaStream | null = null;
+    const listeners = handListeners.current;
     let frameHandle: number | null = null;
     let usesVideoCallback = false;
     const video = videoRef.current as VideoWithFrameCallback | null;
@@ -142,6 +157,9 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
           try {
             const result = current.landmarker.detectForVideo(video, now);
             const palm = palmFromLandmarks(result.landmarks);
+            const hand = mainHand(result.landmarks);
+            const shape = hand && { points: hand.map(p => ({ x: 1 - p.x, y: p.y })), aspect: video.videoWidth / (video.videoHeight || 1) || 4 / 3 };
+            listeners.forEach(listener => listener(shape));
             if (!!palm !== seen) { seen = !!palm; setHandSeen(seen); }
             const step = stepSwipe(swipeState, { t: now, x: palm?.x ?? null, y: palm?.y ?? null });
             swipeState = step.state;
@@ -172,9 +190,10 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
       window.clearTimeout(giveUp);
       stopCamera();
       setHandSeen(false);
+      listeners.forEach(listener => listener(null));
     };
   }, [enabled, visible]);
 
   const clearSwipe = useCallback(() => setLastSwipe(null), []);
-  return { videoRef, status, handSeen, lastSwipe, clearSwipe };
+  return { videoRef, status, handSeen, lastSwipe, clearSwipe, subscribeHand };
 }

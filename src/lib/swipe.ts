@@ -36,8 +36,15 @@ export interface SwipeConfig {
   maxVerticalRatio: number;
   /** Share of frame-to-frame moves that must go the swipe's way. */
   minConsistency: number;
-  /** After a swipe, nothing counts for this long. */
+  /** After a swipe, nothing counts for this long... */
   cooldown: number;
+  /**
+   * ...nor until the hand has settled (moving slower than `calmSpeed`, frame widths per
+   * second, for `calmFor` ms) or left the frame. A hand still waving back and forth is one
+   * gesture, however long it keeps going.
+   */
+  calmSpeed: number;
+  calmFor: number;
   /**
    * The hand may go unseen this long and the movement still counts. Trackers often lose a
    * fast hand for the middle of a wave; longer than this, the hand left and starts over.
@@ -53,6 +60,8 @@ export const SWIPE_DEFAULTS: SwipeConfig = {
   maxVerticalRatio: 0.7,
   minConsistency: 0.75,
   cooldown: 900,
+  calmSpeed: 0.3,
+  calmFor: 200,
   maxGap: 500,
 };
 
@@ -61,9 +70,13 @@ interface Point { t: number; x: number; y: number | null }
 export interface SwipeState {
   trail: Point[];
   cooldownUntil: number;
+  /** False from a swipe until the cooldown is over and the hand has settled or left. */
+  armed: boolean;
+  /** Since when the hand has been still, while waiting to re-arm. */
+  calmSince: number | null;
 }
 
-export const initialSwipeState = (): SwipeState => ({ trail: [], cooldownUntil: -Infinity });
+export const initialSwipeState = (): SwipeState => ({ trail: [], cooldownUntil: -Infinity, armed: true, calmSince: null });
 
 /**
  * Whether the trail is a swipe: either ending at its last point, or at the point before,
@@ -118,22 +131,32 @@ function sweep(full: readonly Point[], config: SwipeConfig, after: Point | 'exit
 export function stepSwipe(state: SwipeState, sample: HandSample, config: SwipeConfig = SWIPE_DEFAULTS): { state: SwipeState; swipe: Swipe | null } {
   const last = state.trail[state.trail.length - 1];
   const fresh = !!last && sample.t - last.t <= config.maxGap;
-  const swiped = (swipe: Swipe) => ({ state: { trail: [], cooldownUntil: sample.t + config.cooldown }, swipe });
+  const swiped = (swipe: Swipe) => ({ state: { trail: [], cooldownUntil: sample.t + config.cooldown, armed: false, calmSince: null }, swipe });
+
+  // After a swipe: track nothing until the hand settles or leaves, so neither the swing
+  // back nor more strokes of the same wave count.
+  if (!state.armed) {
+    const cooled = sample.t >= state.cooldownUntil;
+    if (sample.x === null || !Number.isFinite(sample.x)) {
+      const gone = !fresh; // unseen for longer than a dropout
+      return { state: { ...state, trail: gone ? [] : state.trail, armed: gone && cooled, calmSince: null }, swipe: null };
+    }
+    const point: Point = { t: sample.t, x: sample.x, y: sample.y ?? null };
+    const slow = !!last && fresh && sample.t > last.t && (Math.abs(point.x - last.x) / (sample.t - last.t)) * 1000 < config.calmSpeed;
+    const calmSince = slow ? (state.calmSince ?? last.t) : null;
+    const armed = cooled && calmSince !== null && sample.t - calmSince >= config.calmFor;
+    return { state: { ...state, trail: [point], armed, calmSince }, swipe: null };
+  }
 
   if (sample.x === null || !Number.isFinite(sample.x)) {
     // No hand this frame. A fast hand is often lost for a frame or two: keep the trail
     // briefly. A wave that carries the hand out of view counts as it leaves.
     if (!fresh) return { state: { ...state, trail: [] }, swipe: null };
-    if (sample.t >= state.cooldownUntil) {
-      const swipe = evaluate(state.trail, config, true);
-      if (swipe) return swiped(swipe);
-    }
+    const swipe = evaluate(state.trail, config, true);
+    if (swipe) return swiped(swipe);
     return { state, swipe: null };
   }
   const point: Point = { t: sample.t, x: sample.x, y: sample.y ?? null };
-
-  // Still cooling down: track nothing, so the swing back can't count once it's over.
-  if (sample.t < state.cooldownUntil) return { state: { ...state, trail: [point] }, swipe: null };
 
   // Kept a little longer than a swipe lasts, so a frame after it can still confirm it.
   const trail = [...(fresh ? state.trail.filter(p => sample.t - p.t <= config.maxDuration + config.maxGap) : []), point];
@@ -159,19 +182,28 @@ const PALM: readonly number[] = [0, 5, 9, 13, 17];
 /** A hand smaller than this (index to little-finger knuckle, share of frame width) is someone in the background. */
 export const MIN_PALM_WIDTH = 0.05;
 
+type Landmarks = ReadonlyArray<{ x: number; y: number }>;
+
 /**
- * The palm center of the most prominent hand, in the user's view (mirrored from the camera
- * image), or null when there is no hand near enough to the camera.
+ * The most prominent hand (the one swipes follow), in the camera's own coordinates, or
+ * null when there is no hand near enough to the camera.
  */
-export function palmFromLandmarks(hands: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>): { x: number; y: number } | null {
-  let best: { x: number; y: number; width: number } | null = null;
+export function mainHand(hands: ReadonlyArray<Landmarks>): Landmarks | null {
+  let best: { hand: Landmarks; width: number } | null = null;
   for (const hand of hands) {
     if (hand.length < 21) continue;
     const width = Math.hypot(hand[5].x - hand[17].x, hand[5].y - hand[17].y);
     if (width < MIN_PALM_WIDTH) continue;
-    const x = PALM.reduce((s, i) => s + hand[i].x, 0) / PALM.length;
-    const y = PALM.reduce((s, i) => s + hand[i].y, 0) / PALM.length;
-    if (!best || width > best.width) best = { x: 1 - x, y, width };
+    if (!best || width > best.width) best = { hand, width };
   }
-  return best && { x: best.x, y: best.y };
+  return best?.hand ?? null;
+}
+
+/** The palm center of the main hand, in the user's view (mirrored from the camera image). */
+export function palmFromLandmarks(hands: ReadonlyArray<Landmarks>): { x: number; y: number } | null {
+  const hand = mainHand(hands);
+  if (!hand) return null;
+  const x = PALM.reduce((s, i) => s + hand[i].x, 0) / PALM.length;
+  const y = PALM.reduce((s, i) => s + hand[i].y, 0) / PALM.length;
+  return { x: 1 - x, y };
 }
