@@ -11,7 +11,8 @@ import { AppError, json, serviceClient } from '../_shared/http.ts';
 //   step "subtitles": rewrites subtitles from each recipe's own ingredients, 10 per call (manual)
 //   step "all"      : all four in order (what the weekly cron job sends)
 // Claude columns are only ever written for rows that don't have them, so a recipe is
-// never classified twice.
+// never classified twice. Every step reads catalog rows only (owner_id is null): a household's
+// own recipes live in the same table and are never classified, renamed or sent to Claude.
 //
 // Not user-facing: requires the x-sync-secret header to match the SYNC_SECRET secret.
 // TheMealDB key: MEALDB_API_KEY secret (defaults to the public test key "1"; swap in
@@ -106,7 +107,7 @@ async function classifyStep(limit: number): Promise<{ classified: number; remain
   const db = serviceClient();
   const { data, error } = await db.from('recipes')
     .select('id, name, category, area, ingredients, instructions_raw')
-    .is('meal_role', null).order('id').limit(limit);
+    .is('meal_role', null).is('owner_id', null).order('id').limit(limit);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as ClassifyRow[];
   const batches: ClassifyRow[][] = [];
@@ -132,13 +133,13 @@ async function classifyStep(limit: number): Promise<{ classified: number; remain
       else classified++;
     }
   }
-  const { count } = await db.from('recipes').select('id', { count: 'exact', head: true }).is('meal_role', null);
+  const { count } = await db.from('recipes').select('id', { count: 'exact', head: true }).is('meal_role', null).is('owner_id', null);
   return { classified, remaining: count ?? 0 };
 }
 
 async function aislesStep(): Promise<{ classified: number }> {
   const db = serviceClient();
-  const { data: recipes, error } = await db.from('recipes').select('ingredients');
+  const { data: recipes, error } = await db.from('recipes').select('ingredients').is('owner_id', null);
   if (error) throw new Error(error.message);
   const names = new Map<string, string>(); // lowercased -> as written
   for (const r of recipes ?? []) {
@@ -198,7 +199,7 @@ function sentenceCase(text: string, keep: Set<string>): string {
 
 async function namesStep(): Promise<{ split: number; recased: number }> {
   const db = serviceClient();
-  const { data, error } = await db.from('recipes').select('id, name, display_name, subtitle, ingredient_names').not('meal_role', 'is', null);
+  const { data, error } = await db.from('recipes').select('id, name, display_name, subtitle, ingredient_names').not('meal_role', 'is', null).is('owner_id', null);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Array<{ id: number; name: string; display_name: string; subtitle: string; ingredient_names: string[] }>;
   // Nationality words keep their capital: "Syrian", "Algerian".
@@ -248,7 +249,7 @@ const NOT_A_SUBTITLE = /\b(subtitle|ingredients?|recipe|mentions?|listed|does no
  */
 async function subtitlesStep(): Promise<{ checked: number; written: number }> {
   const db = serviceClient();
-  const { data, error } = await db.from('recipes').select('id, name, display_name, category, area, ingredients').not('meal_role', 'is', null).order('id');
+  const { data, error } = await db.from('recipes').select('id, name, display_name, category, area, ingredients').not('meal_role', 'is', null).is('owner_id', null).order('id');
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Array<{ id: number; name: string; display_name: string; category: string | null; area: string | null; ingredients: Array<{ name_us: string }> }>;
   const schema = {

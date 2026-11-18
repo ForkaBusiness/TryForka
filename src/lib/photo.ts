@@ -2,8 +2,9 @@ import { callFunction } from './plan';
 import { safeCards, type RecipeCard } from './catalog';
 import type { FoodPrefs } from './recipeFilter';
 
-// Photo prep for "Find meals like this": decode (converting HEIC when the browser
-// can't), shrink to 1024px on the long edge, re-encode as JPEG ~0.8.
+// Photo prep: decode (converting HEIC when the browser can't), shrink on the long edge,
+// re-encode as JPEG. "Find meals like this" uses 1024px; imports of recipe pages use more
+// (small print has to stay readable), see IMPORT_PHOTO.
 
 export const MAX_BYTES = 15 * 1024 * 1024;
 const LONG_EDGE = 1024;
@@ -32,8 +33,13 @@ async function decode(blob: Blob): Promise<ImageBitmap | HTMLImageElement> {
   }
 }
 
-/** File -> resized JPEG (data URL for the preview, base64 for the request). */
-export async function preparePhoto(file: File): Promise<{ dataUrl: string; base64: string }> {
+/** Recipe pages and screenshots: big enough for small print, small enough to upload quickly. */
+export const IMPORT_PHOTO = { longEdge: 2000, quality: 0.85 };
+
+/** File -> resized JPEG (data URL for the preview, base64 for the request, blob for upload). */
+export async function preparePhoto(file: File, opts: { longEdge?: number; quality?: number } = {}): Promise<{ dataUrl: string; base64: string; blob: Blob; width: number; height: number }> {
+  const longEdge = opts.longEdge ?? LONG_EDGE;
+  const quality = opts.quality ?? 0.8;
   checkFile(file);
   let source: Blob = file;
   let bitmap: ImageBitmap | HTMLImageElement;
@@ -53,7 +59,7 @@ export async function preparePhoto(file: File): Promise<{ dataUrl: string; base6
   }
   const w = 'naturalWidth' in bitmap ? bitmap.naturalWidth : bitmap.width;
   const h = 'naturalHeight' in bitmap ? bitmap.naturalHeight : bitmap.height;
-  const scale = Math.min(1, LONG_EDGE / Math.max(w, h));
+  const scale = Math.min(1, longEdge / Math.max(w, h));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w * scale);
   canvas.height = Math.round(h * scale);
@@ -61,8 +67,10 @@ export async function preparePhoto(file: File): Promise<{ dataUrl: string; base6
   if (!ctx) throw new PhotoError("Couldn't process that photo. Try a different one.");
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   if ('close' in bitmap) bitmap.close();
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-  return { dataUrl, base64: dataUrl.slice(dataUrl.indexOf(',') + 1) };
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  return { dataUrl, base64, blob: new Blob([bytes], { type: 'image/jpeg' }), width: canvas.width, height: canvas.height };
 }
 
 export async function findSimilar(base64: string, context: string, prefs: FoodPrefs): Promise<{ dish_name: string; recipes: RecipeCard[] }> {

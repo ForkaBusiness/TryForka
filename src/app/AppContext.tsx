@@ -5,6 +5,7 @@ import type { Day, PlanReview, SavedWeekPlan, Slot, WeekPlan } from '../lib/plan
 import type { FamilyMember, MemberDraft } from '../lib/family';
 import type { CheckinAnswer } from '../lib/signals';
 import type { OnHand } from '../lib/onHand';
+import type { ImportDraft } from '../../supabase/functions/_shared/imports/draft.ts';
 
 // Shared state for the signed-in app. Navigation is still the currentScreen state
 // machine (App.tsx); `go` pushes a screen, `back` pops, tabs reset the stack.
@@ -21,7 +22,9 @@ export type Screen =
   | { name: 'notes'; id: number }
   | { name: 'rate'; id: number }
   | { name: 'collections'; id: number }
-  | { name: 'pantry' };
+  | { name: 'pantry' }
+  /** Write a recipe, edit the household's recipe `id`, or check an import (`draft`) before saving it. */
+  | { name: 'editor'; id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } };
 
 export interface FavoriteEntry { id: number; title: string; image: string }
 

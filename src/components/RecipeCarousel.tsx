@@ -4,6 +4,7 @@ import { minutesLabel, photo, recipeMeta, recipeTitle, type RecipeCard } from '.
 import { cardSizes, type CardSize } from '../lib/carouselLayout';
 import { useMediaQuery } from '../lib/useMediaQuery';
 import { cx, IconButton } from './ds';
+import { usePhotoSrc } from '../lib/recipePhotos';
 
 // Expanding photo cards for picking a recipe for one meal slot. Swipe, arrow keys or a
 // tap on a side card moves the active card; only a tap on the active card or its Select
@@ -153,10 +154,7 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
                   SIZE_CLASS[size],
                 )}
               >
-                {r.thumb_url && (
-                  <img src={photo(r.thumb_url, 'medium')} alt="" draggable={false} loading={near ? 'eager' : 'lazy'}
-                    className="absolute inset-0" />
-                )}
+                {r.thumb_url && <CardImage src={photo(r.thumb_url, 'medium')} eager={near} />}
                 <span aria-hidden className="scrim absolute inset-x-0 bottom-0 z-1 h-3/4" />
                 <button
                   type="button"
@@ -224,4 +222,10 @@ export function RecipeCarousel({ recipes, selectedId, onSelect, onOpen, caption,
       )}
     </section>
   );
+}
+
+/** A card's photo; a household's private photo is shown through a signed URL. */
+function CardImage({ src, eager }: { src: string; eager: boolean }) {
+  const url = usePhotoSrc(src);
+  return url ? <img src={url} alt="" draggable={false} loading={eager ? 'eager' : 'lazy'} referrerPolicy="no-referrer" className="absolute inset-0" /> : null;
 }

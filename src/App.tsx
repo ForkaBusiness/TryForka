@@ -31,13 +31,14 @@ import { SuggestionsPanel } from './screens/SuggestionsPanel';
 import { PhotoSearch } from './screens/PhotoSearch';
 import { Styleguide } from './screens/Styleguide';
 import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
+import { RecipeEditor } from './screens/RecipeEditor';
 
 // Dev-only design system reference at /app/styleguide.
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
 
 const TABS: NavId[] = ['mealplan', 'groceries', 'favorites', 'settings'];
 /** Screens with a sticky bottom action bar: it takes the tab bar's place, and the timer tray sits above it. */
-const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking'];
+const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking', 'editor'];
 
 const allergiesByMember = (members: FamilyMember[]): Record<string, string[]> => Object.fromEntries(members.map(m => [m.id, m.allergies]));
 const PLAN_CHECK_RETRY_MS = 4000;
@@ -367,6 +368,7 @@ function SignedIn({ session }: { session: Session }) {
     case 'rate': content = <RateRecipe id={screen.id} />; break;
     case 'collections': content = <Collections id={screen.id} />; break;
     case 'pantry': content = <CookWithWhatYouHave />; break;
+    case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate} />; break;
   }
 
   const root = stack[0].name as NavId;

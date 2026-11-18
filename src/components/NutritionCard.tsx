@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Recipe } from '../lib/catalog';
-import { recipeFacts, recipeNutrition, rounded, type RecipeNutrition } from '../lib/nutrition';
+import { BASE_SERVINGS, recipeFacts, recipeNutrition, rounded, type RecipeNutrition } from '../lib/nutrition';
 import { Card, Skeleton } from './ds';
 
 // Nutrition for one recipe at the servings chosen: calories, protein, carbs, fat and fiber
@@ -55,7 +55,13 @@ export function NutritionCard({ recipe, servings }: { recipe: Recipe; servings: 
     );
   }
 
-  const n = recipeNutrition(recipe.ingredients, key => facts.get(key), servings);
+  // The sums take a recipe as written to serve BASE_SERVINGS. A household recipe says how
+  // many it serves, so its amounts are put on that footing first.
+  const toBase = recipe.servings ? BASE_SERVINGS / recipe.servings : 1;
+  const ingredients = toBase === 1 ? recipe.ingredients : recipe.ingredients.map(i => ({
+    ...i, quantity: i.quantity === null ? null : i.quantity * toBase, quantity_max: i.quantity_max === null ? null : i.quantity_max * toBase,
+  }));
+  const n = recipeNutrition(ingredients, key => facts.get(key), servings);
   const per = rounded(n.perServing);
   const total = rounded(n.total);
   const missing = [...n.unmatched, ...n.unweighed];
