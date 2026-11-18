@@ -65,7 +65,9 @@ const head = (description: string) => tokens(description.split(',')[0]);
 /**
  * How USDA names the plain version of common catalog ingredients, so the search finds it
  * and the match must contain those words. "egg" alone ties egg white with whole egg, and
- * plain cow's milk isn't in the first results for "milk". Keyed by nutritionKey().
+ * plain cow's milk isn't in the first results for "milk". USDA's search needs its hyphens
+ * ("all-purpose", not "allpurpose"), and plain "pepper" in a recipe is black pepper, not a
+ * pepper vegetable. Keyed by nutritionKey().
  */
 export const SEARCH_AS: Record<string, string> = {
   egg: 'egg whole raw fresh', 'large egg': 'egg whole raw fresh', 'free range egg': 'egg whole raw fresh',
@@ -73,8 +75,8 @@ export const SEARCH_AS: Record<string, string> = {
   'brown sugar': 'sugars brown', 'light brown sugar': 'sugars brown', 'dark brown sugar': 'sugars brown',
   'powdered sugar': 'sugars powdered', 'icing sugar': 'sugars powdered',
   milk: 'milk whole milkfat', 'whole milk': 'milk whole milkfat',
-  rice: 'rice white longgrain regular raw', 'white rice': 'rice white longgrain regular raw', 'basmati rice': 'rice white longgrain regular raw',
-  'long grain rice': 'rice white longgrain regular raw', 'jasmine rice': 'rice white longgrain regular raw', 'brown rice': 'rice brown longgrain raw',
+  rice: 'rice white long-grain regular raw', 'white rice': 'rice white long-grain regular raw', 'basmati rice': 'rice white long-grain regular raw',
+  'long grain rice': 'rice white long-grain regular raw', 'jasmine rice': 'rice white long-grain regular raw', 'brown rice': 'rice brown long grain raw',
   tomato: 'tomatoes red ripe raw', 'cherry tomato': 'tomatoes red ripe raw', 'plum tomato': 'tomatoes red ripe raw',
   'chicken breast': 'chicken broilers or fryers breast meat only raw', 'chicken thigh': 'chicken broilers or fryers thigh meat only raw',
   butter: 'butter without salt', 'unsalted butter': 'butter without salt', 'salted butter': 'butter salted',
@@ -84,7 +86,8 @@ export const SEARCH_AS: Record<string, string> = {
   parmesan: 'cheese parmesan hard', 'parmesan cheese': 'cheese parmesan hard', 'cheddar cheese': 'cheese cheddar',
   'ground beef': 'beef ground lean meat fat raw', 'minced beef': 'beef ground lean meat fat raw', 'lean ground beef': 'beef ground lean meat fat raw',
   'soy sauce': 'soy sauce shoyu',
-  flour: 'wheat flour white allpurpose enriched', 'plain flour': 'wheat flour white allpurpose enriched', 'all purpose flour': 'wheat flour white allpurpose enriched',
+  flour: 'wheat flour white all-purpose enriched', 'plain flour': 'wheat flour white all-purpose enriched', 'all purpose flour': 'wheat flour white all-purpose enriched',
+  pepper: 'spices pepper black', 'black pepper': 'spices pepper black', 'ground black pepper': 'spices pepper black',
   potato: 'potatoes flesh and skin raw', carrot: 'carrots raw', 'lemon juice': 'lemon juice raw', 'lime juice': 'lime juice raw',
 };
 /** What to search USDA for, for an ingredient key. */

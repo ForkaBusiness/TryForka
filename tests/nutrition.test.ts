@@ -224,6 +224,19 @@ test('common ingredients search for the plain food by USDA\'s own words', () => 
   assert.equal(searchTermFor('dragon fruit'), 'dragon fruit', 'anything else is searched as named');
 });
 
+test("search terms keep USDA's hyphens: its search finds nothing for \"allpurpose\" or \"longgrain\"", () => {
+  // Checked live 2026-11-18: "wheat flour white allpurpose enriched" has 0 hits, the hyphenated term 4.
+  assert.match(searchTermFor('flour'), /all-purpose/);
+  assert.match(searchTermFor('jasmine rice'), /long-grain/);
+  assert.equal(pickFood(searchTermFor('plain flour'), [food(1, 'Wheat flour, whole-grain'), food(2, 'Wheat flour, white, all-purpose, enriched, bleached', 364, 76)])?.fdcId, 2);
+});
+
+test('pepper in a recipe is black pepper, not a pepper vegetable', () => {
+  const results = [food(1, 'Pepper, banana, raw', 27), food(2, 'Peppers, jalapeno, raw', 29), food(3, 'Spices, pepper, black', 251)];
+  assert.equal(pickFood(searchTermFor('pepper'), results)?.fdcId, 3);
+  assert.equal(searchTermFor('black pepper'), searchTermFor('pepper'));
+});
+
 test('a slightly negative value from USDA is read as zero', () => {
   assert.equal(per100g({ fdcId: 1, description: 'Chicken, breast', foodNutrients: n(120, 22.5, 2.6, -0.428) })!.carbs, 0);
 });
