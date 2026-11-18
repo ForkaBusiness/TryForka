@@ -46,11 +46,13 @@ function score(t: Truth, d: ImportDraft | null, isRecipe: boolean) {
   const out = {
     title: covers(d.title, t.title) || covers(t.title, d.title), servings: (t.servings ?? null) === null || d.servings === t.servings,
     correct: 0, wrongAmount: [] as string[], wrongFlagged: 0, blankFlagged: [] as string[], missing: [] as string[], flaggedRight: 0, unflaggedFade: false, extra: 0, stepsFound: 0, steps: t.steps.length,
-    expectations: [] as string[],
+    expectations: [] as string[], offeredFromSteps: [] as string[],
   };
   const used = new Set<number>();
   t.ingredients.forEach(([raw, qty, unit, item]) => {
     const i = d.ingredients.findIndex((x, k) => !used.has(k) && covers(`${x.item} ${x.note}`, item));
+    // Not in the list because the page names it only in the method: offered with "Add to the list".
+    if (i < 0 && d.flags.some(f => f.add && covers(f.add, item))) { out.offeredFromSteps.push(item); return; }
     if (i < 0) { out.missing.push(item); return; }
     used.add(i);
     const x = d.ingredients[i];
@@ -149,6 +151,7 @@ for (const model of models) {
       ...(Array.isArray(s.missing) && s.missing.length ? [`missing: ${(s.missing as string[]).join(', ')}`] : []),
       ...(s.extra ? [`${s.extra} extra lines`] : []), ...(s.unflaggedFade ? ['faded amount left blank without a flag'] : []),
       ...(Array.isArray(s.blankFlagged) && s.blankFlagged.length ? [`left blank and flagged: ${(s.blankFlagged as string[]).join(', ')}`] : []),
+      ...(Array.isArray(s.offeredFromSteps) && s.offeredFromSteps.length ? [`only in the method, offered with Add to the list: ${(s.offeredFromSteps as string[]).join(', ')}`] : []),
       ...(Array.isArray(s.expectations) && s.expectations.length ? [`review screen: ${(s.expectations as string[]).join(', ')}`] : []),
       ...(s.chose ? [String(s.chose)] : []),
       ...(s.title === false ? ['title wrong'] : []), ...(s.note ? [String(s.note)] : []),

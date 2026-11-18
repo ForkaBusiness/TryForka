@@ -30,6 +30,8 @@ export interface ModelRecipe {
   recipes_seen: Array<{ title: string; has_method: boolean }>;
   /** Ingredients the steps use that the ingredient list leaves out, as the steps word them. */
   only_in_steps: string[];
+  /** How readable the photos are as a whole ("poor": blurry, out of focus, too small). Text sources: "clear". */
+  legibility?: 'clear' | 'partly' | 'poor';
 }
 
 const line = {
@@ -59,8 +61,9 @@ export const RECIPE_SCHEMA = {
       items: { type: 'object', properties: { title: { type: 'string' }, has_method: { type: 'boolean' } }, required: ['title', 'has_method'], additionalProperties: false },
     },
     only_in_steps: { type: 'array', items: { type: 'string' } },
+    legibility: { type: 'string', enum: ['clear', 'partly', 'poor'] },
   },
-  required: ['is_recipe', 'title', 'title_unsure', 'servings', 'servings_unsure', 'prep_time', 'cook_time', 'total_time', 'ingredients', 'steps', 'notes', 'recipes_seen', 'only_in_steps'],
+  required: ['is_recipe', 'title', 'title_unsure', 'servings', 'servings_unsure', 'prep_time', 'cook_time', 'total_time', 'ingredients', 'steps', 'notes', 'recipes_seen', 'only_in_steps', 'legibility'],
   additionalProperties: false,
 };
 
@@ -73,12 +76,14 @@ const RULES = `Rules:
 - If the same ingredient line appears twice, copy it twice: the household decides whether it's a repeat.
 - recipes_seen: every separate recipe you can see, each by its title as written, in reading order, with has_method true if it has steps or a method. If there is more than one and you weren't told which to copy, copy the first one.
 - only_in_steps: ingredients the steps use that the ingredient list leaves out, worded as in the steps ("demerara sugar" from "sprinkle with demerara sugar"); [] if none. Not equipment, not water.
+- legibility: "clear" if every word and number reads easily, "partly" if some parts are hard (messy handwriting, a cut-off edge), "poor" if the source as a whole is blurry, out of focus, dark or too small to read reliably. Text that was pasted or copied from a page is "clear".
 - If there is no recipe (no ingredient list with steps or a method), set is_recipe to false and leave the rest empty.`;
 
 export const TEXT_SYSTEM = `You copy recipes out of text for a family meal planner: a web page, a social media caption, or text someone pasted. ${RULES}`;
 export const IMAGE_SYSTEM = `You copy recipes out of photos for a family meal planner: cookbook pages, screenshots, printed or handwritten recipe cards. The photos are in order and may be pages of one recipe. ${RULES}
 - Read handwriting carefully. Fractions like 1/2 and ½ and abbreviations like T (tablespoon), t or tsp (teaspoon), c (cup) are common; copy them as written.
-- Words cut off at the edge of a page or hidden by a finger: copy only what you can see and set unsure to "text_unreadable". Don't complete them.`;
+- Words cut off at the edge of a page or hidden by a finger: copy only what you can see and set unsure to "text_unreadable". Don't complete them.
+- In a blurry or low-resolution photo, fractions (1/2, ¾, 1/3) easily look like whole numbers. If you can't see clearly whether an amount has a fraction, leave the amount out and set unsure to "amount_unreadable". Never round a fraction you can't read to a whole number.`;
 
 /** "Serves 4-6", "4 servings", "Makes 12" -> 4 / 4 / 12. Null when there's no sensible number. */
 export function servingsFrom(text: string): number | null {
@@ -157,24 +162,33 @@ export function draftFromModel(m: ModelRecipe, source: DraftSource, opts: { sour
   }
   draft.notes = (m.notes ?? '').trim();
   // A photo the model found hard overall: every amount gets checked, not only the lines it
-  // marked. Blurry photos can be misread with confidence on the lines that look clear.
-  if (opts.photo) {
-    const lines = [...(m.ingredients ?? []), ...(m.steps ?? [])];
-    const unsure = lines.filter(l => l.unsure && l.unsure !== 'none' && l.unsure !== 'amount_missing').length;
-    if (lines.length && unsure / lines.length > HARD_PHOTO) {
-      draft.ingredients.forEach((ing, index) => {
-        if (ing.quantity !== null && !flags.some(f => f.field === 'ingredients' && f.index === index)) {
-          flags.push({ field: 'ingredients', index, part: 'quantity', reason: 'This photo is hard to read. Check this amount.' });
-        }
-      });
-    }
+  // marked. Blurry photos can be misread with confidence on the lines that look clear. Two
+  // signals, since either alone varies between reads: the model calls the photo poor, or it
+  // marks more than HARD_PHOTO of the lines unsure.
+  if (opts.photo && isHardPhoto(m)) {
+    draft.ingredients.forEach((ing, index) => {
+      if (ing.quantity !== null && !flags.some(f => f.field === 'ingredients' && f.index === index)) {
+        flags.push({ field: 'ingredients', index, part: 'quantity', reason: 'This photo is hard to read. Check this amount.' });
+      }
+    });
   }
   draft.flags = [...flags, ...reviewChecks(draft, m.only_in_steps ?? [])];
   return draft;
 }
 
-/** More than this share of lines marked unsure: the photo is hard to read, and every amount is flagged. */
-export const HARD_PHOTO = 0.3;
+/**
+ * More than this share of lines marked unsure: the photo is hard to read, and every amount
+ * is flagged. Set from the test photos: clear and neat ones 0-8%, messy handwriting 15%, a
+ * blurry page 21-50% across runs.
+ */
+export const HARD_PHOTO = 0.2;
+
+export function isHardPhoto(m: Pick<ModelRecipe, 'ingredients' | 'steps' | 'legibility'>): boolean {
+  if (m.legibility === 'poor') return true;
+  const lines = [...(m.ingredients ?? []), ...(m.steps ?? [])];
+  const unsure = lines.filter(l => l.unsure && l.unsure !== 'none' && l.unsure !== 'amount_missing').length;
+  return lines.length > 0 && unsure / lines.length > HARD_PHOTO;
+}
 
 /** "DORSET APPLE CAKE" -> "Dorset apple cake"; other titles stay as written. */
 export function titleCase(title: string): string {

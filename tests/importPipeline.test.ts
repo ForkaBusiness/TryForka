@@ -203,3 +203,24 @@ test('review checks: a photo the model found hard has every amount flagged', asy
   }), { kind: 'photo', url: null, site_name: null }, { photo: true });
   assert.equal(clear.flags.length, 1, 'one unsure line on a clear photo flags only that line');
 });
+
+test('hard photo: the model calling it poor, or over 20% of lines unsure, flags every amount', async () => {
+  const { draftFromModel, isHardPhoto } = await import('../supabase/functions/_shared/imports/modelDraft.ts');
+  const line = (text: string, unsure: 'none' | 'amount_unreadable' | 'text_unreadable' = 'none') => ({ text, unsure });
+  // The blurry page as read in the second eval run: 3 of 14 lines unsure (21%), salt and milk misread.
+  const blurry = {
+    ingredients: [line('all-purpose flour', 'amount_unreadable'), line('2 tablespoons sugar'), line('2 teaspoons baking powder', 'amount_unreadable'), line('1 teaspoon fine salt'),
+      line('1 cup whole-milk ricotta'), line('1 cup milk'), line('2 large eggs'), line('Finely grated zest of 1 lemon'), line('2 tablespoons unsalted butter, melted')],
+    steps: [line('Whisk the dry ingredients.'), line('Whisk the wet ones.'), line('Fold together.'), line('Pour batter per pancake.', 'amount_unreadable'), line('Cook 3 minutes.')],
+  };
+  assert.equal(isHardPhoto(blurry), true);
+  const d = draftFromModel(modelRecipe({ ...blurry, legibility: 'partly' }), { kind: 'photo', url: null, site_name: null }, { photo: true });
+  const flagged = new Set(d.flags.filter(f => f.field === 'ingredients').map(f => f.index));
+  assert.ok(flagged.has(3) && flagged.has(5), 'the misread salt and milk are flagged');
+  // The messy card: 2 of 13 lines unsure (15%), called "partly": only those lines.
+  const messy = { ingredients: [line('milk', 'amount_unreadable'), line('chopped parsley', 'amount_unreadable'), ...['1 lb beef', '1/2 lb pork', '1/2 c crumbs', '1 egg', '1/4 c parm', '2 garlic cloves', 'salt + pepper'].map(t => line(t))],
+    steps: ['Soak.', 'Mix.', 'Roll.', 'Simmer.'].map(t => line(t)), legibility: 'partly' as const };
+  assert.equal(isHardPhoto(messy), false);
+  // Called poor: every amount, even with no line marked.
+  assert.equal(isHardPhoto({ ingredients: [line('1 cup milk')], steps: [line('Mix.')], legibility: 'poor' }), true);
+});
