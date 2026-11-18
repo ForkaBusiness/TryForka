@@ -166,3 +166,40 @@ test('site suffixes come off titles', async () => {
   assert.equal(cleanTitle('Lentil soup'), 'Lentil soup');
   assert.equal(cleanTitle('Recipe'), 'Recipe');
 });
+
+test('review checks: a repeated line is flagged, not merged', async () => {
+  const { draftFromModel } = await import('../supabase/functions/_shared/imports/modelDraft.ts');
+  const d = draftFromModel(modelRecipe({
+    ingredients: ['100 ml milk', '3 eggs', '1 tbs cocoa', '3 eggs'].map(text => ({ text, unsure: 'none' as const })),
+  }), { kind: 'photo', url: null, site_name: null }, { photo: true });
+  assert.equal(d.ingredients.length, 4, 'both lines kept');
+  assert.deepEqual(d.flags.map(f => [f.index, f.reason]), [[3, "This line appears twice (also line 2). Remove one if it's a repeat."]]);
+});
+
+test('review checks: an ingredient only in the steps is offered, if the steps really say it', async () => {
+  const { draftFromModel } = await import('../supabase/functions/_shared/imports/modelDraft.ts');
+  const d = draftFromModel(modelRecipe({
+    title: 'DORSET APPLE CAKE',
+    ingredients: ['8oz self raising flour', 'Pinch of salt', '4oz butter'].map(text => ({ text, unsure: 'none' as const })),
+    steps: ['Rub butter into flour.', 'Eat hot sprinkled with demerara sugar.'].map(text => ({ text, unsure: 'none' as const })),
+    // The model also names one the steps don't say, and one already on the list: both ignored.
+    only_in_steps: ['demerara sugar', 'vanilla', 'butter'],
+  }), { kind: 'photo', url: null, site_name: null }, { photo: true });
+  assert.deepEqual(d.flags.map(f => [f.reason, f.add]), [['Demerara sugar is in the steps but not the ingredient list.', 'demerara sugar']]);
+  assert.equal(d.title, 'Dorset apple cake');
+});
+
+test('review checks: a photo the model found hard has every amount flagged', async () => {
+  const { draftFromModel } = await import('../supabase/functions/_shared/imports/modelDraft.ts');
+  const hard = draftFromModel(modelRecipe({
+    ingredients: [{ text: 'flour', unsure: 'amount_unreadable' }, { text: '2 tablespoons sugar', unsure: 'text_unreadable' }, { text: '1 teaspoon salt', unsure: 'none' }, { text: '1 cup milk', unsure: 'none' }],
+    steps: [{ text: 'Whisk the flour.', unsure: 'text_unreadable' }, { text: 'Cook.', unsure: 'none' }],
+  }), { kind: 'photo', url: null, site_name: null }, { photo: true });
+  // 3 of 6 lines unsure: salt and milk, which looked clear, are flagged too.
+  assert.deepEqual(hard.flags.filter(f => f.field === 'ingredients').map(f => f.index).sort(), [0, 1, 2, 3]);
+  assert.match(hard.flags.find(f => f.index === 3)!.reason, /hard to read\. Check this amount/);
+  const clear = draftFromModel(modelRecipe({
+    ingredients: [{ text: '1 T parsley', unsure: 'amount_unreadable' }, ...['1 egg', '1 lb beef', '1/2 c crumbs', '2 garlic cloves'].map(text => ({ text, unsure: 'none' as const }))],
+  }), { kind: 'photo', url: null, site_name: null }, { photo: true });
+  assert.equal(clear.flags.length, 1, 'one unsure line on a clear photo flags only that line');
+});

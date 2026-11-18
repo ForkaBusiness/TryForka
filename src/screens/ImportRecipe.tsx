@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Camera, ClipboardPaste, Clock, FileText, ImagePlus, Link2, PenLine, SearchX, TriangleAlert, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { findLink, importFromLink, importFromPhotos, importFromText, MAX_IMPORT_PHOTOS, type ImportAnswer, type PhotoStep } from '../lib/imports';
+import { findLink, importFromLink, importFromPhotos, importFromText, importPickedRecipe, MAX_IMPORT_PHOTOS, type ImportAnswer, type PhotoStep } from '../lib/imports';
 import { clearUnsaved, readUnsaved } from '../lib/householdRecipes';
 import { Button, Card, IconButton, Input, PageContainer, Spinner, Textarea, cx } from '../components/ds';
 import type { DraftSource } from '../../supabase/functions/_shared/imports/draft.ts';
@@ -9,8 +9,8 @@ import type { DraftSource } from '../../supabase/functions/_shared/imports/draft
 // Import a recipe: paste a link (a recipe site, or a TikTok, Instagram, YouTube, Pinterest
 // or Facebook post), add photos (cookbook pages, screenshots, a handwritten card), or paste
 // the recipe's text. A good result opens the review screen; everything else has its own
-// state here with a next step: already saved, no recipe found, couldn't import, and
-// today's imports used up.
+// state here with a next step: already saved, more than one recipe in the photos (pick
+// one), no recipe found, couldn't import, and today's imports used up.
 
 type Phase =
   | { name: 'idle' }
@@ -18,7 +18,8 @@ type Phase =
   | { name: 'duplicate'; id: number; title: string; url: string }
   | { name: 'no_recipe'; message: string; source: DraftSource | null; caption: string | null }
   | { name: 'failed'; message: string; retry: () => void }
-  | { name: 'capped'; message: string };
+  | { name: 'capped'; message: string }
+  | { name: 'choose'; recipes: Array<{ title: string; has_method: boolean }>; paths: string[] };
 
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
 
@@ -78,8 +79,15 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
         if (answer.caption) setText(answer.caption);
         return;
       case 'capped': setPhase({ name: 'capped', message: answer.message }); return;
+      case 'choose': setPhase({ name: 'choose', recipes: answer.recipes, paths: answer.paths }); return;
       default: setPhase({ name: 'failed', message: answer.message, retry });
     }
+  };
+
+  /** The household picked one of the recipes in the photos: read just that one, from the same uploads. */
+  const runPick = async (paths: string[], title: string) => {
+    setPhase({ name: 'working', title: 'Importing', detail: `Reading ${title}` });
+    handle(await importPickedRecipe(paths, title), () => runPick(paths, title));
   };
 
   const runLink = async (raw: string, allowDuplicate = false) => {
@@ -182,6 +190,26 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
             <Button size="lg" variant="secondary" onClick={() => runLink(phase.url, true)}>Import again anyway</Button>
           </div>
         </Card>
+      </PageContainer>
+    );
+  }
+  if (phase.name === 'choose') {
+    return (
+      <PageContainer title="Which recipe?" onBack={back} intro={`These photos have ${phase.recipes.length} recipes. Choose the one to import.`}>
+        <ul className="space-y-3">
+          {phase.recipes.map(r => (
+            <li key={r.title}>
+              <button type="button" onClick={() => runPick(phase.paths, r.title)}
+                className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-card border border-line bg-surface p-5 text-left shadow-sm transition-colors hover:border-green">
+                <span className="min-w-0">
+                  <span className="block text-heading text-ink">{r.title}</span>
+                  {!r.has_method && <span className="mt-1 block text-small text-ink-muted">Ingredients only, no method on the page</span>}
+                </span>
+                <span className="shrink-0 text-body font-semibold text-green">Import</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </PageContainer>
     );
   }

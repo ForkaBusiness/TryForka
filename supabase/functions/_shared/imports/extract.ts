@@ -32,7 +32,11 @@ export async function readText(text: string, model = TEXT_MODEL): Promise<{ reci
 
 export interface Photo { base64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' }
 
-export async function readPhotos(photos: Photo[], model = PHOTO_MODEL, effort: 'low' | 'medium' = 'low'): Promise<{ recipe: ModelRecipe; model: string; usage?: Usage }> {
+/**
+ * Reads the recipe in the photos. When they show more than one recipe, `pick` names the one
+ * the household chose (from the first read's recipes_seen); the others are left out.
+ */
+export async function readPhotos(photos: Photo[], model = PHOTO_MODEL, pick?: string): Promise<{ recipe: ModelRecipe; model: string; usage?: Usage }> {
   let usage: Usage | undefined;
   const recipe = await askJson<ModelRecipe>({
     system: IMAGE_SYSTEM,
@@ -41,11 +45,11 @@ export async function readPhotos(photos: Photo[], model = PHOTO_MODEL, effort: '
         { type: 'text' as const, text: `Photo ${i + 1} of ${photos.length}:` },
         { type: 'image' as const, source: { type: 'base64' as const, media_type: p.mediaType, data: p.base64 } },
       ]),
-      { type: 'text' as const, text: 'Copy the recipe from these photos.' },
+      { type: 'text' as const, text: pick ? `Copy only the recipe titled "${pick.replace(/"/g, "'")}". Leave out any other recipe in the photos.` : 'Copy the recipe from these photos.' },
     ],
     schema: RECIPE_SCHEMA,
     maxTokens: 16_000,
-    effort,
+    effort: 'low',
     model,
     label: `import-photos x${photos.length}`,
     onUsage: u => { usage = u; },

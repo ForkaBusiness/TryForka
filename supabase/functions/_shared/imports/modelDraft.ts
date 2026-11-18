@@ -26,6 +26,10 @@ export interface ModelRecipe {
   ingredients: ModelLine[];
   steps: ModelLine[];
   notes: string;
+  /** Every separate recipe the source shows, by title, in reading order (more than one: the household picks). */
+  recipes_seen: Array<{ title: string; has_method: boolean }>;
+  /** Ingredients the steps use that the ingredient list leaves out, as the steps word them. */
+  only_in_steps: string[];
 }
 
 const line = {
@@ -50,8 +54,13 @@ export const RECIPE_SCHEMA = {
     ingredients: { type: 'array', items: line },
     steps: { type: 'array', items: line },
     notes: { type: 'string' },
+    recipes_seen: {
+      type: 'array',
+      items: { type: 'object', properties: { title: { type: 'string' }, has_method: { type: 'boolean' } }, required: ['title', 'has_method'], additionalProperties: false },
+    },
+    only_in_steps: { type: 'array', items: { type: 'string' } },
   },
-  required: ['is_recipe', 'title', 'title_unsure', 'servings', 'servings_unsure', 'prep_time', 'cook_time', 'total_time', 'ingredients', 'steps', 'notes'],
+  required: ['is_recipe', 'title', 'title_unsure', 'servings', 'servings_unsure', 'prep_time', 'cook_time', 'total_time', 'ingredients', 'steps', 'notes', 'recipes_seen', 'only_in_steps'],
   additionalProperties: false,
 };
 
@@ -60,12 +69,16 @@ const RULES = `Rules:
 - Never add an amount, unit, time or serving count that isn't in the source. If an ingredient that needs an amount has none, copy the line without one and set unsure to "amount_missing". If an amount is there but you can't read it with confidence, leave that amount out of the text and set unsure to "amount_unreadable". If words are hard to read, give your best reading and set unsure to "text_unreadable". Otherwise unsure is "none". "Salt to taste" and "for serving" lines need no amount.
 - Section headings ("For the sauce") are not ingredients or steps; leave them out. Leave out ads, stories, comments, nutrition panels and links.
 - servings, prep_time, cook_time and total_time: copy as written ("Serves 4", "20 min"), or "" if the source doesn't say. title: the recipe's name as written, or a plain name for the dish if it has none (then title_unsure is true).
-- notes: tips or substitutions the source gives for this recipe, copied briefly; "" if none.
+- notes: tips, substitutions or a short story the source gives about this recipe (a headnote like "My gran used to make this"), copied briefly; "" if none. Never put these in the steps.
+- If the same ingredient line appears twice, copy it twice: the household decides whether it's a repeat.
+- recipes_seen: every separate recipe you can see, each by its title as written, in reading order, with has_method true if it has steps or a method. If there is more than one and you weren't told which to copy, copy the first one.
+- only_in_steps: ingredients the steps use that the ingredient list leaves out, worded as in the steps ("demerara sugar" from "sprinkle with demerara sugar"); [] if none. Not equipment, not water.
 - If there is no recipe (no ingredient list with steps or a method), set is_recipe to false and leave the rest empty.`;
 
 export const TEXT_SYSTEM = `You copy recipes out of text for a family meal planner: a web page, a social media caption, or text someone pasted. ${RULES}`;
 export const IMAGE_SYSTEM = `You copy recipes out of photos for a family meal planner: cookbook pages, screenshots, printed or handwritten recipe cards. The photos are in order and may be pages of one recipe. ${RULES}
-- Read handwriting carefully. Fractions like 1/2 and ½ and abbreviations like T (tablespoon), t or tsp (teaspoon), c (cup) are common; copy them as written.`;
+- Read handwriting carefully. Fractions like 1/2 and ½ and abbreviations like T (tablespoon), t or tsp (teaspoon), c (cup) are common; copy them as written.
+- Words cut off at the edge of a page or hidden by a finger: copy only what you can see and set unsure to "text_unreadable". Don't complete them.`;
 
 /** "Serves 4-6", "4 servings", "Makes 12" -> 4 / 4 / 12. Null when there's no sensible number. */
 export function servingsFrom(text: string): number | null {
@@ -109,12 +122,12 @@ const REASON: Record<Exclude<Unsure, 'none'>, { part?: DraftFlag['part']; text: 
  * The model's answer as a draft. `sourceText` is given for text sources: a line with a
  * number the source doesn't have loses that amount and is flagged.
  */
-export function draftFromModel(m: ModelRecipe, source: DraftSource, opts: { sourceText?: string; image_url?: string | null } = {}): ImportDraft {
+export function draftFromModel(m: ModelRecipe, source: DraftSource, opts: { sourceText?: string; image_url?: string | null; photo?: boolean } = {}): ImportDraft {
   const draft = emptyDraft(source.kind);
   const flags: DraftFlag[] = [];
   draft.source = source;
   draft.image_url = opts.image_url ?? null;
-  draft.title = cleanLine(m.title ?? '');
+  draft.title = titleCase(cleanLine(m.title ?? ''));
   if (m.title_unsure || !draft.title) flags.push({ field: 'title', reason: 'Check the name.' });
   draft.servings = servingsFrom(m.servings ?? '');
   if (m.servings_unsure && m.servings) flags.push({ field: 'servings', reason: 'Check the servings.' });
@@ -143,8 +156,60 @@ export function draftFromModel(m: ModelRecipe, source: DraftSource, opts: { sour
     if (s.unsure && s.unsure !== 'none') flags.push({ field: 'steps', index, reason: 'Hard to read. Check this step.' });
   }
   draft.notes = (m.notes ?? '').trim();
-  draft.flags = flags;
+  // A photo the model found hard overall: every amount gets checked, not only the lines it
+  // marked. Blurry photos can be misread with confidence on the lines that look clear.
+  if (opts.photo) {
+    const lines = [...(m.ingredients ?? []), ...(m.steps ?? [])];
+    const unsure = lines.filter(l => l.unsure && l.unsure !== 'none' && l.unsure !== 'amount_missing').length;
+    if (lines.length && unsure / lines.length > HARD_PHOTO) {
+      draft.ingredients.forEach((ing, index) => {
+        if (ing.quantity !== null && !flags.some(f => f.field === 'ingredients' && f.index === index)) {
+          flags.push({ field: 'ingredients', index, part: 'quantity', reason: 'This photo is hard to read. Check this amount.' });
+        }
+      });
+    }
+  }
+  draft.flags = [...flags, ...reviewChecks(draft, m.only_in_steps ?? [])];
   return draft;
+}
+
+/** More than this share of lines marked unsure: the photo is hard to read, and every amount is flagged. */
+export const HARD_PHOTO = 0.3;
+
+/** "DORSET APPLE CAKE" -> "Dorset apple cake"; other titles stay as written. */
+export function titleCase(title: string): string {
+  if (!/[A-Z]{3}/.test(title) || /[a-z]/.test(title)) return title;
+  const lower = title.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+const keyOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 2).map(w => w.replace(/(es|s)$/, ''));
+
+/**
+ * What the review screen asks the household to look at, for any import: a line that appears
+ * twice (flagged, not merged: it may be a repeat or two additions), and an ingredient the
+ * steps use that the list leaves out (flagged with the line to add). A name the model gives
+ * only counts if the steps really say it, so nothing is made up.
+ */
+export function reviewChecks(draft: ImportDraft, onlyInSteps: readonly string[] = []): DraftFlag[] {
+  const flags: DraftFlag[] = [];
+  const seen = new Map<string, number>();
+  draft.ingredients.forEach((ing, index) => {
+    const key = [ing.quantity, ing.quantity_max, ing.unit, keyOf(ing.item).join(' ')].join('|');
+    if (!keyOf(ing.item).length) return;
+    if (seen.has(key)) flags.push({ field: 'ingredients', index, reason: `This line appears twice (also line ${seen.get(key)! + 1}). Remove one if it's a repeat.` });
+    else seen.set(key, index);
+  });
+  const stepWords = new Set(keyOf(draft.steps.join(' ')));
+  const listed = draft.ingredients.map(i => new Set(keyOf(`${i.item} ${i.note}`)));
+  for (const name of [...new Set(onlyInSteps.map(n => cleanLine(n)).filter(Boolean))]) {
+    const words = keyOf(name);
+    if (!words.length || !words.every(w => stepWords.has(w))) continue;        // not in the steps: ignore
+    if (listed.some(l => words.every(w => l.has(w)))) continue;               // already on the list
+    const shown = name.charAt(0).toUpperCase() + name.slice(1);
+    flags.push({ field: 'ingredients', reason: `${shown} is in the steps but not the ingredient list.`, add: name });
+  }
+  return flags;
 }
 
 /** Usable as a recipe: a name or something to cook, ingredients and steps. */

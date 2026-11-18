@@ -15,7 +15,9 @@ export type ImportAnswer =
   | { status: 'duplicate'; duplicate: { id: number; title: string } }
   | { status: 'no_recipe'; message: string; source: DraftSource | null; caption: string | null }
   | { status: 'failed'; message: string }
-  | { status: 'capped'; message: string };
+  | { status: 'capped'; message: string }
+  /** The photos show several recipes: the household picks one (importPickedRecipe). */
+  | { status: 'choose'; recipes: Array<{ title: string; has_method: boolean }>; paths: string[] };
 
 async function ask(body: Record<string, unknown>): Promise<ImportAnswer> {
   try {
@@ -62,3 +64,6 @@ export async function importFromPhotos(userId: string, files: File[], onStep: (s
   onStep({ step: 'reading' });
   return ask({ kind: 'photos', paths });
 }
+
+/** The recipe the household picked from photos that show several: read again from the same uploads. */
+export const importPickedRecipe = (paths: string[], title: string) => ask({ kind: 'photos', paths, pick: title });

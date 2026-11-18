@@ -38,6 +38,8 @@ export interface DraftFlag {
   /** For ingredients: which part of the line. */
   part?: 'quantity' | 'unit' | 'item';
   reason: string;
+  /** For an ingredient the steps use but the list leaves out: the line to add if the household agrees. */
+  add?: string;
 }
 
 export interface ImportDraft {

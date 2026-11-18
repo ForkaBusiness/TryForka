@@ -10,9 +10,11 @@ import { readPhotos, readText, type Photo } from '../_shared/imports/extract.ts'
 // is saved here; the household saves from the review screen.
 //   { kind: 'link', url, allowDuplicate? }     website or social post
 //   { kind: 'text', text, source? }            pasted recipe or caption (source keeps a post's credit)
-//   { kind: 'photos', paths: string[] }        up to 6 photos already uploaded to recipe-photos/<user>/imports/
+//   { kind: 'photos', paths: string[], pick? } up to 6 photos already uploaded to recipe-photos/<user>/imports/;
+//                                               `pick`: the recipe chosen when they show more than one
 // -> { status: 'ok' | 'partial', draft, message? }
 //  | { status: 'duplicate', duplicate: { id, title } }      this link is already in the Library
+//  | { status: 'choose', recipes: [{ title, has_method }], paths }  several recipes in the photos: which one?
 //  | { status: 'no_recipe', message, source?, caption? }   nothing to import; the app offers other ways in
 //  | { status: 'failed', message }
 //  | { status: 'capped', message }                          today's imports are used up
@@ -85,6 +87,8 @@ serve(async (body, req) => {
   let pasted: string | null = null;
   let text = '';
   let paths: string[] = [];
+  /** The recipe the household picked, when the photos show more than one. */
+  let pick: string | undefined;
   let textSource: DraftSource | undefined;
   if (kind === 'link') {
     const raw = typeof body.url === 'string' ? body.url.trim().slice(0, 2048) : '';
@@ -106,6 +110,7 @@ serve(async (body, req) => {
     }
   } else {
     paths = Array.isArray(body.paths) ? body.paths.filter((p): p is string => typeof p === 'string') : [];
+    pick = typeof body.pick === 'string' && body.pick.trim() ? body.pick.trim().slice(0, 120) : undefined;
     if (!paths.length || paths.length > MAX_PHOTOS || paths.some(p => !p.startsWith(`${user.id}/imports/`) || p.includes('..'))) {
       throw new AppError(`Add between 1 and ${MAX_PHOTOS} photos.`, 400);
     }
@@ -161,9 +166,16 @@ serve(async (body, req) => {
         photos.push({ base64: toBase64(new Uint8Array(await data.arrayBuffer())), mediaType: mediaTypeOf(path, data.type) });
       }
       // One read by the photo model; what it couldn't read is flagged for the household to check.
-      const read = await readPhotos(photos);
+      const read = await readPhotos(photos, undefined, pick);
+      // Several recipes in the photos and none picked yet: the household chooses which. Not
+      // an import yet, so it isn't counted; the photos stay uploaded for the second read.
+      const seen = (read.recipe.recipes_seen ?? []).filter(r => typeof r?.title === 'string' && r.title.trim());
+      if (!pick && seen.length > 1) {
+        await log({ source_kind: 'photo', outcome: 'partial', method: 'choose', model: read.model, image_count: paths.length });
+        return { status: 'choose', recipes: seen.slice(0, 8).map(r => ({ title: r.title.trim().slice(0, 120), has_method: !!r.has_method })), paths };
+      }
       model = read.model;
-      const draft = draftFromModel(read.recipe, { kind: 'photo', url: null, site_name: null, platform: null, handle: null });
+      const draft = draftFromModel(read.recipe, { kind: 'photo', url: null, site_name: null, platform: null, handle: null }, { photo: true });
       result = read.recipe.is_recipe && draftUsable(draft)
         ? { status: 'ok', draft, method: 'model', site: null, model }
         : read.recipe.is_recipe && (draft.ingredients.length || draft.steps.length)

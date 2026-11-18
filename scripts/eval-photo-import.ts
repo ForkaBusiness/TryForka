@@ -21,6 +21,17 @@ interface Truth {
   expectFlag?: number; blurry?: boolean;
   /** Truth drafted from the photo and not yet confirmed by a person, with what to confirm. */
   draft?: boolean; questions?: string[];
+  /** What the review screen must show for this photo. */
+  expect?: {
+    /** Several recipes in the photo: the household is asked to pick (this one is picked). */
+    pick?: string;
+    /** A line printed twice is flagged as a repeat, at this 0-based line. */
+    duplicateFlagAt?: number;
+    /** An ingredient only in the steps is flagged, with this word in the line to add. */
+    addFlag?: string;
+    /** The notes include this (a headnote, not a step). */
+    notesInclude?: string;
+  };
 }
 
 const words = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length > 2).map(w => w.replace(/(es|s)$/, ''));
@@ -34,7 +45,8 @@ function score(t: Truth, d: ImportDraft | null, isRecipe: boolean) {
   if (!d) return { pass: false, note: 'no recipe read' };
   const out = {
     title: covers(d.title, t.title) || covers(t.title, d.title), servings: (t.servings ?? null) === null || d.servings === t.servings,
-    correct: 0, wrongAmount: [] as string[], wrongFlagged: 0, missing: [] as string[], flaggedRight: 0, unflaggedFade: false, extra: 0, stepsFound: 0, steps: t.steps.length,
+    correct: 0, wrongAmount: [] as string[], wrongFlagged: 0, blankFlagged: [] as string[], missing: [] as string[], flaggedRight: 0, unflaggedFade: false, extra: 0, stepsFound: 0, steps: t.steps.length,
+    expectations: [] as string[],
   };
   const used = new Set<number>();
   t.ingredients.forEach(([raw, qty, unit, item]) => {
@@ -55,6 +67,8 @@ function score(t: Truth, d: ImportDraft | null, isRecipe: boolean) {
     // A wrong amount the household is told to check is still wrong, but not silent: counted apart.
     const wrong = (text: string) => { out.wrongAmount.push(flagged ? `${text} [flagged]` : text); if (flagged) out.wrongFlagged++; };
     if (sameQty && sameUnit) out.correct++;
+    // Left blank and flagged where the photo has an amount: not read, but not guessed either.
+    else if (x.quantity === null && qty !== null && flagged) out.blankFlagged.push(`${item} (truth ${raw})`);
     else if (x.quantity !== null && (qty === null || Math.abs(x.quantity - qty) >= 0.02)) wrong(`${item}: ${x.quantity} ${x.unit} (truth ${raw})`);
     else if (!sameUnit) wrong(`${item}: unit ${x.unit || 'none'} (truth ${raw})`);
     else if (flagged) { out.correct++; out.flaggedRight++; }
@@ -62,7 +76,12 @@ function score(t: Truth, d: ImportDraft | null, isRecipe: boolean) {
   });
   out.extra = d.ingredients.length - used.size;
   out.stepsFound = t.steps.filter(s => d.steps.some(x => covers(x, s.split(/[,.;]/)[0]))).length;
-  const pass = out.title && out.wrongAmount.length === 0 && !out.unflaggedFade && out.missing.length === 0 && out.extra === 0 && out.stepsFound === out.steps;
+  const e = t.expect ?? {};
+  if (e.duplicateFlagAt !== undefined && !d.flags.some(f => f.index === e.duplicateFlagAt && /appears twice/.test(f.reason))) out.expectations.push('repeated line not flagged');
+  if (e.addFlag && !d.flags.some(f => f.add && covers(f.add, e.addFlag!))) out.expectations.push(`"${e.addFlag}" in the steps not flagged`);
+  if (e.notesInclude && !d.notes.toLowerCase().includes(e.notesInclude.toLowerCase())) out.expectations.push(`notes missing "${e.notesInclude}"`);
+  if (e.notesInclude && d.steps.some(s => s.toLowerCase().includes(e.notesInclude!.toLowerCase()))) out.expectations.push('headnote copied into the steps');
+  const pass = out.title && out.wrongAmount.length === 0 && !out.unflaggedFade && out.missing.length === 0 && out.extra === 0 && out.stepsFound === out.steps && !out.expectations.length;
   return { pass, ...out };
 }
 
@@ -91,12 +110,29 @@ for (const model of models) {
     const started = Date.now();
     let result;
     try {
-      const read = await readPhotos(photos, model);
-      raw[model][key] = { title: read.recipe.title, servings: read.recipe.servings, is_recipe: read.recipe.is_recipe, ingredients: read.recipe.ingredients, steps: read.recipe.steps };
-      const d = draftFromModel(read.recipe, { kind: 'photo', url: null, site_name: null });
-      const s = score(t, read.recipe.is_recipe ? d : null, read.recipe.is_recipe);
       const [pin, pout] = PRICE[model] ?? [0, 0];
-      const cost = read.usage ? (read.usage.input * pin + read.usage.output * pout) / 1e6 : 0;
+      const costOf = (u?: { input: number; output: number }) => (u ? (u.input * pin + u.output * pout) / 1e6 : 0);
+      let read = await readPhotos(photos, model);
+      let cost = costOf(read.usage);
+      // Several recipes in the photos: the app asks which one, then reads that one again.
+      // The eval picks the one the truth expects, like a person would.
+      const seen = (read.recipe.recipes_seen ?? []).filter(r => r?.title?.trim());
+      let chose = '';
+      if (seen.length > 1) {
+        const want = t.expect?.pick ?? t.title ?? '';
+        const pick = seen.find(r => covers(r.title, want) || covers(want, r.title))?.title ?? seen[0].title;
+        chose = `listed ${seen.map(r => `"${r.title}"`).join(', ')}; picked "${pick}"`;
+        read = await readPhotos(photos, model, pick);
+        cost += costOf(read.usage);
+      } else if (t.expect?.pick) {
+        chose = `expected a choice between recipes, but only ${seen.length || 'no'} recipe was listed`;
+      }
+      raw[model][key] = { recipes_seen: seen, chose, title: read.recipe.title, servings: read.recipe.servings, is_recipe: read.recipe.is_recipe,
+        ingredients: read.recipe.ingredients, steps: read.recipe.steps, notes: read.recipe.notes, only_in_steps: read.recipe.only_in_steps };
+      const d = draftFromModel(read.recipe, { kind: 'photo', url: null, site_name: null }, { photo: true });
+      const s: Record<string, unknown> = { ...score(t, read.recipe.is_recipe ? d : null, read.recipe.is_recipe) };
+      if (chose) s.chose = chose;
+      if (t.expect?.pick && seen.length < 2) { s.pass = false; s.expectations = [...((s.expectations as string[]) ?? []), 'no choice offered']; }
       result = { s, cost, flags: d.flags.length };
     } catch (err) {
       result = { s: { pass: false, note: `error: ${err instanceof Error ? err.message : err}` }, cost: 0, flags: 0 };
@@ -112,6 +148,9 @@ for (const model of models) {
       ...(Array.isArray(s.wrongAmount) && s.wrongAmount.length ? [`wrong: ${(s.wrongAmount as string[]).join('; ')}`] : []),
       ...(Array.isArray(s.missing) && s.missing.length ? [`missing: ${(s.missing as string[]).join(', ')}`] : []),
       ...(s.extra ? [`${s.extra} extra lines`] : []), ...(s.unflaggedFade ? ['faded amount left blank without a flag'] : []),
+      ...(Array.isArray(s.blankFlagged) && s.blankFlagged.length ? [`left blank and flagged: ${(s.blankFlagged as string[]).join(', ')}`] : []),
+      ...(Array.isArray(s.expectations) && s.expectations.length ? [`review screen: ${(s.expectations as string[]).join(', ')}`] : []),
+      ...(s.chose ? [String(s.chose)] : []),
       ...(s.title === false ? ['title wrong'] : []), ...(s.note ? [String(s.note)] : []),
     ].join('. ') || 'all correct'} | ${(ms / 1000).toFixed(1)}s | $${result.cost.toFixed(4)} |`);
     console.log(rows.at(-1));

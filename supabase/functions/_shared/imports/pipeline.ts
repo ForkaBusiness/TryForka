@@ -14,7 +14,7 @@
 import { canonicalUrl, emptyDraft, type DraftFlag, type DraftSource, type ImportDraft, type SocialPlatform } from './draft.ts';
 import { parseIngredientLine } from './ingredientLine.ts';
 import { pageText, parseRecipePage, type ParsedRecipe } from './jsonld.ts';
-import { draftFromModel, draftUsable, flaggedFields, type ModelRecipe } from './modelDraft.ts';
+import { draftFromModel, draftUsable, flaggedFields, reviewChecks, type ModelRecipe } from './modelDraft.ts';
 import { FetchBlocked } from './safeFetch.ts';
 import { captionLooksLikeRecipe, detectPlatform, fromOembed, fromPageMeta, oembedUrl, pinterestOutboundLink, platformName, recipeLinks, tiktokHandleFromUrl, type PostText } from './social.ts';
 
@@ -74,7 +74,7 @@ export function draftFromJsonLd(r: ParsedRecipe, source: DraftSource, image: str
   const flags: DraftFlag[] = [];
   if (!draft.title) flags.push({ field: 'title', reason: 'Add a name.' });
   draft.ingredients.forEach((ing, index) => { if (!ing.item) flags.push({ field: 'ingredients', index, part: 'item', reason: 'Check this line.' }); });
-  draft.flags = flags;
+  draft.flags = [...flags, ...reviewChecks(draft)];
   return draft;
 }
 

@@ -109,6 +109,8 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
   const [steps, setSteps] = useState<Step[]>(() => (base.steps.length ? toSteps(base.steps, base.flags) : [blankStep()]));
   const [fieldFlags, setFieldFlags] = useState<Partial<Record<Field, string>>>(() =>
     Object.fromEntries(base.flags.filter(f => !['ingredients', 'steps'].includes(f.field)).map(f => [f.field, f.reason])));
+  /** Ingredients the steps use that the list leaves out: offered to add, never added on their own. */
+  const [missing, setMissing] = useState<DraftFlag[]>(() => base.flags.filter(f => f.field === 'ingredients' && f.index === undefined && f.add));
   const [dirty, setDirty] = useState(false);
   const [photoState, setPhotoState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [saving, setSaving] = useState(false);
@@ -144,7 +146,7 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
     const t = window.setTimeout(() => keepUnsaved(userId, { ...draft, flags: base.flags }), 400);
     return () => window.clearTimeout(t);
   }, [draft, id, saved, dirty, reviewing, base.flags, userId]);
-  const openFlags = lines.filter(l => l.flag).length + steps.filter(s => s.flag).length + Object.values(fieldFlags).filter(Boolean).length;
+  const openFlags = lines.filter(l => l.flag).length + steps.filter(s => s.flag).length + Object.values(fieldFlags).filter(Boolean).length + missing.length;
   const source = sourceLabel(base);
 
   // Focus a row that was just added.
@@ -282,7 +284,8 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
     }
   };
 
-  const leave = () => (dirty && !saved ? setConfirmLeave(true) : back());
+  // An import is unsaved work even before it's edited: closing it asks first.
+  const leave = () => ((dirty || reviewing) && !saved ? setConfirmLeave(true) : back());
   const heading = id ? 'Edit recipe' : reviewing ? 'Check and save' : 'New recipe';
 
   if (saved) {
@@ -377,6 +380,20 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
         <section aria-labelledby="ing-heading" className="mt-8">
           <h2 id="ing-heading" className="label mb-1 px-1">Ingredients</h2>
           <p className="mb-3 px-1 text-small text-ink-muted">One per line, like "2 cups flour, sifted". Paste a whole list to split it.</p>
+          {missing.map(f => (
+            <div key={f.add} className="mb-2 rounded-input bg-terracotta-soft p-3">
+              <p className="text-small font-semibold text-terracotta-deep">{f.reason}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" icon={Plus} onClick={() => {
+                  touch();
+                  const l = { ...blankLine(), text: f.add! };
+                  setLines(ls => [...ls.filter(x => x.text.trim()), l]);
+                  setMissing(m => m.filter(x => x !== f));
+                }}>Add to the list</Button>
+                <Button size="sm" variant="ghost" onClick={() => setMissing(m => m.filter(x => x !== f))}>Leave it out</Button>
+              </div>
+            </div>
+          ))}
           <ul className="space-y-2">
             {lines.map((l, i) => {
               const p = l.parsed ?? parseIngredientLine(l.text);

@@ -660,8 +660,7 @@
   "steps": []
  },
  "533w-q-fDRA-DDIA.jpg.webp": {
-  "kind": "Real: designed recipe card (printed), placeholder text in the method, photo below",
-  "draft": true,
+  "kind": "Real: designed recipe card (printed), placeholder text in the method, \"3 eggs\" printed twice",
   "title": "Sweet apple squares",
   "servings": 2,
   "prep": null,
@@ -717,15 +716,12 @@
    "Habitant morbi tristique",
    "Donec dictum lectus in ex accumsan sodales"
   ],
-  "questions": [
-   "The card lists \"3 eggs\" twice; truth keeps both lines as printed.",
-   "\"15 minutes\" has no prep/cook label; truth leaves times unchecked.",
-   "The method is placeholder (lorem ipsum) text; truth expects it copied as 5 steps."
-  ]
+  "expect": {
+   "duplicateFlagAt": 6
+  }
  },
  "Handwritten+Recipe+Book+3.JPG.webp": {
-  "kind": "Real: old handwritten recipe book, two pages, right page cut off at the edge",
-  "draft": true,
+  "kind": "Real: old handwritten recipe book, two recipes open (Plum Cake, War Time Cake), right page cut off",
   "title": "War Time Cake",
   "servings": null,
   "prep": null,
@@ -794,15 +790,12 @@
    "baking soda",
    "Bake"
   ],
-  "questions": [
-   "Two recipes are open: \"Plum Cake\" (left page, ingredients only, no method) and \"War Time Cake\" (right page, full method). Truth expects War Time Cake. Is that the one an import should produce?",
-   "The right page is cut off at the edge (\"Dates e...\", \"nutm...\", \"raism...\"). Truth expects those words flagged or left incomplete, not guessed.",
-   "\"a little spice ginger, nutmeg\" and \"a little milk or water\": no amounts, expected blank."
-  ]
+  "expect": {
+   "pick": "War Time Cake"
+  }
  },
  "images.jpeg": {
-  "kind": "Real: handwritten recipe in a lined recipe book (neat print), with a headnote",
-  "draft": true,
+  "kind": "Real: handwritten recipe in a lined book, headnote, demerara only in the steps",
   "title": "Dorset Apple Cake",
   "servings": null,
   "prep": null,
@@ -854,9 +847,9 @@
    "Bake for 50 minutes",
    "demerara"
   ],
-  "questions": [
-   "\"Eat hot sprinkled with demerara sugar\": demerara is not in the ingredient list; truth does not expect it as an ingredient.",
-   "The headnote (\"My Gran used to make this...\") should go to notes, not steps."
-  ]
+  "expect": {
+   "addFlag": "demerara",
+   "notesInclude": "Gran"
+  }
  }
 }
