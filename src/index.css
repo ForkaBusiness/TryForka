@@ -329,3 +329,18 @@
 @media (prefers-reduced-motion: reduce) {
   [class*='animate-[import-slide'] { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* Printing a recipe: only the print view (components/PrintView.tsx) is printed. */
+#print-root { display: none; }
+@media print {
+  @page { margin: 12mm 15mm; }
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  body > *:not(#print-root) { display: none !important; }
+  #print-root { display: block; padding-bottom: 9mm; font-family: var(--font-sans); color: var(--color-ink); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  /* The credit sits at the foot of every printed page, outside the recipe's flow. */
+  #print-root .print-footer { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; background: #fff; }
+  #print-root .print-step-number {
+    display: inline-flex; flex: none; align-items: center; justify-content: center; width: 7mm; height: 7mm; border-radius: 9999px;
+    background: var(--color-green-soft); color: var(--color-green); font-weight: 700; font-size: 10pt; margin-top: 0.4mm;
+  }
+}

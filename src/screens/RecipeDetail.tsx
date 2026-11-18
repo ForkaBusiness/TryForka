@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarPlus, Check, ChefHat, Clock, ExternalLink, FolderPlus, Heart, ListPlus, MoreHorizontal, NotebookPen, Pencil, Star, Trash2 } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Check, ChefHat, Clock, Download, ExternalLink, FolderPlus, Heart, ListPlus, MoreHorizontal, NotebookPen, Pencil, Printer, Star, Trash2 } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { getRecipe, ingredientPhoto, isHouseholdRecipe, minutesLabel, photo, recipeTitle, type Recipe } from '../lib/catalog';
 import { addToGroceryList, deleteRecipe, groceryLines, rowToDraft } from '../lib/householdRecipes';
@@ -13,6 +13,8 @@ import { HiddenRecipe } from '../components/AllergyReminder';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { BottomBar, BottomSheet, Button, Card, GlassIconButton, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, Segmented, Skeleton, Stepper, Tag } from '../components/ds';
 import { NutritionCard } from '../components/NutritionCard';
+import { PrintView } from '../components/PrintView';
+import { printData } from '../lib/printData';
 import { BASE_SERVINGS, MAX_SERVINGS, MIN_SERVINGS, rememberServings, servingsFor } from '../lib/nutrition';
 
 // One screen for a recipe: a full-bleed photo with glass controls floating on it, then a
@@ -93,6 +95,18 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
       setCookedNote("Couldn't save. Check your connection and try again.");
     } finally {
       setCookedBusy(false);
+    }
+  };
+
+  const print = printData(recipe, servings, prefs.units);
+  const downloadPdf = async () => {
+    setMenuNote('Making the PDF…');
+    try {
+      const { downloadRecipePdf } = await import('../lib/recipePdf');
+      await downloadRecipePdf(print, prefs.units === 'metric' ? 'a4' : 'letter');
+      setMenuNote('PDF downloaded.');
+    } catch {
+      setMenuNote("Couldn't make the PDF. Try again, or use Print and save as PDF.");
     }
   };
 
@@ -278,10 +292,14 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
           <ListRow leading={<FolderPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add to collection" chevron onClick={() => { setMenu(false); go({ name: 'collections', id: recipe.id }); }} />
           {own && <ListRow leading={<CalendarPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add to this week" onClick={() => { setMenu(false); void addToWeek(); }} />}
           {own && <ListRow leading={<ListPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add to grocery list" onClick={() => { setMenu(false); void addToGroceries(); }} />}
+          <ListRow leading={<Printer size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Print" onClick={() => { setMenu(false); setTimeout(() => window.print(), 150); }} />
+          <ListRow leading={<Download size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Download PDF" onClick={() => { setMenu(false); void downloadPdf(); }} />
           {own && <ListRow leading={<Pencil size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Edit recipe" chevron onClick={() => { setMenu(false); go({ name: 'editor', id: recipe.id }); }} />}
           {own && <ListRow leading={<Trash2 size={20} strokeWidth={1.75} aria-hidden />} title="Delete recipe" destructive onClick={() => { setMenu(false); setConfirmDelete(true); }} />}
         </ListGroup>
       </BottomSheet>
+
+      <PrintView data={print} />
 
       <BottomSheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete this recipe?" side="bottom">
         <p className="mb-5 text-body text-ink-muted">It comes out of your Library{findInPlan(weekPlan?.plan ?? emptyPlan(), recipe.id) ? ' and your week' : ''}. This can't be undone.</p>
