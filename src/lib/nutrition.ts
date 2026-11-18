@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { callFunction } from './plan';
-import { hasNoCalories, nutritionKey, type Facts, type MeasuredIngredient } from '../../supabase/functions/_shared/nutrition.ts';
+import { hasNoCalories, needsLookup, nutritionKey, type Facts, type MeasuredIngredient } from '../../supabase/functions/_shared/nutrition.ts';
 
 // Nutrition facts for a recipe's ingredients. The cache table is read first; the Edge
 // Function is only called when an ingredient hasn't been looked up yet (it asks USDA and
@@ -8,7 +8,7 @@ import { hasNoCalories, nutritionKey, type Facts, type MeasuredIngredient } from
 
 export { BASE_SERVINGS, recipeNutrition, rounded, servingsMultiplier, type Nutrients, type RecipeNutrition } from '../../supabase/functions/_shared/nutrition.ts';
 
-const COLUMNS = 'key, matched, fdc_id, description, kcal, protein_g, carbs_g, fat_g, fiber_g, portions';
+const COLUMNS = 'key, matched, fdc_id, description, kcal, protein_g, carbs_g, fat_g, fiber_g, portions, checked_at';
 
 /** True when the database doesn't have the nutrition table yet. */
 const missingTable = (error: { code?: string; message?: string }) =>
@@ -26,9 +26,11 @@ export async function recipeFacts(recipeId: number, ingredients: readonly Measur
     if (missingTable(error)) return null;
     throw new Error(error.message);
   }
-  const facts = new Map(((data ?? []) as unknown as Facts[]).map(f => [f.key, f]));
-  if (keys.every(key => facts.has(key))) return facts;
-  // Some ingredients haven't been looked up yet: the function asks USDA and caches them.
+  const rows = (data ?? []) as unknown as Array<Facts & { checked_at?: string }>;
+  const facts = new Map<string, Facts>(rows.map(({ checked_at: _checked, ...f }) => [f.key, f]));
+  // Done when every ingredient is cached and none is due another try (see needsLookup).
+  if (keys.every(key => facts.has(key)) && !rows.some(row => needsLookup(row))) return facts;
+  // Some ingredients haven't been looked up yet, or are due another try: the function asks USDA and caches them.
   // If it can't (not deployed yet, busy, offline), what's cached is still shown and the
   // rest is named as not counted.
   try {

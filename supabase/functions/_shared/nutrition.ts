@@ -29,6 +29,28 @@ export interface Facts {
   portions: Record<string, number>;
 }
 
+/** An ingredient USDA couldn't match, or couldn't weigh, is looked up again after this long: USDA adds data. */
+export const RETRY_UNSETTLED_DAYS = 30;
+/**
+ * When the matching last got better (search terms, portion weights). An unmatched or
+ * unweighable row saved before then is looked up again on the next view rather than after
+ * RETRY_UNSETTLED_DAYS. Move it forward whenever the matching improves.
+ */
+export const MATCHING_IMPROVED_AT = Date.parse('2026-11-18T05:14:00Z');
+
+/**
+ * Whether a cached row should be looked up again. A match with portion weights is final;
+ * anything less is retried once it's older than the retry window or than the last
+ * improvement to the matching. The app and the function both use this, so a recipe whose
+ * every ingredient is cached still gets its stale rows refreshed.
+ */
+export function needsLookup(row: { matched: boolean; portions: Record<string, number> | null; checked_at?: string | null }, now: number = Date.now()): boolean {
+  if (row.matched && Object.keys(row.portions ?? {}).length > 0) return false;
+  const checked = row.checked_at ? Date.parse(row.checked_at) : NaN;
+  if (Number.isNaN(checked)) return true;
+  return checked <= Math.max(now - RETRY_UNSETTLED_DAYS * 86_400_000, MATCHING_IMPROVED_AT);
+}
+
 /** The catalog has no servings field: a recipe as written is taken to serve this many. */
 export const BASE_SERVINGS = 4;
 
@@ -89,6 +111,20 @@ export const SEARCH_AS: Record<string, string> = {
   flour: 'wheat flour white all-purpose enriched', 'plain flour': 'wheat flour white all-purpose enriched', 'all purpose flour': 'wheat flour white all-purpose enriched',
   pepper: 'spices pepper black', 'black pepper': 'spices pepper black', 'ground black pepper': 'spices pepper black',
   potato: 'potatoes flesh and skin raw', carrot: 'carrots raw', 'lemon juice': 'lemon juice raw', 'lime juice': 'lime juice raw',
+  // The dried entry: USDA's raw pine nuts have no cup or spoon weights, so "2 tbsp" couldn't be weighed.
+  'pine nut': 'nuts pine nuts dried',
+  // Listed by USDA under spices, so the plain name doesn't match.
+  saffron: 'spices saffron',
+  // Sherry is a fortified dessert wine in USDA's terms.
+  sherry: 'alcoholic beverage wine dessert dry', 'dry sherry': 'alcoholic beverage wine dessert dry', 'sweet sherry': 'alcoholic beverage wine dessert sweet',
+  breadcrumb: 'bread crumbs dry grated plain', 'bread crumb': 'bread crumbs dry grated plain', 'panko breadcrumb': 'bread crumbs dry grated plain',
+  'semisweet chocolate': 'candies semisweet chocolate', 'semi sweet chocolate': 'candies semisweet chocolate',
+  'sesame oil': 'oil sesame salad or cooking', 'sesame seed oil': 'oil sesame salad or cooking', 'toasted sesame oil': 'oil sesame salad or cooking',
+  'white vinegar': 'vinegar distilled', 'distilled white vinegar': 'vinegar distilled',
+  // USDA has no dark soy sauce; regular soy sauce is the nearest entry.
+  'dark soy sauce': 'soy sauce shoyu',
+  // A whole bird (meat and skin, without the bones), not ground chicken: "1 chicken" weighs as one.
+  chicken: 'chicken broilers or fryers meat and skin raw', 'whole chicken': 'chicken broilers or fryers meat and skin raw',
 };
 /** What to search USDA for, for an ingredient key. */
 export const searchTermFor = (key: string) => SEARCH_AS[key] ?? key;
@@ -154,6 +190,8 @@ export function pickFood(query: string, foods: readonly FdcSearchFood[]): FdcSea
 const PORTION_UNITS: Array<[RegExp, string]> = [
   [/^(cups?)\b/, 'cup'], [/^(tbsp|tablespoons?)\b/, 'tbsp'], [/^(tsp|teaspoons?)\b/, 'tsp'], [/^fl\.? ?oz\b/, 'fl oz'],
   [/^(medium|whole|each|item|fruit|unit)\b/, 'each'], [/^large\b/, 'large'], [/^small\b/, 'small'],
+  // "1/2 chicken, bone removed": a whole bird, for a recipe's "1 chicken".
+  [/^chicken\b/, 'each'],
   [/^cloves?\b/, 'clove'], [/^slices?\b/, 'slice'], [/^stalks?\b/, 'stalk'], [/^sprigs?\b/, 'sprig'], [/^(leaf|leaves)\b/, 'leaf'],
   [/^heads?\b/, 'head'], [/^sticks?\b/, 'stick'], [/^fillets?\b/, 'fillet'], [/^breasts?\b/, 'breast'], [/^thighs?\b/, 'thigh'],
   [/^pieces?\b/, 'piece'], [/^strips?\b/, 'strip'], [/^pods?\b/, 'pod'], [/^bulbs?\b/, 'bulb'], [/^(egg|eggs)\b/, 'each'],
@@ -167,12 +205,15 @@ export function portionsOf(detail: FdcFoodDetail | null | undefined): Record<str
     if (!p.gramWeight || p.gramWeight <= 0) continue;
     const unitName = p.measureUnit?.name && p.measureUnit.name !== 'undetermined' ? p.measureUnit.name : '';
     const text = `${unitName} ${p.modifier ?? ''} ${p.portionDescription ?? ''}`.toLowerCase().replace(/^\s*[\d./]+\s*/, '').trim();
+    // "unit (yield from 1 lb ready-to-cook chicken)" is what a pound turns into, not one of anything.
+    if (/yield from/.test(text)) continue;
     const unit = PORTION_UNITS.find(([re]) => re.test(text))?.[1];
     // The first portion listed for a unit is the plain one ("cup, chopped" before "cup, sliced").
     if (unit && out[unit] === undefined) out[unit] = +(p.gramWeight / (p.amount && p.amount > 0 ? p.amount : 1)).toFixed(2);
   }
-  // A bare count ("2 onions") means a medium one; failing that, whatever size is listed.
-  if (out.each === undefined) { const size = out.large ?? out.small; if (size !== undefined) out.each = size; }
+  // A bare count ("2 onions") means a medium one; failing that, whatever size is listed, or
+  // the food's own piece ("2 chicken breasts" against "1 piece", "4 chicken thighs" against "1 thigh").
+  if (out.each === undefined) { const size = out.large ?? out.small ?? out.piece ?? out.fillet ?? out.thigh; if (size !== undefined) out.each = size; }
   return out;
 }
 

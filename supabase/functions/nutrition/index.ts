@@ -1,5 +1,5 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
-import { factsFromFdc, hasNoCalories, nutritionKey, pickFood, searchTermFor, type Facts, type FdcFoodDetail, type FdcSearchFood } from '../_shared/nutrition.ts';
+import { factsFromFdc, hasNoCalories, needsLookup, nutritionKey, pickFood, searchTermFor, type Facts, type FdcFoodDetail, type FdcSearchFood } from '../_shared/nutrition.ts';
 
 // Nutrition facts for a recipe's ingredients, from USDA FoodData Central.
 //   { recipe_id } -> { facts: Facts[] }   (one per ingredient that needs a lookup)
@@ -15,8 +15,6 @@ const FDC = 'https://api.nal.usda.gov/fdc/v1';
 /** USDA allows 1,000 requests an hour per key; one recipe uses at most this many (two per ingredient). */
 const MAX_LOOKUPS = 30;
 const TOGETHER = 4;
-/** An ingredient that didn't match is tried again after this long: USDA adds foods. */
-const RETRY_UNMATCHED_DAYS = 30;
 const COLUMNS = 'key, matched, fdc_id, description, kcal, protein_g, carbs_g, fat_g, fiber_g, portions';
 
 async function fdc<T>(path: string, apiKey: string): Promise<T> {
@@ -70,10 +68,9 @@ serve(async (body, req) => {
     console.error('[nutrition] cache read failed:', cacheError);
     throw new AppError('Nutrition is not set up on the server.', 500);
   }
-  const stale = Date.now() - RETRY_UNMATCHED_DAYS * 86_400_000;
-  // Unmatched rows, and matched rows saved without portions, are looked up again after a while: USDA adds data.
-  const settled = (row: { matched: boolean; portions: Record<string, number> | null }) => row.matched && Object.keys(row.portions ?? {}).length > 0;
-  const known = new Map((cached ?? []).filter(row => settled(row as never) || new Date(row.checked_at as string).getTime() > stale).map(row => [row.key as string, row]));
+  // Unmatched rows, and matched rows saved without portions, are looked up again after a
+  // while (USDA adds data), or as soon as the matching has improved since they were saved.
+  const known = new Map((cached ?? []).filter(row => !needsLookup(row as never)).map(row => [row.key as string, row]));
   const missing = [...names].filter(([key]) => !known.has(key)).slice(0, MAX_LOOKUPS);
 
   const found: Array<{ facts: Facts; cache: boolean }> = [];
