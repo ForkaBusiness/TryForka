@@ -219,3 +219,10 @@ export function importLink(url: string, deps: ImportDeps): Promise<ImportResult>
 }
 
 export { flaggedFields };
+
+/**
+ * Whether an answer counts as a smart import (record_usage). Every successful import does,
+ * whatever the source and whether or not the model was needed: a draft came back. Nothing,
+ * a failure, a duplicate or the daily cap doesn't.
+ */
+export const countsAsImport = (status: string) => status === 'ok' || status === 'partial';

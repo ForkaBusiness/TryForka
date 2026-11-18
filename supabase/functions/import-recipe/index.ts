@@ -1,7 +1,7 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
 import { canonicalUrl, type DraftSource, type SocialPlatform } from '../_shared/imports/draft.ts';
 import { draftFromModel, draftUsable, flaggedFields } from '../_shared/imports/modelDraft.ts';
-import { host, importLink, importText, type ImportDeps, type ImportResult } from '../_shared/imports/pipeline.ts';
+import { countsAsImport, host, importLink, importText, type ImportDeps, type ImportResult } from '../_shared/imports/pipeline.ts';
 import { safeFetch, safeFetchBytes } from '../_shared/imports/safeFetch.ts';
 import { detectPlatform } from '../_shared/imports/social.ts';
 import { PHOTO_RETRY_MODEL, readPhotos, readText, unsureShare, type Photo } from '../_shared/imports/extract.ts';
@@ -187,8 +187,10 @@ serve(async (body, req) => {
     }
     // The page the link led to may be one the household already saved under its own address.
     const duplicate = result.draft.source.url !== url && body.allowDuplicate !== true ? await findSaved(result.draft.source.url) : null;
-    const { error } = await db.rpc('record_usage', { p_kind: 'smart_imports' });
-    if (error) console.error('[import] usage not counted:', error.message);
+    if (countsAsImport(result.status)) {
+      const { error } = await db.rpc('record_usage', { p_kind: 'smart_imports' });
+      if (error) console.error('[import] usage not counted:', error.message);
+    }
     await log({
       source_kind: logKind, outcome: result.status === 'ok' ? 'success' : 'partial', method: result.method, site: result.site ?? host(url), platform,
       model, image_count: paths.length || undefined, flagged_fields: flaggedFields(result.draft.flags),

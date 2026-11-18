@@ -38,9 +38,10 @@ export function checkLimit(usage: Usage, kind: LimitKind, adding = 1): LimitChec
 }
 
 /**
- * Saved recipes, as the limit counts them: each recipe hearted or in a collection, once.
+ * Saved recipes, as the limit counts them: each recipe hearted, in a collection, or typed in
+ * or imported by the household, once (usage_summary() counts the same set in SQL).
  * The week plan is not an input: catalog recipes that are only planned never count.
  */
-export function savedRecipeCount(favorites: readonly number[], inCollections: ReadonlyArray<{ recipe_id: number }>): number {
-  return new Set([...favorites, ...inCollections.map(m => m.recipe_id)]).size;
+export function savedRecipeCount(favorites: readonly number[], inCollections: ReadonlyArray<{ recipe_id: number }>, ownRecipes: readonly number[] = []): number {
+  return new Set([...favorites, ...inCollections.map(m => m.recipe_id), ...ownRecipes]).size;
 }
