@@ -33,20 +33,30 @@ function rethrow(err: unknown): never {
 type Content = string | Anthropic.ContentBlockParam[];
 
 /** One call whose answer must match `schema` (structured outputs). */
-export async function askJson<T>(opts: { system: string; content: Content; schema: Record<string, unknown>; maxTokens: number; label: string }): Promise<T> {
+export async function askJson<T>(opts: {
+  system: string; content: Content; schema: Record<string, unknown>; maxTokens: number; label: string;
+  /** A model for this call instead of CLAUDE_MODEL (imports pick theirs by measured accuracy). */
+  model?: string;
+  /** Thinking effort, on models that take it. */
+  effort?: 'low' | 'medium' | 'high';
+  /** Called with what the call used, for logging and cost checks. */
+  onUsage?: (usage: { model: string; input: number; output: number }) => void;
+}): Promise<T> {
   let response;
+  const model = opts.model || MODEL;
   try {
     response = await client().messages.create({
-      model: MODEL,
+      model,
       max_tokens: opts.maxTokens,
-      output_config: { format: { type: 'json_schema', schema: opts.schema } },
+      output_config: { format: { type: 'json_schema', schema: opts.schema }, ...(opts.effort ? { effort: opts.effort } : {}) },
       system: opts.system,
       messages: [{ role: 'user', content: opts.content }],
     });
   } catch (err) {
     rethrow(err);
   }
-  console.log(`[claude] ${opts.label}: in=${response.usage.input_tokens} out=${response.usage.output_tokens}/${opts.maxTokens} stop=${response.stop_reason}`);
+  console.log(`[claude] ${opts.label}: model=${model} in=${response.usage.input_tokens} out=${response.usage.output_tokens}/${opts.maxTokens} stop=${response.stop_reason}`);
+  opts.onUsage?.({ model, input: response.usage.input_tokens, output: response.usage.output_tokens });
   if (response.stop_reason === 'refusal') throw new AppError("Couldn't help with that one. Try different wording.", 422);
   if (response.stop_reason === 'max_tokens') throw new AppError('The answer was cut off. Try again.', 502);
   const text = response.content.find(b => b.type === 'text');

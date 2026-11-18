@@ -10,6 +10,11 @@ import type { MergeIngredient } from './groceryMerge';
 
 export const CARD_COLUMNS = 'id, name, display_name, subtitle, category, area, thumb_url, total_minutes, meal_role, allergens, diets, ingredient_names';
 const RECIPE_COLUMNS = `${CARD_COLUMNS}, steps, ingredients, tags, source_url, youtube_url`;
+/** A household's own recipes also carry these (null on catalog rows). */
+const HOUSEHOLD_COLUMNS = 'owner_id, servings, prep_minutes, cook_minutes, notes, source_name, source_kind, source_platform, source_handle, instructions_raw';
+// Databases from before recipe imports don't have the household columns: read without them.
+let householdColumns = true;
+const missingColumn = (error: { code?: string; message?: string }) => error.code === '42703' || /column .* does not exist/i.test(error.message ?? '');
 
 export const BROWSE_FILTERS = ['All', 'Vegetarian', 'Vegan', 'Chicken', 'Beef', 'Seafood', 'Pasta', 'Breakfast'] as const;
 export type BrowseFilter = typeof BROWSE_FILTERS[number];
@@ -74,9 +79,14 @@ export const supabaseRecipes: RecipeSource<RecipeCard, Recipe> = {
     return rows<RecipeCard>(await supabase.from('recipes').select(CARD_COLUMNS).in('id', [...ids]));
   },
   async one(id) {
-    const { data, error } = await supabase.from('recipes').select(RECIPE_COLUMNS).eq('id', id).maybeSingle();
+    const withHousehold = householdColumns;
+    let { data, error } = await supabase.from('recipes').select(withHousehold ? `${RECIPE_COLUMNS}, ${HOUSEHOLD_COLUMNS}` : RECIPE_COLUMNS).eq('id', id).maybeSingle();
+    if (error && withHousehold && missingColumn(error)) {
+      householdColumns = false;
+      ({ data, error } = await supabase.from('recipes').select(RECIPE_COLUMNS).eq('id', id).maybeSingle());
+    }
     if (error) throw new Error(error.message);
-    return data as Recipe | null;
+    return data as unknown as Recipe | null;
   },
   async sample(limit) {
     return rows<RecipeCard>(await supabase.from('recipes').select(CARD_COLUMNS).eq('meal_role', 'main').not('thumb_url', 'is', null).order('id').limit(limit));
@@ -94,4 +104,66 @@ export interface RecipeIngredients { id: number; name: string; display_name: str
 /** The ingredient lists of planned recipes, for the grocery list. Not for display as recipes. */
 export async function ingredientsOf(ids: readonly number[]): Promise<RecipeIngredients[]> {
   return rows<RecipeIngredients>(await supabase.from('recipes').select('id, name, display_name, ingredients').in('id', [...ids]));
+}
+
+// ── The household's own recipes ──────────────────────────────────────────────
+// Rows with owner_id set: typed in or imported. Row level security lets a household read
+// and write only its own (see 20261119000000_recipe_imports.sql). These are writes and id
+// lookups; showing a household recipe still goes through the gate like any other.
+
+/** Ids of every recipe the household saved itself, newest first. */
+export async function householdRecipeIds(userId: string): Promise<number[]> {
+  const { data, error } = await supabase.from('recipes').select('id').eq('owner_id', userId).order('created_at', { ascending: false });
+  if (error) {
+    if (missingColumn(error)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []).map(r => r.id as number);
+}
+
+/** The household's recipe saved from this page, if any (the URL in canonical form). */
+export async function householdRecipeFrom(userId: string, sourceUrl: string): Promise<{ id: number; title: string } | null> {
+  const { data, error } = await supabase.from('recipes').select('id, name, display_name').eq('owner_id', userId).eq('source_url', sourceUrl).limit(1);
+  if (error) {
+    if (missingColumn(error)) return null;
+    throw new Error(error.message);
+  }
+  const row = (data ?? [])[0];
+  return row ? { id: row.id as number, title: (row.display_name as string) || (row.name as string) } : null;
+}
+
+export async function insertHouseholdRecipe(userId: string, row: Record<string, unknown>): Promise<number> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase.from('recipes').insert({ ...row, owner_id: userId, created_at: now, updated_at: now }).select('id').single();
+  if (error) throw new Error(error.message);
+  return data.id as number;
+}
+
+export async function updateHouseholdRecipe(userId: string, id: number, row: Record<string, unknown>): Promise<void> {
+  const { error, count } = await supabase.from('recipes').update({ ...row, updated_at: new Date().toISOString() }, { count: 'exact' }).eq('id', id).eq('owner_id', userId);
+  if (error) throw new Error(error.message);
+  if (count === 0) throw new Error('Recipe not found');
+}
+
+export async function deleteHouseholdRecipe(userId: string, id: number): Promise<void> {
+  const { error } = await supabase.from('recipes').delete().eq('id', id).eq('owner_id', userId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * One of the household's own recipes, for its owner to edit or delete, even when the
+ * family's settings hide it (the editor says so). Never for showing a recipe to cook.
+ */
+export async function householdRecipeForEdit(userId: string, id: number): Promise<Recipe | null> {
+  const { data, error } = await supabase.from('recipes').select(`${RECIPE_COLUMNS}, ${HOUSEHOLD_COLUMNS}`).eq('id', id).eq('owner_id', userId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as unknown as Recipe | null;
+}
+
+/** Names of the household's own recipes, for listing the ones its settings hide. */
+export async function householdRecipeTitles(userId: string, ids: readonly number[]): Promise<Array<{ id: number; title: string }>> {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from('recipes').select('id, name, display_name').eq('owner_id', userId).in('id', [...ids]);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(r => ({ id: r.id as number, title: (r.display_name as string) || (r.name as string) }));
 }

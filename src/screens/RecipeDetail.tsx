@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Check, ChefHat, Clock, FolderPlus, Heart, MoreHorizontal, NotebookPen, Star } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Check, ChefHat, Clock, Download, ExternalLink, FolderPlus, Heart, ListPlus, MoreHorizontal, NotebookPen, Pencil, Printer, Star, Trash2 } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { getRecipe, ingredientPhoto, minutesLabel, photo, recipeTitle, type Recipe } from '../lib/catalog';
+import { getRecipe, ingredientPhoto, isHouseholdRecipe, minutesLabel, photo, recipeTitle, type Recipe } from '../lib/catalog';
+import { addToGroceryList, deleteRecipe, groceryLines, rowToDraft } from '../lib/householdRecipes';
+import { DAY_LONG, emptyPlan, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
+import { creditLine } from '../../supabase/functions/_shared/imports/social.ts';
 import { recipeChecker } from '../lib/recipeFilter';
 import { cookedRecently, markCooked, unmarkCooked } from '../lib/cooked';
 import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts';
@@ -10,7 +13,9 @@ import { HiddenRecipe } from '../components/AllergyReminder';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { BottomBar, BottomSheet, Button, Card, GlassIconButton, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, Segmented, Skeleton, Stepper, Tag } from '../components/ds';
 import { NutritionCard } from '../components/NutritionCard';
-import { BASE_SERVINGS, MAX_SERVINGS, MIN_SERVINGS, rememberServings, servingsFor, servingsMultiplier } from '../lib/nutrition';
+import { PrintView } from '../components/PrintView';
+import { printData } from '../lib/printData';
+import { BASE_SERVINGS, MAX_SERVINGS, MIN_SERVINGS, rememberServings, servingsFor } from '../lib/nutrition';
 
 // One screen for a recipe: a full-bleed photo with glass controls floating on it, then a
 // cream sheet that overlaps the photo: name, tags, Ingredients / Steps.
@@ -18,18 +23,22 @@ import { BASE_SERVINGS, MAX_SERVINGS, MIN_SERVINGS, rememberServings, servingsFo
 type Tab = 'ingredients' | 'steps';
 
 export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab }) {
-  const { prefs, userId, back, go, favorites, toggleFavorite } = useApp();
+  const { prefs, userId, back, go, favorites, toggleFavorite, weekPlan, saveWeek } = useApp();
   const [recipe, setRecipe] = useState<Recipe | null | undefined>(undefined);
   /** Set when the family's settings don't allow this recipe: it isn't shown at all. */
   const [blockedBy, setBlockedBy] = useState<string[] | null>(null);
   const [tab, setTab] = useState<Tab>(initialTab ?? 'ingredients');
-  // The catalog has no servings: a recipe as written serves 4. Changing it rescales the amounts and the nutrition.
-  const [servings, setServingsState] = useState(() => servingsFor(id, BASE_SERVINGS));
+  // The catalog has no servings: a recipe as written serves 4. A household recipe says how
+  // many it serves. Changing it rescales the amounts and the nutrition.
+  const [chosenServings, setServingsState] = useState(() => servingsFor(id, 0) || null);
   const setServings = (n: number) => { setServingsState(n); rememberServings(id, n); };
   const [menu, setMenu] = useState(false);
   const [cooked, setCooked] = useState<string | null>(null);
   const [cookedBusy, setCookedBusy] = useState(false);
   const [cookedNote, setCookedNote] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [menuNote, setMenuNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +74,10 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
   }
 
   const title = recipeTitle(recipe);
+  const own = isHouseholdRecipe(recipe);
+  const baseServings = recipe.servings ?? BASE_SERVINGS;
+  const servings = chosenServings ?? baseServings;
+  const scale = servings / baseServings;
   // A recipe with one of the family's allergens never gets this far (it opens as hidden).
   // The per-ingredient check stays as a second look at each line.
   const allergyCheck = recipeChecker({ allergies: prefs.allergies, skip_ingredients: [] });
@@ -85,11 +98,67 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
     }
   };
 
+  const print = printData(recipe, servings, prefs.units);
+  const downloadPdf = async () => {
+    setMenuNote('Making the PDF…');
+    try {
+      const { downloadRecipePdf } = await import('../lib/recipePdf');
+      await downloadRecipePdf(print, prefs.units === 'metric' ? 'a4' : 'letter');
+      setMenuNote('PDF downloaded.');
+    } catch {
+      setMenuNote("Couldn't make the PDF. Try again, or use Print and save as PDF.");
+    }
+  };
+
+  const addToWeek = async () => {
+    try {
+      const plan = weekPlan?.plan ?? emptyPlan();
+      const there = findInPlan(plan, recipe.id);
+      if (there) { setMenuNote(`It's already on ${DAY_LONG[there.day]}.`); return; }
+      const spot = nextOpenSlot(plan, false, prefs.plan_lunch);
+      if (!spot) { setMenuNote('Your week is full. Swap a day on the meal plan instead.'); return; }
+      await saveWeek(withSlot(plan, spot.day, spot.slot, { id: recipe.id, title, image: recipe.thumb_url ?? '' }), !weekPlan);
+      setMenuNote(`Added to ${DAY_LONG[spot.day]} ${spot.slot}.`);
+    } catch {
+      setMenuNote("Couldn't update your week. Check your connection and try again.");
+    }
+  };
+
+  const addToGroceries = async () => {
+    try {
+      const n = await addToGroceryList(userId, groceryLines(rowToDraft(recipe as never), prefs.units));
+      setMenuNote(n ? `Added ${n} item${n === 1 ? '' : 's'} to your grocery list.` : 'Those items are already on your grocery list.');
+    } catch {
+      setMenuNote("Couldn't update your grocery list. Check your connection and try again.");
+    }
+  };
+
+  // Out of the Library, the favorites and the week too, so nothing points at a recipe that's gone.
+  const remove = async () => {
+    setDeleting(true);
+    try {
+      await deleteRecipe(userId, recipe.id, recipe.thumb_url);
+      // The favorite row is gone; keep the app's list of favorites in step.
+      if (favorites.has(recipe.id)) await toggleFavorite({ id: recipe.id, title, image: recipe.thumb_url ?? '' }).catch(() => {});
+      const plan = weekPlan?.plan;
+      const there = plan ? findInPlan(plan, recipe.id) : null;
+      if (plan && there) await saveWeek(withSlot(plan, there.day, there.slot, null), false, { quiet: true }).catch(() => {});
+      setConfirmDelete(false);
+      back();
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+      setMenuNote("Couldn't delete. Check your connection and try again.");
+    }
+  };
+
   return (
     <div className="flex min-h-full flex-col">
       <div className="mx-auto w-full max-w-column flex-1 pb-6 md:px-gutter md:pt-8">
         <div className="relative">
-          <Photo src={photo(recipe.thumb_url, 'large')} eager className="aspect-4/3 w-full md:aspect-video md:rounded-card" />
+          {recipe.thumb_url
+            ? <Photo src={photo(recipe.thumb_url, 'large')} eager className="aspect-4/3 w-full md:aspect-video md:rounded-card" />
+            : <div aria-hidden className="h-36 w-full bg-green-soft md:h-44 md:rounded-card" />}
           <div className="absolute inset-x-0 top-0 flex justify-between px-gutter pt-(--screen-top) md:p-4">
             <GlassIconButton icon={ArrowLeft} label="Back" onClick={back} />
             <GlassIconButton
@@ -133,10 +202,10 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
                     const item = { name: '', ingredient_names: [ing.name, ing.name_us], allergens: ing.allergens };
                     const allergy = allergyCheck(item).blockedBy;
                     const dislike = dislikeCheck(item);
-                    const measure = formatMeasure({ quantity: ing.quantity, quantityMax: ing.quantity_max, unit: ing.unit, note: ing.note }, prefs.units, servingsMultiplier(servings));
+                    const measure = formatMeasure({ quantity: ing.quantity, quantityMax: ing.quantity_max, unit: ing.unit, note: ing.note }, prefs.units, scale);
                     return (
                       <li key={i} className="flex min-h-14 items-center gap-3 px-4 py-2">
-                        <img src={ingredientPhoto(ing.name)} alt="" loading="lazy" className="size-10 shrink-0 object-contain" />
+                        <img src={ingredientPhoto(ing.name)} alt="" loading="lazy" className="size-10 shrink-0 object-contain" onError={e => { e.currentTarget.style.visibility = 'hidden'; }} />
                         <span className="min-w-0 flex-1">
                           <span className="block text-body text-ink">{ing.name_us}</span>
                           {allergy.length > 0 && <span className="block text-small font-semibold text-terracotta-deep">Contains {allergy.map(a => a.toLowerCase()).join(', ')}</span>}
@@ -177,12 +246,29 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
             </section>
           )}
 
-          <p className="mt-8 border-t border-line pt-4 text-small text-ink-muted">
-            Recipe and photo from{' '}
-            <a href="https://www.themealdb.com" target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">TheMealDB</a>.
-            {recipe.source_url && <>{' '}<a href={recipe.source_url} target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">See the original recipe</a>.</>}
-            {recipe.youtube_url && <>{' '}<a href={recipe.youtube_url} target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">Watch the video</a>.</>}
-          </p>
+          {own && recipe.notes && (
+            <section aria-labelledby="recipe-notes" className="mt-8">
+              <h2 id="recipe-notes" className="label mb-2 px-1">Notes</h2>
+              <Card className="p-4"><p className="text-body whitespace-pre-line text-ink">{recipe.notes}</p></Card>
+            </section>
+          )}
+          {own ? (
+            <p className="mt-8 border-t border-line pt-4 text-small text-ink-muted">
+              {recipe.source_url ? (
+                <a href={recipe.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-green hover:underline">
+                  {sourceCredit(recipe)}<ExternalLink size={14} strokeWidth={2} aria-hidden />
+                </a>
+              ) : recipe.source_kind === 'photo' ? 'Saved from your photos.' : 'Your recipe.'}
+            </p>
+          ) : (
+            <p className="mt-8 border-t border-line pt-4 text-small text-ink-muted">
+              Recipe and photo from{' '}
+              <a href="https://www.themealdb.com" target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">TheMealDB</a>.
+              {recipe.source_url && <>{' '}<a href={recipe.source_url} target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">See the original recipe</a>.</>}
+              {recipe.youtube_url && <>{' '}<a href={recipe.youtube_url} target="_blank" rel="noreferrer" className="font-semibold text-green hover:underline">Watch the video</a>.</>}
+            </p>
+          )}
+          {menuNote && <p role="status" className="mt-4 text-small font-semibold text-green">{menuNote}</p>}
           {cookedNote && (
             <p role="status" className="mt-4 text-small font-semibold text-green">
               {cookedNote}{' '}
@@ -205,8 +291,31 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
           <ListRow leading={<NotebookPen size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add notes" chevron onClick={() => { setMenu(false); go({ name: 'notes', id: recipe.id }); }} />
           <ListRow leading={<Star size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Rate this recipe" chevron onClick={() => { setMenu(false); go({ name: 'rate', id: recipe.id }); }} />
           <ListRow leading={<FolderPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add to collection" chevron onClick={() => { setMenu(false); go({ name: 'collections', id: recipe.id }); }} />
+          {own && <ListRow leading={<CalendarPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add to this week" onClick={() => { setMenu(false); void addToWeek(); }} />}
+          {own && <ListRow leading={<ListPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Add to grocery list" onClick={() => { setMenu(false); void addToGroceries(); }} />}
+          <ListRow leading={<Printer size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Print" onClick={() => { setMenu(false); setTimeout(() => window.print(), 150); }} />
+          <ListRow leading={<Download size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Download PDF" onClick={() => { setMenu(false); void downloadPdf(); }} />
+          {own && <ListRow leading={<Pencil size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Edit recipe" chevron onClick={() => { setMenu(false); go({ name: 'editor', id: recipe.id }); }} />}
+          {own && <ListRow leading={<Trash2 size={20} strokeWidth={1.75} aria-hidden />} title="Delete recipe" destructive onClick={() => { setMenu(false); setConfirmDelete(true); }} />}
         </ListGroup>
+      </BottomSheet>
+
+      <PrintView data={print} />
+
+      <BottomSheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete this recipe?" side="bottom">
+        <p className="mb-5 text-body text-ink-muted">It comes out of your Library{findInPlan(weekPlan?.plan ?? emptyPlan(), recipe.id) ? ' and your week' : ''}. This can't be undone.</p>
+        <div className="flex flex-col gap-3 sm:flex-row-reverse">
+          <Button variant="danger" loading={deleting} onClick={remove}>Delete recipe</Button>
+          <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Keep it</Button>
+        </div>
       </BottomSheet>
     </div>
   );
+}
+
+/** "From Serious Eats", "From @handle on TikTok". */
+function sourceCredit(r: Recipe): string {
+  if (r.source_kind === 'social' && r.source_platform) return creditLine(r.source_platform, r.source_handle ?? null);
+  if (r.source_name) return `From ${r.source_name}`;
+  try { return `From ${new URL(r.source_url!).hostname.replace(/^www\./, '')}`; } catch { return 'See the original recipe'; }
 }

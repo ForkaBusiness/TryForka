@@ -73,10 +73,12 @@ const GROUPS: Record<Allergen | 'meat' | 'honey', Group> = {
       'cheddar', 'feta', 'ricotta', 'mascarpone', 'paneer', 'brie', 'camembert', 'gruyere', 'gruyère', 'halloumi',
       'gouda', 'emmental*', 'stilton', 'labneh', 'kefir', 'skyr', 'creme fraiche', 'crème fraîche', 'custard', 'whey',
       'curd', 'white chocolate', 'milk chocolate', 'caramel', 'toffee', 'fudge', 'dulce de leche', 'malai', 'khoa', 'ice cream',
-      'fromage', 'chocolate chips', 'mars bar', 'knafeh', 'garlic sauce', 'crema'],
+      'fromage', 'chocolate chips', 'mars bar', 'knafeh', 'garlic sauce', 'crema',
+      // Pesto is made with Parmesan unless it says otherwise.
+      'pesto'],
     except: ['coconut milk', 'almond milk', 'soya milk', 'soy milk', 'oat milk', 'rice milk', 'coconut cream',
       'peanut butter', 'almond butter', 'cocoa butter', 'vegan butter', 'palm butter', 'butter bean', 'butternut',
-      'bean curd', 'cream of tartar', 'vegan cheese', 'vegetable milk', 'cream crackers'],
+      'bean curd', 'cream of tartar', 'vegan cheese', 'vegetable milk', 'cream crackers', 'vegan pesto', 'dairy-free pesto'],
   },
   egg: {
     keywords: ['egg', 'mayonnaise', 'mayo', 'meringue', 'aioli', 'aïoli', 'hollandaise', 'lemon curd', 'custard', 'mars bar',

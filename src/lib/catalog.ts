@@ -6,6 +6,7 @@ import { buildIngredientIndex, type IngredientOption } from './ingredientSearch'
 import { recipeChecker, type FoodPrefs } from './recipeFilter';
 import { recipeGate, type Opened } from './recipeGate';
 import { BROWSE_FILTERS, CARD_COLUMNS, countByFilter, ingredientsOf, supabaseRecipes, type BrowseFilter } from './recipeSource';
+import type { SocialPlatform, SourceKind } from '../../supabase/functions/_shared/imports/draft.ts';
 
 // The recipe catalog in Supabase (synced from TheMealDB by the sync-recipes function).
 // Every function here that hands recipes to a screen goes through the gate
@@ -38,17 +39,40 @@ export interface Recipe extends RecipeCard {
   tags: string[];
   source_url: string | null;
   youtube_url: string | null;
+  // A household's own recipe (typed in or imported) also has these; catalog recipes don't.
+  owner_id?: string | null;
+  /** Servings as written. Catalog recipes have none and are taken to serve BASE_SERVINGS. */
+  servings?: number | null;
+  prep_minutes?: number | null;
+  cook_minutes?: number | null;
+  notes?: string | null;
+  source_name?: string | null;
+  source_kind?: SourceKind | null;
+  source_platform?: SocialPlatform | null;
+  source_handle?: string | null;
+  /** The steps as the household wrote them, one per line (for editing). */
+  instructions_raw?: string | null;
 }
 
 export { BROWSE_FILTERS, CARD_COLUMNS, type BrowseFilter };
 
 export const recipeTitle = (r: Pick<RecipeCard, 'name' | 'display_name'>) => r.display_name || r.name;
 
-/** TheMealDB serves /small (~250px), /medium (~500px) and /large previews of each photo. */
+/**
+ * TheMealDB serves /small (~250px), /medium (~500px) and /large previews of each photo.
+ * Other photos (a household's own: a web image or a private storage reference, which the
+ * Photo component turns into a signed URL) are used as they are.
+ */
 export function photo(url: string | null | undefined, size: 'small' | 'medium' | 'large' | 'full' = 'medium'): string {
   if (!url) return '';
-  return size === 'full' ? url : `${url}/${size}`;
+  if (size === 'full' || !/^https:\/\/www\.themealdb\.com\/images\/media\//.test(url)) return url;
+  return `${url}/${size}`;
 }
+
+/** Household recipes are numbered from here (see 20261119000000_recipe_imports.sql). */
+export const HOUSEHOLD_ID_START = 1_000_000_000;
+/** True for a recipe the household typed in or imported (not from the catalog). */
+export const isHouseholdRecipe = (r: { id: number }) => r.id >= HOUSEHOLD_ID_START;
 
 /** "Spanish, vegetarian" style meta text from cuisine and diet. */
 export function recipeMeta(r: Pick<RecipeCard, 'area' | 'diets' | 'category'>): string {
@@ -140,6 +164,10 @@ export function searchablePool(prefs: FoodPrefs): Promise<SearchableRecipe[]> {
  * Screens and components must not import this; tests/allergyPaths.test.ts enforces it.
  */
 export const lookupCards = (ids: readonly number[]): Promise<Map<number, RecipeCard>> => gate.lookup(ids);
+
+// ── The household's own recipes: writes and id lookups (shown through the gate) ──
+
+export { householdRecipeIds, householdRecipeFrom, insertHouseholdRecipe, updateHouseholdRecipe, deleteHouseholdRecipe, householdRecipeForEdit, householdRecipeTitles } from './recipeSource';
 
 /** The ingredient lists of planned recipes, for building the grocery list. */
 export const recipeIngredients = ingredientsOf;

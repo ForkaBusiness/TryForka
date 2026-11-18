@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { checkLimit, FREE_AND_UNUSED, savedRecipeCount, type LimitCheck, type LimitKind, type PlanTier, type Usage } from './limits';
 import { fetchCollectionRecipes } from './collections';
+import { householdRecipeIds } from './catalog';
 
 // The signed-in user's plan and usage, read from usage_summary() in the database, and the
 // counting of uses. On a database that doesn't have these yet, everyone is on the free
@@ -15,12 +16,13 @@ export async function fetchUsage(userId: string): Promise<Usage> {
     return { ...FREE_AND_UNUSED, ...row, plan: row?.plan === 'pro' ? 'pro' : 'free' };
   }
   if (!missingFunction(error)) throw new Error(error.message);
-  const [{ data: favorites, error: favError }, memberships] = await Promise.all([
+  const [{ data: favorites, error: favError }, memberships, own] = await Promise.all([
     supabase.from('favorites').select('recipe_id').eq('user_id', userId),
     fetchCollectionRecipes(),
+    householdRecipeIds(userId),
   ]);
   if (favError) throw new Error(favError.message);
-  return { ...FREE_AND_UNUSED, saved_recipes: savedRecipeCount((favorites ?? []).map(f => f.recipe_id as number), memberships) };
+  return { ...FREE_AND_UNUSED, saved_recipes: savedRecipeCount((favorites ?? []).map(f => f.recipe_id as number), memberships, own) };
 }
 
 /**
