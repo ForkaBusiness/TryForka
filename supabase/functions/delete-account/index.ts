@@ -8,15 +8,15 @@ import { AppError, serve, serviceClient } from '../_shared/http.ts';
 /** Every file under a folder, at any depth (storage lists one level at a time). */
 async function listAll(admin: ReturnType<typeof serviceClient>, bucket: string, folder: string): Promise<string[]> {
   const out: string[] = [];
-  for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await admin.storage.from(bucket).list(folder, { limit: 1000, offset });
+  for (let offset = 0; ; offset += 100) {
+    const { data, error } = await admin.storage.from(bucket).list(folder, { limit: 100, offset });
     if (error) throw error;
     for (const item of data ?? []) {
       const path = `${folder}/${item.name}`;
       // Folders have no id; files do.
       if (item.id) out.push(path); else out.push(...await listAll(admin, bucket, path));
     }
-    if ((data ?? []).length < 1000) return out;
+    if ((data ?? []).length < 100) return out;
   }
 }
 
@@ -30,12 +30,17 @@ serve(async (body, req) => {
 
   const { data: files } = await admin.storage.from('avatars').list(userId);
   if (files?.length) await admin.storage.from('avatars').remove(files.map(f => `${userId}/${f.name}`));
+  // The family's private photos go first. If they can't be removed, the account stays, so
+  // deleting again can finish the job: nothing is left behind that no one can reach.
   try {
     const photos = await listAll(admin, 'recipe-photos', userId);
-    for (let i = 0; i < photos.length; i += 100) await admin.storage.from('recipe-photos').remove(photos.slice(i, i + 100));
+    for (let i = 0; i < photos.length; i += 100) {
+      const { error } = await admin.storage.from('recipe-photos').remove(photos.slice(i, i + 100));
+      if (error) throw error;
+    }
   } catch (err) {
-    // Photos that couldn't be removed are not a reason to keep the account: log and go on.
-    console.error('[delete-account] recipe photos not removed:', err);
+    console.error('[delete-account] recipe photos not removed for', userId, err);
+    throw new AppError("Couldn't delete your photos. Try again in a minute.", 500);
   }
 
   const { error: delErr } = await admin.auth.admin.deleteUser(userId);

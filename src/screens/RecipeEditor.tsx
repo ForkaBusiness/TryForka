@@ -141,9 +141,9 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
   // A new recipe or an import not saved yet is kept on this device until it's saved or discarded.
   useEffect(() => {
     if (id || saved || !dirty && !reviewing) return;
-    const t = window.setTimeout(() => keepUnsaved({ ...draft, flags: base.flags }), 400);
+    const t = window.setTimeout(() => keepUnsaved(userId, { ...draft, flags: base.flags }), 400);
     return () => window.clearTimeout(t);
-  }, [draft, id, saved, dirty, reviewing, base.flags]);
+  }, [draft, id, saved, dirty, reviewing, base.flags, userId]);
   const openFlags = lines.filter(l => l.flag).length + steps.filter(s => s.flag).length + Object.values(fieldFlags).filter(Boolean).length;
   const source = sourceLabel(base);
 

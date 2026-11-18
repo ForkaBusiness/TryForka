@@ -51,7 +51,7 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   /** Shared from another app: shown here, imported on a tap. */
   const [sharedLink, setSharedLink] = useState<string | null>(null);
   /** A recipe being checked that wasn't saved (the app was closed or refreshed). */
-  const [unsaved, setUnsaved] = useState(() => readUnsaved());
+  const [unsaved, setUnsaved] = useState(() => readUnsaved(userId));
   // An answer that arrives after the household left this screen is dropped, not followed.
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -236,7 +236,7 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   // ── Start ──
   return (
     <PageContainer title="Import a recipe" onBack={back} intro="From a recipe site, a social post, or photos of a cookbook page or recipe card.">
-      {unsaved && !sharedLink && (
+      {unsaved && !shared && (
         <Card className="mb-4 p-4">
           <p className="text-body text-ink">You were checking <span className="font-semibold">{unsaved.title || 'a recipe'}</span>. It isn't saved yet.</p>
           <div className="mt-3 flex gap-2">

@@ -104,17 +104,19 @@ export function reviewNote(flags: DraftFlag[]): string {
 const UNSAVED_KEY = 'forka_unsaved_recipe';
 const UNSAVED_DAYS = 7;
 
-export function keepUnsaved(draft: ImportDraft): void {
-  try { localStorage.setItem(UNSAVED_KEY, JSON.stringify({ at: Date.now(), draft })); } catch { /* this visit only */ }
+// Kept per person, so a shared device never offers one family's draft to another.
+export function keepUnsaved(userId: string, draft: ImportDraft): void {
+  try { localStorage.setItem(UNSAVED_KEY, JSON.stringify({ at: Date.now(), userId, draft })); } catch { /* this visit only */ }
 }
-export function readUnsaved(): ImportDraft | null {
+export function readUnsaved(userId: string): ImportDraft | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(UNSAVED_KEY) ?? 'null') as { at: number; draft: ImportDraft } | null;
-    if (!saved || Date.now() - saved.at > UNSAVED_DAYS * 86_400_000) return null;
+    const saved = JSON.parse(localStorage.getItem(UNSAVED_KEY) ?? 'null') as { at: number; userId?: string; draft: ImportDraft } | null;
+    if (!saved || saved.userId !== userId || Date.now() - saved.at > UNSAVED_DAYS * 86_400_000) return null;
     const d = saved.draft;
     return d && (d.title || d.ingredients?.length || d.steps?.length) ? d : null;
   } catch { return null; }
 }
+/** Forgets the unsaved recipe: after it's saved or discarded, and when signing out. */
 export function clearUnsaved(): void {
   try { localStorage.removeItem(UNSAVED_KEY); } catch { /* nothing kept */ }
 }
