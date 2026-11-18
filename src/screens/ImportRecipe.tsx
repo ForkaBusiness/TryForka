@@ -110,6 +110,7 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
     if (sharedText) { void runText(sharedText, null); return; }
     if (mode === 'photos') fileRef.current?.click();
     else if (mode === 'text') textRef.current?.focus();
+    else if (mode === 'link') linkRef.current?.focus();
     // A link already on the clipboard, offered only where the browser allows reading it without a prompt.
     quietClipboardLink().then(setCopied);
     // Runs once, with what the screen opened with.

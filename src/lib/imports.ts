@@ -7,7 +7,8 @@ import type { DraftSource, ImportDraft } from '../../supabase/functions/_shared/
 // function, which answers with a draft to check (or why there isn't one). Nothing is saved
 // until the household saves from the review screen.
 
-export const MAX_IMPORT_PHOTOS = 6;
+import { MAX_IMPORT_PHOTOS } from './shareRoute';
+export { findLink, MAX_IMPORT_PHOTOS } from './shareRoute';
 
 export type ImportAnswer =
   | { status: 'ok' | 'partial'; draft: ImportDraft; message: string | null; duplicate: { id: number; title: string } | null }
@@ -60,10 +61,4 @@ export async function importFromPhotos(userId: string, files: File[], onStep: (s
   }
   onStep({ step: 'reading' });
   return ask({ kind: 'photos', paths });
-}
-
-/** The first http(s) link in some text: what a share sheet or the clipboard usually holds. */
-export function findLink(text: string | null | undefined): string | null {
-  const m = (text ?? '').match(/https?:\/\/[^\s<>"']+/i);
-  return m ? m[0].replace(/[).,;!?]+$/, '') : null;
 }

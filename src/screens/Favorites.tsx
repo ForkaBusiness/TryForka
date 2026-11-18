@@ -5,6 +5,7 @@ import { householdRecipeIds, recipeTitle, safeCards, type RecipeCard } from '../
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { fetchCollectionRecipes, fetchCollections, type CollectionRow } from '../lib/collections';
 import { inLibraryView, libraryEntries, type LibraryFilter } from '../lib/library';
+import { ImportButtons } from '../components/ImportEntry';
 import { Button, EmptyState, Input, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, ToggleChip } from '../components/ds';
 
 // The library: every recipe the household saved, favorites, collections and its own
@@ -66,7 +67,8 @@ export function Favorites() {
 
   return (
     <PageContainer wide title="Library" intro={cards && visible.length ? `${visible.length} saved recipe${visible.length === 1 ? '' : 's'}` : undefined}
-      actions={<Button size="sm" variant="secondary" icon={Plus} onClick={addRecipe}>Add recipe</Button>}>
+      actions={<Button size="sm" variant="ghost" icon={Plus} onClick={addRecipe} aria-label="Add a recipe">Add</Button>}>
+      <ImportButtons className="mb-5" />
       {error ? (
         <EmptyState icon={BookHeart} title="Couldn't load your library" action={<Button variant="secondary" onClick={() => setAttempt(n => n + 1)}>Try again</Button>}>
           Check your connection and try again.

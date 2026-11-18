@@ -10,6 +10,7 @@ import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, planEntries, slotKey, SLOT_LABEL,
 import { CheckIn } from '../components/CheckIn';
 import { activeOnHand } from '../lib/onHand';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
+import { ImportRows } from '../components/ImportEntry';
 import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
 
 // Home: the week as a calendar. Tonight's dinner is the one raised card with the photo;
@@ -465,6 +466,7 @@ export function MealPlan() {
           <ListRow leading={<Refrigerator {...icon} className="text-green" />} title="Cook with what you have" chevron onClick={() => go({ name: 'pantry' })}
             subtitle={usingUp.length ? `Using up ${usingUp.length <= 1 ? usingUp.join('') : `${usingUp.slice(0, -1).join(', ')} and ${usingUp[usingUp.length - 1]}`}` : undefined} />
           <ListRow leading={<Lightbulb {...icon} className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
+          <ImportRows iconClass="text-green" />
           {hasMeals && weekPlan && (
             <ListRow leading={<CalendarPlus {...icon} className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}
               subtitle={`This one was planned ${plannedOn(weekPlan.createdAt)}`} chevron onClick={planning ? undefined : () => setConfirmReplace(true)} />

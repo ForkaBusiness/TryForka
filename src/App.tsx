@@ -33,6 +33,7 @@ import { Styleguide } from './screens/Styleguide';
 import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
 import { RecipeEditor } from './screens/RecipeEditor';
 import { ImportRecipe } from './screens/ImportRecipe';
+import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
 
 // Dev-only design system reference at /app/styleguide.
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
@@ -112,6 +113,20 @@ function SignedIn({ session }: { session: Session }) {
   }, [userId, metaName]);
 
   const screen = stack[stack.length - 1];
+
+  // Something shared into Forka (Android share sheet, later an iOS extension): open the
+  // import with it, on top of the home screen, once the household's data has loaded.
+  const ready = prefs !== undefined && members !== undefined;
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    readPendingShare().then(share => {
+      if (cancelled || !share) return;
+      const next = share === 'failed' ? null : handleIncomingShare(share);
+      setStack(prev => [...prev, next ?? { name: 'import' }]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [ready]);
 
   // Each screen opens at the top.
   useEffect(() => { mainRef.current?.scrollTo(0, 0); window.scrollTo(0, 0); }, [stack]);
