@@ -7,6 +7,7 @@ import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
+import { keepScreenOn, markWakeTipSeen, wakeTipSeen, type WakeLockApi } from '../lib/wakeLock';
 import { HiddenRecipe } from '../components/AllergyReminder';
 import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip, cx } from '../components/ds';
 
@@ -132,26 +133,25 @@ function HandsFreePanel({ videoRef, status, handSeen, swipe, subscribeHand }: {
   );
 }
 
-function useWakeLock() {
+const safeStorage = (): Storage | null => { try { return window.localStorage; } catch { return null; } };
+
+/**
+ * Keeps the screen on while cooking mode is open (see lib/wakeLock). Returns true when a
+ * small tip should say the screen may dim: the browser can't keep it on and the tip
+ * hasn't been shown on this device before. Shown once, never again.
+ */
+function useWakeLock(): [boolean, () => void] {
+  const [tip, setTip] = useState(false);
   useEffect(() => {
-    type Sentinel = { release: () => Promise<void> };
-    const nav = navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<Sentinel> } };
-    if (!nav.wakeLock) return;
-    let lock: Sentinel | null = null;
-    let active = true;
-    const acquire = async () => {
-      try { if (active && document.visibilityState === 'visible') lock = await nav.wakeLock!.request('screen'); } catch { /* denied or unsupported */ }
-    };
-    // The lock drops when the tab is hidden; take it again on return.
-    const onVisible = () => { if (document.visibilityState === 'visible') void acquire(); };
-    void acquire();
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      active = false;
-      document.removeEventListener('visibilitychange', onVisible);
-      void lock?.release().catch(() => {});
-    };
+    const nav = navigator as Navigator & { wakeLock?: WakeLockApi };
+    return keepScreenOn(nav.wakeLock, document, status => {
+      if ((status === 'unsupported' || status === 'denied') && !wakeTipSeen(safeStorage())) {
+        markWakeTipSeen(safeStorage());
+        setTip(true);
+      }
+    });
   }, []);
+  return [tip, () => setTip(false)];
 }
 
 export function CookingMode({ id }: { id: number }) {
@@ -166,7 +166,7 @@ export function CookingMode({ id }: { id: number }) {
   const [handsFree, setHandsFree] = useState(false);
   const [introOpen, setIntroOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  useWakeLock();
+  const [wakeTip, dismissWakeTip] = useWakeLock();
 
   useEffect(() => {
     getRecipe(id, prefs).then(r => { setBlockedBy(r?.blockedBy ?? null); setRecipe(r?.recipe ?? null); }).catch(() => setRecipe(null));
@@ -299,6 +299,12 @@ export function CookingMode({ id }: { id: number }) {
           />
         )}
         {problem && <p role="alert" className="mt-3 text-small text-terracotta-deep">{problem}</p>}
+        {wakeTip && (
+          <div role="status" className="mt-3 flex items-center gap-3 rounded-card border border-line bg-surface py-2 pr-2 pl-4">
+            <p className="min-w-0 flex-1 text-small text-ink">This browser can't keep your screen on, so it may dim while you cook. A tap now and then keeps it awake.</p>
+            <Button variant="secondary" className="shrink-0" onClick={dismissWakeTip}>Got it</Button>
+          </div>
+        )}
         <div className="mt-4">
           <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />
         </div>
