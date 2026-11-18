@@ -16,7 +16,7 @@ import { parseIngredientLine } from './ingredientLine.ts';
 import { pageText, parseRecipePage, type ParsedRecipe } from './jsonld.ts';
 import { draftFromModel, draftUsable, flaggedFields, reviewChecks, type ModelRecipe } from './modelDraft.ts';
 import { FetchBlocked } from './safeFetch.ts';
-import { captionLooksLikeRecipe, detectPlatform, fromOembed, fromPageMeta, oembedUrl, pinterestOutboundLink, platformName, recipeLinks, tiktokHandleFromUrl, type PostText } from './social.ts';
+import { captionLooksLikeRecipe, detectPlatform, fromOembed, fromPageMeta, oembedUrl, pinterestOutboundLink, platformName, recipeLinks, tiktokHandleFromUrl, tiktokItem, type PostText } from './social.ts';
 
 export interface ImportDeps {
   /** Fetches a page through safeFetch (private addresses, redirects, size and time limits). */
@@ -154,7 +154,12 @@ export async function postText(platform: SocialPlatform, url: string, deps: Impo
   // nothing but the player: read the public page too.
   if (!post.caption || platform === 'youtube' || platform === 'pinterest' || platform === 'tiktok') {
     try {
-      const page = await deps.fetchPage(url);
+      let page = await deps.fetchPage(url);
+      // TikTok sometimes serves the post page without the post's data (seen in testing: one
+      // read in five). One more read before saying the caption has no recipe.
+      if (platform === 'tiktok' && !tiktokItem(page.body)) {
+        try { page = await deps.fetchPage(url); } catch { /* keep the first answer */ }
+      }
       html = page.body;
       finalUrl = page.url;
       const parsed = parseRecipePage(page.body, page.url);
