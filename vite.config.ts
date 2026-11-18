@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -45,15 +45,32 @@ function serveWebsite(): Plugin {
   };
 }
 
+/**
+ * Production builds only: a Content Security Policy that lets the app connect to its own
+ * origin and to the Supabase project, and nowhere else. The browser blocks any other
+ * fetch, XHR, WebSocket or beacon, which is how a library would phone home, so "nothing
+ * is sent" holds for hands-free cooking even if an update tried to. It does not restrict
+ * images, fonts, scripts or navigation.
+ */
+function connectOnlyToOurselves(supabaseUrl: string | undefined): Plugin {
+  const supabase = supabaseUrl ? new URL(supabaseUrl).origin : 'https://*.supabase.co';
+  const csp = `connect-src 'self' ${supabase} blob: data:`;
+  return {
+    name: 'forka-connect-src',
+    apply: 'build',
+    transformIndexHtml: html => html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`),
+  };
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: '/app/',
   // Built into dist/app/ so the files sit at /app/ on the app's Vercel deployment too.
   build: { outDir: 'dist/app' },
-  plugins: [react(), tailwindcss(), serveWebsite()],
+  plugins: [react(), tailwindcss(), serveWebsite(), connectOnlyToOurselves(loadEnv(mode, process.cwd(), 'VITE_').VITE_SUPABASE_URL)],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
-});
+}));
