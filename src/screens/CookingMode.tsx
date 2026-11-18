@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, X } from 'lucide-react';
 import { useHandsFree, type HandShape, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
+import { fitToBox } from '../lib/handFit';
 import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
@@ -41,19 +42,28 @@ const BONES: ReadonlyArray<readonly [number, number]> = [
 const PALM_OUTLINE = [0, 1, 5, 9, 13, 17];
 const FINGERTIPS = new Set([4, 8, 12, 16, 20]);
 
+/** The tile's shape in drawing units (it is 4:3), and the space kept around a fitted hand. */
+const TILE_W = 400 / 3;
+const TILE_H = 100;
+const TILE_PAD = 10;
+
 /**
- * The tracked hand, drawn from its 21 points: nothing when no hand is seen. It is laid over
- * the preview the same way the video is (cropped to fill), so while the preview shows, the
- * drawing sits on the hand.
+ * The tracked hand, drawn from its 21 points: nothing when no hand is seen. Normally the hand
+ * is scaled to fill the tile, so it reads the same from across the counter as up close. While
+ * the preview shows (`overlay`), it is laid over the video the same way the video is (cropped
+ * to fill) instead, so the drawing sits on the hand.
  */
-function HandDrawing({ subscribe }: { subscribe: (listener: (hand: HandShape | null) => void) => () => void }) {
+function HandDrawing({ subscribe, overlay }: { subscribe: (listener: (hand: HandShape | null) => void) => () => void; overlay: boolean }) {
   const [hand, setHand] = useState<HandShape | null>(null);
   useEffect(() => subscribe(setHand), [subscribe]);
   if (!hand) return null;
-  const w = 100 * hand.aspect;
-  const at = (i: number) => ({ x: hand.points[i].x * w, y: hand.points[i].y * 100 });
+  const w = overlay ? 100 * hand.aspect : TILE_W;
+  const points = overlay
+    ? hand.points.map(p => ({ x: p.x * w, y: p.y * 100 }))
+    : fitToBox(hand.points, hand.aspect, TILE_W, TILE_H, TILE_PAD);
+  const at = (i: number) => points[i];
   return (
-    <svg viewBox={`0 0 ${w} 100`} preserveAspectRatio="xMidYMid slice" aria-hidden className="absolute inset-0 size-full">
+    <svg viewBox={`0 0 ${w} 100`} preserveAspectRatio="xMidYMid slice" aria-hidden data-fit={overlay ? 'camera' : 'hand'} className="absolute inset-0 size-full">
       <polygon points={PALM_OUTLINE.map(i => `${at(i).x},${at(i).y}`).join(' ')} className="fill-green-soft/80" />
       {BONES.map(([a, b]) => (
         <line key={`${a}-${b}`} x1={at(a).x} y1={at(a).y} x2={at(b).x} y2={at(b).y} strokeWidth={3} strokeLinecap="round" className="stroke-green" />
@@ -105,7 +115,7 @@ function HandsFreePanel({ videoRef, status, handSeen, swipe, subscribeHand }: {
           data-preview={preview ? 'shown' : 'hidden'}
           className={cx('absolute inset-0 size-full -scale-x-100 object-cover transition-opacity duration-700 ease-out', preview ? 'opacity-100' : 'opacity-0')}
         />
-        <HandDrawing subscribe={subscribeHand} />
+        <HandDrawing subscribe={subscribeHand} overlay={preview} />
       </div>
       <div className="flex min-w-0 flex-col items-start gap-2">
         <p className="flex max-w-full items-center gap-2">
