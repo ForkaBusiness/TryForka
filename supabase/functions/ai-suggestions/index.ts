@@ -1,13 +1,15 @@
 import { askJson } from '../_shared/claude.ts';
 import { AppError, claimRequest, serve, userClient } from '../_shared/http.ts';
+import { familyFood, safeRecipes } from '../_shared/household.ts';
 import { ALLERGEN_LABELS, ingredientAllergens } from '../_shared/catalog/allergens.ts';
 import { allergyFamilies, allergyLabel, filterRecipes, recipeChecker, type FoodPrefs } from '../_shared/catalog/recipeFilter.ts';
 
 // Suggestions and week plans, picked from the recipe catalog.
 //   { mode: "suggestions", prompt, slot?, exclude? } -> { picks: [{ recipe, reason }] }
 //   { mode: "week" }                                  -> { plan: { monday: { breakfast, lunch, dinner }, … } }
-// Candidates come from safe_recipes() called as the user and then pass through the recipe
-// filter, so allergies, diet and skipped ingredients are out before Claude sees anything.
+// Candidates come from family_safe_recipes() called as the user and then pass through the
+// recipe filter with every family member's allergies, so allergies, diet and skipped
+// ingredients are out before Claude sees anything. The app checks the answer again.
 // Claude only chooses among those ids, and every id it returns is checked against the
 // list. The exclusions also go in the prompt, but the filter is what's enforced.
 
@@ -40,7 +42,7 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 async function candidates(db: ReturnType<typeof userClient>, roles: string[], prefs: FoodPrefs): Promise<Card[]> {
-  const { data, error } = await db.rpc('safe_recipes').select(CARD_COLUMNS).in('meal_role', roles);
+  const { data, error } = await safeRecipes<Card>(db, q => q.select(CARD_COLUMNS).in('meal_role', roles));
   if (error) {
     console.error('[suggestions] safe_recipes failed:', error);
     throw new AppError("Couldn't load recipes. Try again.", 502);
@@ -48,14 +50,13 @@ async function candidates(db: ReturnType<typeof userClient>, roles: string[], pr
   return filterRecipes((data ?? []) as Card[], prefs);
 }
 
+/** The household's settings plus each family member's allergies. Without them, nothing is suggested. */
 async function foodPrefs(db: ReturnType<typeof userClient>): Promise<FoodPrefs> {
-  const { data } = await db.from('user_preferences').select('diet, allergies, skip_ingredients, avoid_ingredients').maybeSingle();
-  return {
-    diet: (data?.diet as string) ?? 'none',
-    allergies: (data?.allergies as string[]) ?? [],
-    skip_ingredients: (data?.skip_ingredients as string[]) ?? [],
-    avoid_ingredients: (data?.avoid_ingredients as string[]) ?? [],
-  };
+  try {
+    return await familyFood(db);
+  } catch {
+    throw new AppError("Couldn't load your settings. Try again.", 502);
+  }
 }
 
 /** Tells Claude what's been filtered out, so a reason never claims a recipe contains it. */
@@ -96,7 +97,7 @@ async function suggestions(db: ReturnType<typeof userClient>, body: Record<strin
   const roles = slot === 'breakfast' ? ['breakfast'] : slot ? ['main'] : ['main', 'breakfast'];
   const prefs = await foodPrefs(db);
   const list = (await candidates(db, roles, prefs)).filter(c => !exclude.has(c.id));
-  if (!list.length) throw new AppError('No recipes match your settings. Check your allergies and skipped ingredients in Settings.', 404);
+  if (!list.length) throw new AppError('No recipes match your settings. Check your allergies and skipped ingredients in Settings. Always check the ingredients yourself.', 404);
   const pool = shuffle(list).slice(0, 400);
   const byId = new Map(pool.map(c => [c.id, c]));
   const hints = await tasteHints(db);

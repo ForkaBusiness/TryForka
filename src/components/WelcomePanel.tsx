@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { photo, previewRecipes, recipeTitle, type RecipeCard } from '../lib/catalog';
+import type { FoodPrefs } from '../lib/recipeFilter';
 import { Card, Photo } from './ds';
 
 // The second column of the auth and onboarding screens on desktop: a warm green panel
@@ -8,9 +9,16 @@ import { Card, Photo } from './ds';
 
 const DAYS = ['Mon', 'Tue', 'Wed'];
 
-function WeekPreview() {
+function WeekPreview({ prefs }: { prefs?: FoodPrefs }) {
   const [recipes, setRecipes] = useState<RecipeCard[]>([]);
-  useEffect(() => { previewRecipes().then(setRecipes).catch(() => setRecipes([])); }, []);
+  const key = JSON.stringify(prefs ?? null);
+  useEffect(() => {
+    // Quick taps on the allergy step each start a request: only the latest one may show.
+    let cancelled = false;
+    previewRecipes(prefs).then(r => { if (!cancelled) setRecipes(r); }).catch(() => { if (!cancelled) setRecipes([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefs are keyed by `key`
+  }, [key]);
   return (
     <Card role="img" aria-label="Example of a planned week: three dinners with photos" className="w-full p-5 shadow-lg">
       <p className="label mb-1">This week</p>
@@ -30,12 +38,13 @@ function WeekPreview() {
   );
 }
 
-export function WelcomePanel({ line }: { line: string }) {
+/** `prefs`: the settings chosen so far, so the example week never shows what the household just ruled out. */
+export function WelcomePanel({ line, prefs }: { line: string; prefs?: FoodPrefs }) {
   return (
     <aside className="hidden flex-1 items-center justify-center bg-green px-12 md:flex">
       <div className="w-full max-w-form">
         <p className="display mb-8 text-display text-surface">{line}</p>
-        <WeekPreview />
+        <WeekPreview prefs={prefs} />
       </div>
     </aside>
   );

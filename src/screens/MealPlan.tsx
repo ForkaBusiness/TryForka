@@ -1,139 +1,275 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftRight, BookOpen, CalendarDays, CalendarPlus, ChefHat, Clock, Lightbulb, UtensilsCrossed } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeftRight, BookOpen, Refrigerator, CalendarDays, CalendarPlus, ChefHat, ChevronRight, Clock, Lightbulb, Lock, LockOpen, MoreHorizontal, MoveRight, Plus, Trash2,
+  UtensilsCrossed, Zap,
+} from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { getCards, minutesLabel, photo, recipeTitle, type RecipeCard } from '../lib/catalog';
-import { DAYS, DAY_LONG, DAY_SHORT, generateWeekPlan, planEntries, slotKey, SLOT_LABEL, todayKey, type Day, type PlanEntry, type Slot } from '../lib/plan';
-import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
+import { minutesLabel, photo, recipeTitle, safeCardMap, type RecipeCard } from '../lib/catalog';
+import type { Preferences } from '../lib/preferences';
+import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, planEntries, slotKey, SLOT_LABEL, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
+import { CheckIn } from '../components/CheckIn';
+import { activeOnHand } from '../lib/onHand';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
+import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
 
-// Home: answers "what's for dinner tonight" first. The selected day's dinner as the one
-// bold card, the week as a strip of day cards under it, then breakfast/lunch and the rest
-// of the week.
+// Home: the week as a calendar. Tonight's dinner is the one raised card with the photo;
+// every other day is a row with its photo, name and time. Tapping a day opens its sheet:
+// swap, move, lock, remove, or trade it for something faster on a busy night.
 
-function useCards(entries: PlanEntry[]): Map<number, RecipeCard> {
-  const [cards, setCards] = useState<Map<number, RecipeCard>>(new Map());
+/**
+ * The planned recipes as the gate returns them: a recipe the family can't eat isn't in the
+ * map. Null until they've loaded; a failed load is tried again rather than treated as empty.
+ */
+function useCards(entries: PlanEntry[], prefs: Preferences): Map<number, RecipeCard> | null {
+  const [cards, setCards] = useState<{ ids: string; map: Map<number, RecipeCard> } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const ids = entries.map(e => e.id).sort().join(',');
   useEffect(() => {
     let cancelled = false;
-    getCards(ids ? ids.split(',').map(Number) : []).then(m => { if (!cancelled) setCards(m); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [ids]);
-  return cards;
+    let retry: number | undefined;
+    safeCardMap(ids ? ids.split(',').map(Number) : [], prefs)
+      .then(map => { if (!cancelled) setCards({ ids, map }); })
+      .catch(() => { if (!cancelled) retry = window.setTimeout(() => setAttempt(n => n + 1), 4000); });
+    return () => { cancelled = true; window.clearTimeout(retry); };
+  }, [ids, prefs, attempt]);
+  // Cards loaded for an earlier version of the plan don't speak for this one.
+  return cards && cards.ids === ids ? cards.map : null;
+}
+
+/**
+ * The plan as it may be drawn. A plan entry carries its own title and photo, so it is only
+ * shown when its recipe came back from the gate: one the family can't eat, or that couldn't
+ * be checked, is an open day.
+ */
+function shownPlan(plan: WeekPlan, cards: Map<number, RecipeCard>): WeekPlan {
+  const out = emptyPlan();
+  for (const d of DAYS) for (const s of ['breakfast', 'lunch', 'dinner'] as const) {
+    const entry = plan[d][s];
+    out[d][s] = entry && cards.has(entry.id) ? entry : null;
+  }
+  return out;
 }
 
 const NO_SAFE_RECIPE = 'No recipe fits your settings for this meal';
-
 const plannedOn = (iso: string) => new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+const icon = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
-/** Seven day cards, like a calendar on the fridge. Today sits raised; the selected day is outlined. */
-function WeekStrip({ selected, onSelect, today, thumb }: { selected: Day; onSelect: (d: Day) => void; today: Day; thumb: (d: Day) => string | null | undefined }) {
+function Thumb({ src, size = 'size-12' }: { src?: string | null; size?: string }) {
+  return <Photo src={photo(src, 'small')} className={cx(size, 'shrink-0 rounded-photo')} />;
+}
+
+/** Where a dinner would go: a dashed square the same size as a photo. */
+function OpenSlot({ size = 'size-14' }: { size?: string }) {
   return (
-    <div role="tablist" aria-label="Day" className="no-scrollbar -mx-gutter flex gap-2 overflow-x-auto px-gutter pt-2 pb-3 md:mx-0 md:grid md:grid-cols-7 md:overflow-visible md:px-0">
-      {DAYS.map(d => {
-        const active = d === selected;
-        const isToday = d === today;
-        return (
-          <button
-            key={d}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            aria-label={`${DAY_LONG[d]}${isToday ? ', today' : ''}`}
-            onClick={() => onSelect(d)}
-            className={cx(
-              'flex w-18 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-photo border bg-surface p-2 transition-[transform,box-shadow,border-color] duration-150 ease-spring md:w-auto',
-              active ? 'border-green ring-1 ring-green' : 'border-line',
-              isToday ? '-translate-y-1 shadow-md' : 'shadow-sm',
-            )}
-          >
-            <span className={cx('text-caption font-bold', isToday ? 'text-green' : active ? 'text-ink' : 'text-ink-muted')}>{isToday ? 'Today' : DAY_SHORT[d]}</span>
-            <Photo src={photo(thumb(d), 'small')} className="aspect-square w-full rounded-sm" />
-          </button>
-        );
-      })}
-    </div>
+    <span aria-hidden className={cx(size, 'flex shrink-0 items-center justify-center rounded-photo border border-dashed border-ink-muted/50 text-ink-muted')}>
+      <Plus size={20} strokeWidth={1.75} />
+    </span>
   );
 }
 
-function DinnerHero({ day, entry, card, isToday, blocked, onOpen, onCook, onSwap }: {
-  day: Day; entry: PlanEntry | null; card?: RecipeCard; isToday: boolean; blocked: boolean;
-  onOpen: () => void; onCook: () => void; onSwap: () => void;
+/** Tonight: the one raised card on the screen. */
+function Tonight({ entry, card, blocked, busy, onOpen, onCook, onMore, onBusy, onFind }: {
+  entry: PlanEntry | null; card?: RecipeCard; blocked: boolean; busy: boolean;
+  onOpen: () => void; onCook: () => void; onMore: () => void; onBusy: () => void; onFind: () => void;
 }) {
-  const label = isToday ? 'Tonight' : `${DAY_LONG[day]} dinner`;
   if (!entry) {
     return (
-      <section aria-label={label} className="mb-6">
-        <EmptyState icon={UtensilsCrossed} title={blocked ? NO_SAFE_RECIPE : 'Nothing planned yet'}
-          action={<Button size="lg" block icon={ArrowLeftRight} onClick={onSwap}>Find a dinner</Button>}>
-          {blocked ? 'Pick one yourself, or loosen a setting.' : `Pick a dinner for ${isToday ? 'tonight' : DAY_LONG[day]} and it goes on the grocery list.`}
+      <section aria-label="Tonight" className="mb-6">
+        <EmptyState icon={UtensilsCrossed} title={blocked ? NO_SAFE_RECIPE : 'Nothing planned tonight'}
+          action={<Button size="lg" block icon={ArrowLeftRight} onClick={onFind}>Find a dinner</Button>}>
+          {blocked ? `Pick one yourself, or loosen a setting. ${CHECK_INGREDIENTS}` : 'Pick a dinner for tonight and it goes on the grocery list.'}
         </EmptyState>
       </section>
     );
   }
   const tags = card ? recipeTags(card) : [];
   return (
-    <section aria-label={label} className="mb-6">
-      <Card className="overflow-hidden">
+    <section aria-label="Tonight" className="mb-6">
+      <Card className="overflow-hidden shadow-md">
         <div className="relative">
           <button type="button" onClick={onOpen} className="block w-full cursor-pointer" aria-label={`Open ${entry.title}`}>
-            <Photo src={photo(card?.thumb_url ?? entry.image, 'large')} eager className="aspect-4/3 w-full md:aspect-video" />
+            <Photo src={photo(card?.thumb_url ?? entry.image, 'large')} eager className="aspect-3/2 w-full md:aspect-video" />
           </button>
           <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap gap-2">
             {card?.total_minutes ? <GlassPill icon={Clock}>{shortMinutes(card.total_minutes)}</GlassPill> : null}
             {tags[0] && <GlassPill>{tags[0]}</GlassPill>}
+            {entry.locked && <GlassPill icon={Lock}>Locked</GlassPill>}
           </div>
         </div>
         <div className="p-5">
-          <p className="label">{label}</p>
+          <p className="label">Tonight</p>
           <h2 className="display mt-1 text-title text-ink">
             <button type="button" onClick={onOpen} className="cursor-pointer text-left">{card ? recipeTitle(card) : entry.title}</button>
           </h2>
           {card?.subtitle && <p className="mt-1 text-body text-ink-muted">{card.subtitle}</p>}
-          <div className="mt-5 flex gap-3">
+          <div className="mt-5 flex items-center gap-3">
             <Button size="lg" icon={ChefHat} className="flex-1 sm:min-w-56 sm:flex-none" onClick={onCook}>Start cooking</Button>
-            <Button size="lg" variant="secondary" icon={ArrowLeftRight} onClick={onSwap}>Swap</Button>
+            <IconButton icon={MoreHorizontal} label="Change tonight's dinner" variant="outlined" size="lg" onClick={onMore} />
           </div>
+          <Button variant="secondary" icon={Zap} block className="mt-3 sm:w-auto" loading={busy} onClick={onBusy}>Busy night: something faster</Button>
         </div>
       </Card>
     </section>
   );
 }
 
-function Thumb({ src }: { src?: string | null }) {
-  return <Photo src={photo(src, 'small')} className="size-12 shrink-0 rounded-photo" />;
+/** One day of the week: day, photo, name, time. */
+function DayRow({ day, entry, card, others, blocked, past, onSelect }: {
+  day: Day; entry: PlanEntry | null; card?: RecipeCard; others: string[]; blocked: boolean; past?: boolean; onSelect: () => void;
+}) {
+  const title = entry ? (card ? recipeTitle(card) : entry.title) : blocked ? NO_SAFE_RECIPE : 'Nothing planned';
+  const time = entry ? shortMinutes(card?.total_minutes) : '';
+  return (
+    <li>
+      <button type="button" onClick={onSelect} aria-label={`${DAY_LONG[day]}: ${title}${time ? `, ${time}` : ''}${entry?.locked ? ', locked' : ''}`}
+        className="flex min-h-20 w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-cream/70 active:bg-cream">
+        <span className="w-9 shrink-0 text-small font-bold text-ink-muted">{DAY_SHORT[day]}</span>
+        {entry ? <Thumb src={card?.thumb_url ?? entry.image} size="size-14" /> : <OpenSlot />}
+        <span className="min-w-0 flex-1">
+          <span className={cx('line-clamp-2 text-body font-medium', entry && !past ? 'text-ink' : 'text-ink-muted')}>{title}</span>
+          <span className="flex items-center gap-1.5 text-small text-ink-muted">
+            {entry ? (
+              <>
+                {time && <span className="shrink-0">{time}</span>}
+                {entry.locked && <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-green"><Lock size={14} strokeWidth={2} aria-hidden />Locked</span>}
+                {others.length > 0 && <span className="truncate">{time || entry.locked ? 'plus ' : 'Plus '}{others.join(', ')}</span>}
+              </>
+            ) : !blocked && <span>Add a dinner</span>}
+          </span>
+        </span>
+        <ChevronRight {...icon} className="shrink-0 text-ink-muted" />
+      </button>
+    </li>
+  );
 }
 
-/** The line under the title: the day, and how long dinner takes. */
-function dayLine(day: Day, minutes?: number | null) {
-  return [DAY_LONG[day], minutesLabel(minutes)].filter(Boolean).join(' · ');
+/** What you can do with one day's dinner. */
+function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, message, onClose, act }: {
+  day: Day | null; plan: WeekPlan; cards: Map<number, RecipeCard>; today: Day; blocked: (d: Day, s: Slot) => boolean; plannedSlots: Slot[]; busy: boolean;
+  /** What came of the last action, when the sheet stays open to say it. */
+  message: string | null;
+  onClose: () => void;
+  act: { open: (id: number) => void; swap: (d: Day, s: Slot) => void; busy: (d: Day) => void; move: (from: Day, to: Day) => void; lock: (d: Day) => void; remove: (d: Day) => void };
+}) {
+  const [moving, setMoving] = useState(false);
+  useEffect(() => setMoving(false), [day]);
+  if (!day) return null;
+  const entry = plan[day].dinner;
+  const card = entry ? cards.get(entry.id) : undefined;
+  // A dinner that's already behind us can't be made quicker.
+  const ahead = DAYS.indexOf(day) >= DAYS.indexOf(today);
+  // While a faster dinner is being looked for, the other actions wait: they'd change the plan under it.
+  const unless = <T,>(fn: T) => (busy ? undefined : fn);
+  const otherSlots = (['breakfast', 'lunch'] as const).filter(s => plan[day][s] || plannedSlots.includes(s));
+  const green = 'text-green';
+
+  return (
+    <BottomSheet open onClose={onClose} title={day === today ? "Tonight's dinner" : `${DAY_LONG[day]} dinner`} side="bottom">
+      {entry ? (
+        <div className="mb-4 flex items-center gap-3">
+          <Thumb src={card?.thumb_url ?? entry.image} size="size-16" />
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 text-body font-semibold text-ink">{card ? recipeTitle(card) : entry.title}</p>
+            <p className="text-small text-ink-muted">{[minutesLabel(card?.total_minutes), entry.locked ? 'Locked' : ''].filter(Boolean).join(', ')}</p>
+          </div>
+        </div>
+      ) : (
+        <p className="mb-4 text-body text-ink-muted">{blocked(day, 'dinner') ? `${NO_SAFE_RECIPE}. Pick one yourself, or loosen a setting. ${CHECK_INGREDIENTS}` : `Nothing planned for ${day === today ? 'tonight' : DAY_LONG[day]} yet.`}</p>
+      )}
+
+      {/* Said aloud for screen readers: the row itself stops being a button while it works. */}
+      <p role="status" className="sr-only">{busy ? 'Finding something faster' : ''}</p>
+      {message && <p role="status" className="mb-3 text-small text-ink-muted">{message}</p>}
+
+      {moving && entry ? (
+        <div>
+          <p className="label mb-2 px-1">Move to</p>
+          <ListGroup>
+            {DAYS.filter(d => d !== day).map(d => {
+              const there = plan[d].dinner;
+              return (
+                <ListRow key={d} leading={<span className="w-9 shrink-0 text-small font-bold text-ink-muted">{DAY_SHORT[d]}</span>}
+                  title={there ? `Trade with ${cards.get(there.id) ? recipeTitle(cards.get(there.id)!) : there.title}` : 'Open day'}
+                  subtitle={there?.locked ? 'Locked. Unlock it to trade.' : undefined}
+                  // A locked day stays as it is, so it can't be traded into.
+                  onClick={there?.locked ? undefined : () => act.move(day, d)} />
+              );
+            })}
+          </ListGroup>
+          <Button variant="ghost" className="mt-3" onClick={() => setMoving(false)}>Back</Button>
+        </div>
+      ) : entry ? (
+        <ListGroup>
+          <ListRow leading={<BookOpen {...icon} className={green} />} title="Open recipe" chevron onClick={() => act.open(entry.id)} />
+          <ListRow leading={<ArrowLeftRight {...icon} className={green} />} title="Swap for something else" chevron onClick={unless(() => act.swap(day, 'dinner'))} />
+          {ahead && (
+            <ListRow leading={<Zap {...icon} className={green} />} title={busy ? 'Finding something faster…' : 'Busy night'}
+              subtitle="Something faster that uses what's on your list" onClick={unless(() => act.busy(day))} />
+          )}
+          <ListRow leading={<MoveRight {...icon} className={green} />} title="Move to another day" chevron onClick={unless(() => setMoving(true))} />
+          <ListRow leading={entry.locked ? <LockOpen {...icon} className={green} /> : <Lock {...icon} className={green} />}
+            title={entry.locked ? 'Unlock this day' : 'Lock this day'} subtitle={entry.locked ? undefined : "It stays put when the plan updates or a new week is planned"}
+            onClick={unless(() => act.lock(day))} />
+          <ListRow leading={<Trash2 {...icon} className="text-terracotta" />} title="Remove from the week" destructive onClick={unless(() => act.remove(day))} />
+        </ListGroup>
+      ) : (
+        <ListGroup>
+          <ListRow leading={<Lightbulb {...icon} className={green} />} title="Find a dinner" subtitle="Options that fit your household" chevron onClick={() => act.swap(day, 'dinner')} />
+        </ListGroup>
+      )}
+
+      {!moving && otherSlots.length > 0 && (
+        <ListGroup label={day === today ? 'Also today' : `Also ${DAY_LONG[day]}`} className="mt-5">
+          {otherSlots.map(slot => {
+            const other = plan[day][slot];
+            const otherCard = other ? cards.get(other.id) : undefined;
+            return other ? (
+              <ListRow key={slot} leading={<Thumb src={otherCard?.thumb_url ?? other.image} />} title={otherCard ? recipeTitle(otherCard) : other.title}
+                subtitle={SLOT_LABEL[slot]} chevron onClick={() => act.open(other.id)} />
+            ) : (
+              <ListRow key={slot} leading={<OpenSlot size="size-12" />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`}
+                subtitle={blocked(day, slot) ? NO_SAFE_RECIPE : 'Nothing planned'} chevron onClick={() => act.swap(day, slot)} />
+            );
+          })}
+        </ListGroup>
+      )}
+    </BottomSheet>
+  );
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, planReview, setPlanReview, undoPlanReview, go, openSuggestions } = useApp();
+  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions, onHand } = useApp();
+  const usingUp = activeOnHand(onHand);
   const today = todayKey();
-  const [day, setDay] = useState<Day>(today);
+  const [sheetDay, setSheetDay] = useState<Day | null>(null);
   const [planning, setPlanning] = useState(false);
+  const [busyDay, setBusyDay] = useState<Day | null>(null);
+  /** Something worth saying that isn't a problem ("nothing faster fits"). */
+  const [info, setInfo] = useState<string | null>(null);
+  const [sheetMessage, setSheetMessage] = useState<string | null>(null);
+  /** The plan with edits that are still saving, so the next edit builds on them. */
+  const pending = useRef<WeekPlan | null>(null);
+  const saves = useRef<Promise<void>>(Promise.resolve());
+  const hasPlan = useRef(false);
+  hasPlan.current = !!weekPlan;
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
-  const entries = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
-  const cards = useCards(entries);
+  const planned = useMemo(() => (weekPlan ? planEntries(weekPlan.plan).map(e => e.entry) : []), [weekPlan]);
+  const loadedCards = useCards(planned, prefs);
 
   const planWeek = async () => {
     setConfirmReplace(false);
     setError(null);
     setPlanning(true);
     try {
-      const week = await generateWeekPlan(prefs);
-      await saveWeek(week.plan, true);
-      setPlanReview({ notice: week.notice, blocked: week.blocked });
-      setDay(today);
+      await planNewWeek();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't plan your week. Try again.");
     } finally {
       setPlanning(false);
     }
   };
-  const newWeek = () => (weekPlan ? setConfirmReplace(true) : void planWeek());
 
   const undo = async () => {
     setError(null);
@@ -146,133 +282,198 @@ export function MealPlan() {
       setUndoing(false);
     }
   };
-  const notice = planReview.notice && (
-    <Card role="status" className="flex items-center justify-between gap-3 px-4 py-3 text-small text-ink-muted">
-      <p className="min-w-0">{planReview.notice}</p>
-      {planReview.undo && (
-        <Button size="sm" variant="ghost" loading={undoing} onClick={undo} aria-label="Undo: put back the previous meals and setting">Undo</Button>
-      )}
-    </Card>
-  );
 
-  if (weekPlan === undefined) {
+  if (weekPlan === undefined || loadedCards === null) {
     return (
-      <PageContainer>
-        <div aria-busy aria-label="Loading your week">
-          <Skeleton className="h-9 w-2/3 rounded-full" />
-          <Skeleton className="mt-3 mb-6 h-4 w-1/3 rounded-full" />
-          <Skeleton className="aspect-4/3 w-full rounded-card md:aspect-video" />
-          <div className="mt-6 grid grid-cols-7 gap-2">{DAYS.map(d => <Skeleton key={d} className="h-20" />)}</div>
+      <PageContainer wide>
+        <div aria-busy aria-label="Loading your week" className="lg:grid lg:grid-cols-5 lg:gap-x-6">
+          <div className="lg:col-span-3">
+            <Skeleton className="h-9 w-2/3 rounded-full" />
+            <Skeleton className="mt-3 mb-6 h-4 w-1/3 rounded-full" />
+            <Skeleton className="aspect-3/2 w-full rounded-card md:aspect-video" />
+          </div>
+          <div className="mt-6 grid gap-2 lg:col-span-2 lg:mt-20">{DAYS.slice(1).map(d => <Skeleton key={d} className="h-20" />)}</div>
         </div>
       </PageContainer>
     );
   }
 
-  if (!weekPlan || !entries.length) {
-    return (
-      <PageContainer title="This week">
-        <EmptyState
-          icon={CalendarDays}
-          title="No meals planned yet"
-          action={
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button size="lg" icon={CalendarPlus} loading={planning} onClick={planWeek}>Plan my week</Button>
-              <Button size="lg" variant="secondary" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>
-            </div>
-          }
-        >
-          {planning ? 'Picking dinners that fit your household. This takes a few seconds.' : "We'll pick a week of dinners that fit your household, and make the grocery list."}
-        </EmptyState>
-        {error && <p role="alert" className="mt-4 text-small text-terracotta-deep">{error}</p>}
-        {notice && <div className="mt-4">{notice}</div>}
-      </PageContainer>
-    );
-  }
-
-  const plan = weekPlan.plan;
-  const otherSlots: Slot[] = (['breakfast', 'lunch'] as const).filter(s => plan[day][s] || (s === 'breakfast' ? prefs.plan_breakfast : prefs.plan_lunch));
-  const later = DAYS.slice(DAYS.indexOf(day) + 1);
-  const open = (id: number) => go({ name: 'recipe', id });
+  const cards = loadedCards;
+  const plan = shownPlan(weekPlan?.plan ?? emptyPlan(), cards);
+  const hasMeals = planEntries(plan).length > 0;
   const isBlocked = (d: Day, s: Slot) => planReview.blocked.includes(slotKey(d, s));
-  const dinner = plan[day].dinner;
+  const plannedSlots: Slot[] = (['breakfast', 'lunch'] as const).filter(s => (s === 'breakfast' ? prefs.plan_breakfast : prefs.plan_lunch));
+  const open = (id: number) => { setSheetDay(null); go({ name: 'recipe', id }); };
+  const dinner = plan[today].dinner;
   const dinnerCard = dinner ? cards.get(dinner.id) : undefined;
-  const isToday = day === today;
-  const headline = dinner
-    ? (isToday ? "Tonight's sorted." : `${DAY_LONG[day]}'s sorted.`)
-    : (isToday ? 'Nothing planned tonight.' : `Nothing planned ${DAY_LONG[day]}.`);
+  const todayIndex = DAYS.indexOf(today);
+  const upcoming = DAYS.slice(todayIndex + 1);
+  const earlier = DAYS.slice(0, todayIndex);
+
+  /** What a note or message says is up there: bring it into view on a phone. */
+  const toTop = () => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' });
+
+  /**
+   * A change made from a day's sheet. The sheet closes first, so the week shows the result.
+   * Changes build on each other in the order they were made, even when the first is still
+   * saving: locking Thursday and then Friday keeps both.
+   */
+  const change = (build: (p: WeekPlan) => WeekPlan, opts?: { quiet?: boolean }) => {
+    const next = build(pending.current ?? plan);
+    pending.current = next;
+    setSheetDay(null);
+    setError(null);
+    setInfo(null);
+    const fresh = !hasPlan.current;
+    saves.current = saves.current.then(async () => {
+      try {
+        await saveWeek(next, fresh, opts);
+      } catch {
+        setError("Couldn't update your week. Check your connection and try again.");
+        toTop();
+      } finally {
+        if (pending.current === next) pending.current = null;
+      }
+    });
+  };
+  const busyNight = async (day: Day, fromSheet: boolean) => {
+    setError(null);
+    setInfo(null);
+    setSheetMessage(null);
+    setBusyDay(day);
+    try {
+      const result = await swapForBusyNight(day);
+      if (result === 'swapped') {
+        // Only the sheet the swap was started from closes; the note with Undo is at the top.
+        setSheetDay(d => (d === day ? null : d));
+        toTop();
+      } else if (result === 'none') {
+        const text = `Nothing much faster fits ${day === today ? 'tonight' : DAY_LONG[day]}. Dinner stays as it is.`;
+        if (fromSheet) setSheetMessage(text); else setInfo(text);
+      }
+      // 'stale': the week changed while we were looking. Nothing was swapped and nothing needs saying.
+    } catch {
+      const text = "Couldn't find something faster. Check your connection and try again.";
+      if (fromSheet) setSheetMessage(text); else setError(text);
+    } finally {
+      setBusyDay(null);
+    }
+  };
+  const act = {
+    open,
+    swap: (d: Day, s: Slot) => { setSheetDay(null); openSuggestions({ day: d, slot: s }); },
+    busy: (d: Day) => void busyNight(d, true),
+    // Two dinners trade places; a move to an open day leaves the old day open.
+    move: (from: Day, to: Day) => change(p => withSlot(withSlot(p, from, 'dinner', p[to].dinner), to, 'dinner', p[from].dinner)),
+    // Locking says nothing about taste.
+    lock: (d: Day) => change(p => { const e = p[d].dinner; return e ? withSlot(p, d, 'dinner', { ...e, locked: !e.locked }) : p; }, { quiet: true }),
+    remove: (d: Day) => change(p => withSlot(p, d, 'dinner', null)),
+  };
+  const openSheet = (d: Day) => { setSheetMessage(null); setSheetDay(d); };
+
+  const notice = planReview.notice && (
+    <Card role="status" className="mb-4 flex items-center justify-between gap-3 px-4 py-3 text-small text-ink-muted">
+      <p className="min-w-0">{planReview.notice}</p>
+      {planReview.undo && (
+        <Button size="sm" variant="ghost" loading={undoing} onClick={undo} aria-label="Undo: put back the previous meals">Undo</Button>
+      )}
+    </Card>
+  );
+
+  const row = (d: Day, past?: boolean) => {
+    const entry = plan[d].dinner;
+    const others = (['breakfast', 'lunch'] as const).map(s => plan[d][s]).filter((e): e is PlanEntry => !!e).map(o => (cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title));
+    return <DayRow key={d} day={d} entry={entry} card={entry ? cards.get(entry.id) : undefined} others={others} blocked={isBlocked(d, 'dinner')} past={past} onSelect={() => openSheet(d)} />;
+  };
+  const week = (days: Day[], label: string, id: string, past?: boolean) => days.length > 0 && (
+    <section aria-labelledby={id} className="mb-6">
+      <p id={id} className="label mb-2 px-1">{label}</p>
+      <Card className="overflow-hidden"><ul className="divide-y divide-line">{days.map(d => row(d, past))}</ul></Card>
+    </section>
+  );
+
+  const headline = !hasMeals ? 'This week' : dinner ? "Tonight's sorted." : 'Nothing planned tonight.';
+  const intro = !hasMeals ? undefined : [DAY_LONG[today], dinner ? minutesLabel(dinnerCard?.total_minutes).toLowerCase() : ''].filter(Boolean).join(', ');
+  const otherToday = plannedSlots.filter(s => hasMeals || plan[today][s]);
 
   return (
-    <PageContainer title={headline} intro={dayLine(day, dinnerCard?.total_minutes)}>
-      {error && <p role="alert" className="mb-4 text-small text-terracotta-deep">{error}</p>}
-      {notice && <div className="mb-4">{notice}</div>}
+    <PageContainer wide title={headline} intro={intro}>
+      <div className="lg:grid lg:grid-cols-5 lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-6">
+        <div className="lg:col-span-3">
+          {error && <p role="alert" className="mb-4 text-small text-terracotta-deep">{error}</p>}
+          {info && <p role="status" className="mb-4 text-small text-ink-muted">{info}</p>}
+          {notice}
+          {hasMeals && <CheckIn />}
 
-      <DinnerHero
-        day={day}
-        entry={dinner}
-        card={dinnerCard}
-        isToday={isToday}
-        blocked={isBlocked(day, 'dinner')}
-        onOpen={() => dinner && open(dinner.id)}
-        onCook={() => dinner && go({ name: 'cooking', id: dinner.id })}
-        onSwap={() => openSuggestions({ day, slot: 'dinner' })}
-      />
+          {hasMeals ? (
+            <Tonight
+              entry={dinner}
+              card={dinnerCard}
+              blocked={isBlocked(today, 'dinner')}
+              busy={busyDay === today}
+              onOpen={() => dinner && open(dinner.id)}
+              onCook={() => dinner && go({ name: 'cooking', id: dinner.id })}
+              onMore={() => openSheet(today)}
+              onBusy={() => void busyNight(today, false)}
+              onFind={() => openSuggestions({ day: today, slot: 'dinner' })}
+            />
+          ) : (
+            <section aria-label="Plan your week" className="mb-6">
+              <EmptyState
+                icon={CalendarDays}
+                title="No meals planned yet"
+                action={
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Button size="lg" icon={CalendarPlus} loading={planning} onClick={planWeek}>Plan my week</Button>
+                    <Button size="lg" variant="secondary" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>
+                  </div>
+                }
+              >
+                {planning ? 'Picking dinners that fit your household.' : "We'll pick a week of dinners that fit your household, and make the grocery list. Or tap a day and choose your own."}
+              </EmptyState>
+            </section>
+          )}
 
-      <WeekStrip selected={day} onSelect={setDay} today={today}
-        thumb={d => (plan[d].dinner ? cards.get(plan[d].dinner!.id)?.thumb_url ?? plan[d].dinner!.image : null)} />
-
-      {otherSlots.length > 0 && (
-        <ListGroup label={isToday ? 'Also today' : `Also ${DAY_LONG[day]}`} className="mt-5">
-          {otherSlots.map(slot => {
-            const entry = plan[day][slot];
-            const card = entry ? cards.get(entry.id) : undefined;
-            return entry ? (
-              <ListRow key={slot} leading={<Thumb src={card?.thumb_url ?? entry.image} />} title={card ? recipeTitle(card) : entry.title}
-                subtitle={SLOT_LABEL[slot]} chevron onClick={() => open(entry.id)} />
-            ) : (
-              <ListRow key={slot} leading={<Thumb />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`} subtitle={isBlocked(day, slot) ? NO_SAFE_RECIPE : 'Nothing planned'}
-                chevron onClick={() => openSuggestions({ day, slot })} />
-            );
-          })}
-        </ListGroup>
-      )}
-
-      {later.length > 0 && (
-        <section aria-labelledby="rest-of-week" className="mt-6">
-          <p id="rest-of-week" className="label mb-2 px-1">Rest of the week</p>
-          <Card className="overflow-hidden">
-            <ul className="divide-y divide-line">
-              {later.map(d => {
-                const dinner = plan[d].dinner;
-                const card = dinner ? cards.get(dinner.id) : undefined;
-                const others = (['breakfast', 'lunch'] as const).map(s => plan[d][s]).filter((e): e is PlanEntry => !!e);
-                return (
-                  <li key={d}>
-                    <button type="button" onClick={() => { setDay(d); document.querySelector('main')?.scrollTo({ top: 0 }); }}
-                      className="flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-cream/70 active:bg-cream">
-                      <span className="w-9 shrink-0 text-small font-bold text-ink-muted">{DAY_SHORT[d]}</span>
-                      <Thumb src={card?.thumb_url ?? dinner?.image} />
-                      <span className="min-w-0 flex-1">
-                        <span className="line-clamp-2 text-body font-medium text-ink">
-                          {dinner ? (card ? recipeTitle(card) : dinner.title) : isBlocked(d, 'dinner') ? NO_SAFE_RECIPE : 'No dinner planned'}
-                        </span>
-                        {others.length > 0 && <span className="block truncate text-small text-ink-muted">{others.map(o => cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title).join(', ')}</span>}
-                      </span>
-                      {card?.total_minutes ? <span className="shrink-0 text-small text-ink-muted">{shortMinutes(card.total_minutes)}</span> : null}
-                    </button>
-                  </li>
+          {otherToday.length > 0 && (
+            <ListGroup label="Also today" className="mb-6">
+              {otherToday.map(slot => {
+                const entry = plan[today][slot];
+                const card = entry ? cards.get(entry.id) : undefined;
+                return entry ? (
+                  <ListRow key={slot} leading={<Thumb src={card?.thumb_url ?? entry.image} />} title={card ? recipeTitle(card) : entry.title}
+                    subtitle={SLOT_LABEL[slot]} chevron onClick={() => open(entry.id)} />
+                ) : (
+                  <ListRow key={slot} leading={<OpenSlot size="size-12" />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`} subtitle={isBlocked(today, slot) ? NO_SAFE_RECIPE : 'Nothing planned'}
+                    chevron onClick={() => openSuggestions({ day: today, slot })} />
                 );
               })}
-            </ul>
-          </Card>
-        </section>
-      )}
+            </ListGroup>
+          )}
+        </div>
 
-      <ListGroup label="Plan" className="mt-6">
-        <ListRow leading={<BookOpen size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Browse recipes" chevron onClick={() => go({ name: 'browse' })} />
-        <ListRow leading={<Lightbulb size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
-        <ListRow leading={<CalendarPlus size={20} strokeWidth={1.75} aria-hidden className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}
-          subtitle={`This one was planned ${plannedOn(weekPlan.createdAt)}`} chevron onClick={planning ? undefined : newWeek} />
-      </ListGroup>
+        <div className="lg:col-span-2 lg:row-span-2">
+          {hasMeals ? (
+            <>
+              {week(upcoming, 'This week', 'this-week')}
+              {week(earlier, 'Earlier this week', 'earlier-this-week', true)}
+            </>
+          ) : week([...DAYS], 'This week', 'this-week')}
+        </div>
+
+        <ListGroup label="Plan" className="lg:col-span-3">
+          <ListRow leading={<BookOpen {...icon} className="text-green" />} title="Browse recipes" chevron onClick={() => go({ name: 'browse' })} />
+          <ListRow leading={<Refrigerator {...icon} className="text-green" />} title="Cook with what you have" chevron onClick={() => go({ name: 'pantry' })}
+            subtitle={usingUp.length ? `Using up ${usingUp.length <= 1 ? usingUp.join('') : `${usingUp.slice(0, -1).join(', ')} and ${usingUp[usingUp.length - 1]}`}` : undefined} />
+          <ListRow leading={<Lightbulb {...icon} className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
+          {hasMeals && weekPlan && (
+            <ListRow leading={<CalendarPlus {...icon} className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}
+              subtitle={`This one was planned ${plannedOn(weekPlan.createdAt)}`} chevron onClick={planning ? undefined : () => setConfirmReplace(true)} />
+          )}
+        </ListGroup>
+      </div>
+
+      <DaySheet day={sheetDay} plan={plan} cards={cards} today={today} blocked={isBlocked} plannedSlots={plannedSlots} busy={busyDay !== null} message={sheetMessage}
+        onClose={() => setSheetDay(null)} act={act} />
 
       <BottomSheet
         open={confirmReplace}
@@ -287,7 +488,7 @@ export function MealPlan() {
           </div>
         }
       >
-        <p className="text-body text-ink-muted">You'll get a new week of meals, and the grocery list will be rebuilt. Items you already checked off stay checked if they're still on it.</p>
+        <p className="text-body text-ink-muted">You'll get a new week of meals, and the grocery list will be rebuilt. Items you already checked off this week stay checked if they're still on it. Locked days stay as they are.</p>
       </BottomSheet>
     </PageContainer>
   );

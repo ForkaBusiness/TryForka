@@ -27,7 +27,7 @@ export const MASS: Record<string, number> = { g: 1, kg: 1000, oz: 28.35, lb: 453
 /** Millilitres per unit. Spoons and cups use the rounded kitchen values. */
 export const VOLUME: Record<string, number> = { ml: 1, l: 1000, tsp: 5, tbsp: 15, cup: 240, 'fl oz': 30, pint: 568, quart: 946 };
 /** Countable units, keyed by every spelling we've seen in TheMealDB. */
-const COUNT_UNITS: Record<string, string> = {
+export const COUNT_UNITS: Record<string, string> = {
   clove: 'clove', cloves: 'clove', can: 'can', cans: 'can', tin: 'can', tins: 'can', slice: 'slice', slices: 'slice',
   sprig: 'sprig', sprigs: 'sprig', bunch: 'bunch', bunches: 'bunch', handful: 'handful', handfuls: 'handful', handfull: 'handful',
   head: 'head', heads: 'head', bulb: 'bulb', bulbs: 'bulb', stick: 'stick', sticks: 'stick', packet: 'packet', packets: 'packet',
@@ -48,7 +48,7 @@ const UNIT_ALIASES: Record<string, string> = {
   cup: 'cup', cups: 'cup', c: 'cup', pint: 'pint', pints: 'pint', pt: 'pint', quart: 'quart', quarts: 'quart', qt: 'quart',
 };
 // Words after a number that describe the thing, not a unit: "2 large", "3 chopped".
-const COUNT_WORDS = new Set(['large', 'medium', 'small', 'whole', 'chopped', 'sliced', 'diced', 'beaten', 'finely', 'grated', 'thinly',
+export const COUNT_WORDS = new Set(['large', 'medium', 'small', 'whole', 'chopped', 'sliced', 'diced', 'beaten', 'finely', 'grated', 'thinly',
   'fresh', 'ripe', 'peeled', 'cut', 'crushed', 'minced', 'halved', 'skinned', 'boiled', 'steamed', 'ground', 'big', 'extra',
   'free-range', 'thin', 'thick', 'to', 'shredded', 'cubed', 'quartered', 'deseeded', 'trimmed', 'roughly', 'cooked', 'hard-boiled',
   'softened', 'melted', 'mashed', 'juiced', 'zested', 'pitted', 'stoned', 'washed', 'dried', 'frozen', 'cold', 'warm', 'hot', 'mixed', 'jumbo']);

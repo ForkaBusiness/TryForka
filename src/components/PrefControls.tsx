@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ingredientIndex } from '../lib/catalog';
+import { useMemo } from 'react';
+import { useIngredientIndex } from '../lib/useIngredientIndex';
 import { ALLERGEN_OPTIONS, allergyOptions, dislikeOptions, exactOption, type IngredientOption } from '../lib/ingredientSearch';
 import type { DietChoice, Preferences } from '../lib/preferences';
 import { allergyExpansionNote, canonicalAllergy } from '../lib/recipeFilter';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { Checkbox, ChipButton, cx, ToggleChip } from './ds';
 import { IngredientInput } from './IngredientInput';
 
@@ -44,12 +45,6 @@ export function DietPicker({ value, onChange }: { value: DietChoice; onChange: (
   );
 }
 
-function useIngredientIndex(): IngredientOption[] | null {
-  const [options, setOptions] = useState<IngredientOption[] | null>(null);
-  useEffect(() => { ingredientIndex().then(setOptions).catch(() => {}); }, []);
-  return options;
-}
-
 const ingredientChip = (value: string, options: IngredientOption[] | null) => {
   const known = options && exactOption(options, value);
   return { value, label: known ? known.label : value, custom: !!options && !known };
@@ -71,7 +66,7 @@ export function AllergyPicker({ value, onChange }: { value: string[]; onChange: 
           {common.map(o => <ChipButton key={o.value} onClick={() => add(o.value)}>{o.label}</ChipButton>)}
         </div>
       )}
-      <p className="mt-3 text-small text-ink-muted">We filter by ingredient list. Always check product labels for allergens.</p>
+      <p className="mt-3 text-small text-ink-muted">We hide recipes by their ingredient list. {CHECK_INGREDIENTS} Check product labels too.</p>
     </div>
   );
 }

@@ -1,95 +1,114 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, FolderHeart, Heart } from 'lucide-react';
+import { BookHeart, BookOpen, Search, SearchX } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { supabase } from '../lib/supabase';
-import { getCards, type RecipeCard } from '../lib/catalog';
-import { Button, EmptyState, ListGroup, ListRow, ListSkeleton, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, Segmented } from '../components/ds';
-import { fetchCollections, recipeCount, type CollectionRow } from '../lib/collections';
+import { recipeTitle, safeCards, type RecipeCard } from '../lib/catalog';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
+import { fetchCollectionRecipes, fetchCollections, type CollectionRow } from '../lib/collections';
+import { inLibraryView, libraryEntries, type LibraryFilter } from '../lib/library';
+import { Button, EmptyState, Input, PageContainer, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, ToggleChip } from '../components/ds';
 
-// Favorites and Collections. Collections open to their recipes.
+// The library: every recipe the household saved, favorites and collections together, in
+// one grid. A search box and a row of filters (all, favorites, quick, then each
+// collection) instead of separate tabs and folders.
 
-type Tab = 'favorites' | 'collections';
-
-function TileGrid({ ids, emptyText }: { ids: number[]; emptyText: React.ReactNode }) {
-  const { go, favorites, toggleFavorite } = useApp();
-  const [cards, setCards] = useState<Map<number, RecipeCard> | null>(null);
-  const key = ids.join(',');
-  useEffect(() => {
-    let cancelled = false;
-    getCards(ids).then(m => { if (!cancelled) setCards(m); }).catch(() => { if (!cancelled) setCards(new Map()); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ids are keyed by `key`
-  }, [key]);
-  if (!ids.length) return <>{emptyText}</>;
-  if (!cards) return <RecipeGridSkeleton count={Math.min(ids.length, 8)} />;
-  return (
-    <RecipeGrid>
-      {ids.map(id => cards.get(id)).filter((c): c is RecipeCard => !!c).map(r => (
-        <li key={r.id}>
-          <RecipeCardView
-            recipe={r}
-            onOpen={() => go({ name: 'recipe', id: r.id })}
-            favorite={favorites.has(r.id)}
-            onFavorite={() => toggleFavorite({ id: r.id, title: r.display_name || r.name, image: r.thumb_url ?? '' })}
-          />
-        </li>
-      ))}
-    </RecipeGrid>
-  );
-}
+interface Saved { collections: CollectionRow[]; memberships: Array<{ collection_id: string; recipe_id: number }> }
 
 export function Favorites() {
-  const { userId, favorites, go } = useApp();
-  const [tab, setTab] = useState<Tab>('favorites');
-  const [collections, setCollections] = useState<CollectionRow[] | null>(null);
-  const [openCollection, setOpenCollection] = useState<CollectionRow | null>(null);
-  const [collectionIds, setCollectionIds] = useState<number[] | null>(null);
-  // Keep un-hearted recipes on screen until the user leaves, so a mis-tap can be undone.
-  const [shownIds] = useState(() => [...favorites.keys()]);
-  const favoriteIds = useMemo(() => [...new Set([...shownIds, ...favorites.keys()])], [shownIds, favorites]);
+  const { userId, prefs, favorites, toggleFavorite, go } = useApp();
+  const [saved, setSaved] = useState<Saved | null>(null);
+  const [cards, setCards] = useState<Map<number, RecipeCard> | null>(null);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [filter, setFilter] = useState<LibraryFilter>('all');
+  const [search, setSearch] = useState('');
+  // Un-hearted recipes stay on screen until the user leaves, so a mis-tap can be undone.
+  const [shownFavorites] = useState(() => [...favorites.keys()]);
+  const favoriteIds = useMemo(() => [...new Set([...favorites.keys(), ...shownFavorites])], [favorites, shownFavorites]);
 
   useEffect(() => {
-    if (tab === 'collections') fetchCollections(userId).then(setCollections).catch(() => setCollections([]));
-  }, [tab, userId]);
+    let cancelled = false;
+    setError(false);
+    Promise.all([fetchCollections(userId), fetchCollectionRecipes()])
+      .then(([collections, memberships]) => { if (!cancelled) setSaved({ collections, memberships }); })
+      .catch(() => { if (!cancelled) setError(true); });
+    return () => { cancelled = true; };
+  }, [userId, attempt]);
+
+  const entries = useMemo(() => (saved ? libraryEntries(favoriteIds, saved.memberships) : []), [saved, favoriteIds]);
+  const ids = entries.map(e => e.id).join(',');
 
   useEffect(() => {
-    if (!openCollection) return;
-    setCollectionIds(null);
-    supabase.from('collection_recipes').select('recipe_id').eq('collection_id', openCollection.id).order('added_at', { ascending: false })
-      .then(({ data }) => setCollectionIds((data ?? []).map(r => r.recipe_id as number)));
-  }, [openCollection]);
+    if (!saved) return;
+    let cancelled = false;
+    // Saved recipes the family can no longer eat stay saved, but aren't shown.
+    safeCards(ids ? ids.split(',').map(Number) : [], prefs)
+      .then(list => { if (!cancelled) setCards(new Map(list.map(r => [r.id, r]))); })
+      .catch(() => { if (!cancelled) setError(true); });
+    return () => { cancelled = true; };
+  }, [ids, prefs, saved]);
 
   const browse = <Button size="lg" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>;
-
-  if (openCollection) {
-    return (
-      <PageContainer wide title={openCollection.name} onBack={() => setOpenCollection(null)} backLabel="Back to collections"
-        intro={collectionIds ? recipeCount(collectionIds.length) : undefined}>
-        {collectionIds === null ? <RecipeGridSkeleton count={4} /> : (
-          <TileGrid ids={collectionIds} emptyText={<EmptyState icon={FolderHeart} title="Nothing in this collection yet" action={browse}>Open a recipe, tap the three dots, then Add to collection.</EmptyState>} />
-        )}
-      </PageContainer>
-    );
-  }
+  const loading = !error && (!saved || !cards);
+  const visible = cards ? entries.filter(e => cards.has(e.id)) : [];
+  const hidden = cards ? entries.length - visible.length : 0;
+  const shown = visible.filter(e => {
+    const r = cards!.get(e.id)!;
+    return inLibraryView(e, { title: recipeTitle(r), area: r.area, category: r.category, total_minutes: r.total_minutes }, filter, search);
+  });
+  const filters: Array<{ value: LibraryFilter; label: string }> = [
+    { value: 'all', label: 'All' }, { value: 'favorites', label: 'Favorites' }, { value: 'quick', label: '30 min or less' },
+    ...(saved?.collections ?? []).map(c => ({ value: c.id, label: c.name })),
+  ];
+  const collectionName = saved?.collections.find(c => c.id === filter)?.name;
 
   return (
-    <PageContainer wide title="Favorites">
-      <Segmented
-        label="Favorites"
-        value={tab}
-        onChange={setTab}
-        options={[{ value: 'favorites', label: 'Favorites' }, { value: 'collections', label: 'Collections' }]}
-        className="mb-6 w-full max-w-form"
-      />
-
-      {tab === 'favorites' ? (
-        <TileGrid ids={favoriteIds} emptyText={<EmptyState icon={Heart} title="No favorites yet" action={browse}>Recipes you heart show up here.</EmptyState>} />
-      ) : collections === null ? <div className="max-w-column"><ListSkeleton rows={3} /></div> : collections.length === 0 ? (
-        <EmptyState icon={FolderHeart} title="No collections yet" action={browse}>Group recipes your way, like "Weeknight" or "Kids love it". Open a recipe, tap the three dots, then Add to collection.</EmptyState>
+    <PageContainer wide title="Library" intro={cards && visible.length ? `${visible.length} saved recipe${visible.length === 1 ? '' : 's'}` : undefined}>
+      {error ? (
+        <EmptyState icon={BookHeart} title="Couldn't load your library" action={<Button variant="secondary" onClick={() => setAttempt(n => n + 1)}>Try again</Button>}>
+          Check your connection and try again.
+        </EmptyState>
+      ) : loading ? (
+        <div aria-busy aria-label="Loading your library"><RecipeGridSkeleton count={8} /></div>
+      ) : !entries.length ? (
+        <EmptyState icon={BookHeart} title="Nothing saved yet" action={browse}>
+          Tap the heart on a recipe to keep it here. To group recipes, like "Weeknight" or "Kids love it", open one and choose Add to collection.
+        </EmptyState>
       ) : (
-        <ListGroup className="max-w-column">
-          {collections.map(c => <ListRow key={c.id} title={c.name} subtitle={recipeCount(c.count)} chevron onClick={() => setOpenCollection(c)} />)}
-        </ListGroup>
+        <>
+          <Input id="library-search" type="search" label="Search your library" hideLabel className="mb-4 max-w-form"
+            leading={<Search size={20} strokeWidth={1.75} aria-hidden />} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your library" />
+          <div role="radiogroup" aria-label="Show" className="no-scrollbar -mx-gutter mb-5 flex gap-2 overflow-x-auto px-gutter pb-1 md:mx-0 md:flex-wrap md:px-0">
+            {filters.map(f => <ToggleChip key={f.value} role="radio" selected={filter === f.value} onToggle={() => setFilter(f.value)}>{f.label}</ToggleChip>)}
+          </div>
+          {hidden > 0 && (
+            <p className="mb-4 text-small text-ink-muted">
+              {hidden === 1 ? '1 saved recipe is hidden' : `${hidden} saved recipes are hidden`} because {hidden === 1 ? "it doesn't" : "they don't"} fit your household's settings. {CHECK_INGREDIENTS}
+            </p>
+          )}
+          {shown.length ? (
+            <RecipeGrid>
+              {shown.map(e => {
+                const r = cards!.get(e.id)!;
+                return (
+                  <li key={r.id}>
+                    <RecipeCardView recipe={r} onOpen={() => go({ name: 'recipe', id: r.id })} favorite={favorites.has(r.id)}
+                      onFavorite={() => toggleFavorite({ id: r.id, title: recipeTitle(r), image: r.thumb_url ?? '' })} />
+                  </li>
+                );
+              })}
+            </RecipeGrid>
+          ) : search.trim() ? (
+            <EmptyState icon={SearchX} title={`Nothing saved matches "${search.trim()}"`}>Try another word, or clear the search.</EmptyState>
+          ) : filter === 'all' ? (
+            <EmptyState icon={BookHeart} title="Nothing to show right now">Your saved recipes don't fit your household's settings at the moment. {CHECK_INGREDIENTS}</EmptyState>
+          ) : collectionName ? (
+            <EmptyState icon={BookHeart} title={`Nothing in ${collectionName} yet`}>Open a recipe and choose Add to collection.</EmptyState>
+          ) : (
+            <EmptyState icon={BookHeart} title={filter === 'favorites' ? 'No favorites yet' : 'Nothing quick saved yet'}>
+              {filter === 'favorites' ? 'Tap the heart on a recipe to keep it here.' : 'Recipes that take 30 minutes or less show up here.'}
+            </EmptyState>
+          )}
+        </>
       )}
     </PageContainer>
   );

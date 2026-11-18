@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, CalendarPlus } from 'lucide-react';
 import { useApp, type SuggestionsTarget } from '../app/AppContext';
-import { getCards, similarRecipes, type RecipeCard } from '../lib/catalog';
+import { safeCards, similarRecipes, type RecipeCard } from '../lib/catalog';
 import {
-  DAY_LONG, emptyPlan, entryFromCard, findInPlan, generateWeekPlan, getSuggestions, nextOpenSlot, planEntries, withSlot,
+  DAY_LONG, emptyPlan, entryFromCard, findInPlan, getSuggestions, nextOpenSlot, planEntries, withSlot,
   type SuggestionPick,
 } from '../lib/plan';
-import { filterRecipes } from '../lib/recipeFilter';
+import { AllergyReminder } from '../components/AllergyReminder';
+import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { RecipeCarousel } from '../components/RecipeCarousel';
 import { BottomSheet, Button, ChipButton, cx, Input, ListGroup, ListRow, RecipeCard as RecipeCardView, RecipeGrid, RecipeGridSkeleton, Skeleton } from '../components/ds';
 
@@ -17,7 +18,7 @@ import { BottomSheet, Button, ChipButton, cx, Input, ListGroup, ListRow, RecipeC
 const STARTERS = ['Under 30 minutes', "Uses what's in my fridge", 'Kid-friendly'];
 
 export function SuggestionsPanel({ open, target, onClose }: { open: boolean; target: SuggestionsTarget | null; onClose: () => void }) {
-  const { weekPlan, prefs, saveWeek, setPlanReview, go, openPhotoSearch } = useApp();
+  const { weekPlan, prefs, saveWeek, planNewWeek, go, openPhotoSearch } = useApp();
   const [prompt, setPrompt] = useState('');
   const [picks, setPicks] = useState<SuggestionPick[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -32,14 +33,15 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   useEffect(() => {
     if (!open) return;
     setPicks(null); setNote(null); setMessage(null); setPrompt(''); setConfirmReplace(false); setIdeas(null);
-    if (!target || !weekPlan) return;
-    const current = weekPlan.plan[target.day][target.slot];
-    const exclude = planEntries(weekPlan.plan).map(e => e.entry.id);
+    if (!target) return;
+    const plan = weekPlan?.plan ?? emptyPlan();
+    const current = plan[target.day][target.slot];
+    const exclude = planEntries(plan).map(e => e.entry.id);
     (async () => {
-      const base = current ? (await getCards([current.id])).get(current.id) ?? null : null;
+      const base = current ? (await safeCards([current.id], prefs))[0] ?? null : null;
       const similar = await similarRecipes(base, target.slot === 'breakfast' ? 'breakfast' : 'main', exclude, prefs);
       // The current recipe leads, so it shows as selected.
-      setIdeas([...(base ? filterRecipes([base], prefs) : []), ...similar]);
+      setIdeas([...(base ? [base] : []), ...similar]);
     })().catch(() => setIdeas([]));
   }, [open, target, weekPlan, prefs]);
 
@@ -61,11 +63,8 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const submit = (e: FormEvent) => { e.preventDefault(); void ask(prompt); };
 
   const starter = (s: string) => {
-    if (s === "Uses what's in my fridge") {
-      setPrompt('Uses what I have: ');
-      requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(99, 99); });
-      return;
-    }
+    // Finding recipes by what's in the fridge is a search of our own recipes: no request needed.
+    if (s === "Uses what's in my fridge") { onClose(); go({ name: 'pantry' }); return; }
     setPrompt(s);
     void ask(s);
   };
@@ -73,10 +72,8 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const planWeek = async () => {
     setConfirmReplace(false); setPlanning(true); setMessage(null);
     try {
-      const week = await generateWeekPlan(prefs);
-      await saveWeek(week.plan, true);
-      setPlanReview({ notice: week.notice, blocked: week.blocked });
-      setMessage({ tone: 'ok', text: `Your week is planned. The grocery list is ready too.${week.notice ? ` ${week.notice}` : ''}`, groceries: true });
+      const notice = await planNewWeek();
+      setMessage({ tone: 'ok', text: `Your week is planned. The grocery list is ready too.${notice ? ` ${notice}` : ''}`, groceries: true });
     } catch (err) {
       setMessage({ tone: 'error', text: err instanceof Error ? err.message : "Couldn't plan your week. Try again." });
     } finally {
@@ -89,7 +86,10 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
     setMessage(null);
     try {
       if (target) {
-        const plan = withSlot(weekPlan?.plan ?? emptyPlan(), target.day, target.slot, entryFromCard(r));
+        const before = weekPlan?.plan ?? emptyPlan();
+        // A locked day stays locked when the household itself picks something else for it.
+        const locked = before[target.day][target.slot]?.locked;
+        const plan = withSlot(before, target.day, target.slot, locked ? { ...entryFromCard(r), locked } : entryFromCard(r));
         await saveWeek(plan, !weekPlan);
         onClose();
         return;
@@ -115,11 +115,13 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
   const inWeek = (id: number) => !!weekPlan && !!findInPlan(weekPlan.plan, id);
   const openRecipe = (id: number) => { onClose(); go({ name: 'recipe', id }); };
 
-  const title = target ? `Swap ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
+  // An open day has nothing to swap: the sheet is for picking.
+  const filled = !!target && !!weekPlan?.plan[target.day][target.slot];
+  const title = target ? `${filled ? 'Swap' : 'Pick'} ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
   const selectedId = target && weekPlan ? weekPlan.plan[target.day][target.slot]?.id : null;
   const carousel = (recipes: RecipeCard[], caption?: (r: RecipeCard) => string | undefined) => (
     <RecipeCarousel key={recipes.map(r => r.id).join()} recipes={recipes} selectedId={selectedId} onSelect={r => void choose(r)}
-      onOpen={r => openRecipe(r.id)} caption={caption} label={`Recipe options for ${title.replace('Swap ', '')}`} />
+      onOpen={r => openRecipe(r.id)} caption={caption} label={`Recipe options for ${title.replace(/^(Swap|Pick) /, '')}`} />
   );
   const bar = (
     <form onSubmit={submit} className="flex gap-2">
@@ -186,6 +188,7 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
       {loading && <div className="mt-4"><RecipeGridSkeleton count={4} compact /></div>}
 
       {!loading && picks && note && <p role="status" className="pt-4 text-small text-ink-muted">{note}</p>}
+      {!loading && (picks || (target && ideas)) && <AllergyReminder className="pt-4" />}
       {!loading && picks && (
         picks.length
           ? target
@@ -210,7 +213,7 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
             ? <Skeleton className="mt-3 h-80 rounded-card" />
             : ideas.length
               ? <div className="mt-3">{carousel(ideas)}</div>
-              : <p className="pt-3 text-body text-ink-muted">No other recipes fit this meal with your current settings.</p>}
+              : <p className="pt-3 text-body text-ink-muted">No other recipes fit this meal with your current settings. {CHECK_INGREDIENTS}</p>}
         </section>
       )}
     </BottomSheet>

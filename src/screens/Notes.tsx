@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../app/AppContext';
 import { supabase } from '../lib/supabase';
-import { getCards, recipeTitle } from '../lib/catalog';
+import { recipeTitle, safeCardMap } from '../lib/catalog';
 import { PageContainer, SaveStatus, Skeleton, Textarea } from '../components/ds';
 
 // Notes for one recipe. Saves as you type (after a short pause), no Save button.
 
 export function Notes({ id }: { id: number }) {
-  const { userId, back } = useApp();
+  const { userId, back, prefs } = useApp();
   const [text, setText] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -16,14 +16,14 @@ export function Notes({ id }: { id: number }) {
   const queue = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    getCards([id]).then(m => { const c = m.get(id); if (c) setTitle(recipeTitle(c)); }).catch(() => {});
+    safeCardMap([id], prefs).then(m => { const c = m.get(id); if (c) setTitle(recipeTitle(c)); }).catch(() => {});
     supabase.from('notes').select('id, content').eq('user_id', userId).eq('recipe_id', id)
       .order('updated_at', { ascending: false }).limit(1)
       .then(({ data }) => {
         rowId.current = (data?.[0]?.id as string) ?? null;
         setText((data?.[0]?.content as string) ?? '');
       });
-  }, [id, userId]);
+  }, [id, userId, prefs]);
 
   const save = (content: string) => {
     // Saves run one after another so the row is created once and the last edit wins.
