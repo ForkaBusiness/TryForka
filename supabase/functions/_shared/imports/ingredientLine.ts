@@ -93,6 +93,10 @@ export function parseIngredientLine(raw: string): DraftIngredient {
     const p = parseIngredientLine(`${qualifier[1]} ${line.slice(qualifier[0].length)}`);
     return { ...p, note: [qualifier[2].toLowerCase(), p.note].filter(Boolean).join(', ') };
   }
+  // On recipe cards a capital T is a tablespoon and a small t a teaspoon; parseMeasure
+  // lowercases before it reads the unit, so the capital is read here first.
+  const bigT = line.match(new RegExp(`^(${NUMBER_RE}(?:\\s*(?:-|–|to)\\s*${NUMBER_RE})?)\\s*T\\.?(?=\\s|$)`));
+  if (bigT) return parseIngredientLine(`${bigT[1]} tbsp${line.slice(bigT[0].length)}`);
   const m = parseMeasure(line);
   if (m.quantity === null) {
     const { item, note } = splitItem(line);

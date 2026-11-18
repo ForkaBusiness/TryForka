@@ -179,3 +179,11 @@ test('scant, heaping, plus and minus', () => {
 test('a leading "optional:" label does not hide the amount', () => {
   assert.deepEqual(line('optional: 1 to 2 Roma tomatoes (seeded and diced)'), [1, 2, '', 'Roma tomatoes', '(seeded and diced), optional']);
 });
+
+test('recipe-card T and t: tablespoon and teaspoon', () => {
+  assert.deepEqual(line('1 T chopped parsley'), [1, null, 'tbsp', 'chopped parsley', '']);
+  assert.deepEqual(line('1 t vanilla'), [1, null, 'tsp', 'vanilla', '']);
+  assert.deepEqual(line('1/2 T. butter'), [0.5, null, 'tbsp', 'butter', '']);
+  assert.deepEqual(line('2 Tbsp oil'), [2, null, 'tbsp', 'oil', '']);
+  assert.deepEqual(line('1 1/2 c flour'), [1.5, null, 'cup', 'flour', '']);
+});
