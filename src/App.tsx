@@ -32,6 +32,7 @@ import { PhotoSearch } from './screens/PhotoSearch';
 import { Styleguide } from './screens/Styleguide';
 import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
 import { RecipeEditor } from './screens/RecipeEditor';
+import { ImportRecipe } from './screens/ImportRecipe';
 
 // Dev-only design system reference at /app/styleguide.
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
@@ -368,7 +369,8 @@ function SignedIn({ session }: { session: Session }) {
     case 'rate': content = <RateRecipe id={screen.id} />; break;
     case 'collections': content = <Collections id={screen.id} />; break;
     case 'pantry': content = <CookWithWhatYouHave />; break;
-    case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate} />; break;
+    case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate ?? undefined} note={screen.note} />; break;
+    case 'import': content = <ImportRecipe key={`import:${stack.length}`} {...screen} />; break;
   }
 
   const root = stack[0].name as NavId;

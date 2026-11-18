@@ -27,14 +27,33 @@ const ONE_UNIT = new RegExp(`^(?:a|an|one)\\s+(${Object.keys(COUNT_UNITS).join('
 
 const tidy = (s: string) => s.replace(/\s+/g, ' ').replace(/\s+([,)])/g, '$1').replace(/\(\s+/g, '(').trim();
 
+/** One level of brackets: "((optional))" -> "(optional)", "(cold (keep chilled))" -> "(cold keep chilled)". Unmatched ones are closed or dropped. */
+function flattenBrackets(s: string): string {
+  let out = '';
+  let depth = 0;
+  for (const ch of s) {
+    if (ch === '(') { out += depth === 0 ? '(' : ' '; depth++; } else if (ch === ')') {
+      if (depth === 0) continue;
+      depth--;
+      out += depth === 0 ? ')' : ' ';
+    } else out += ch;
+  }
+  return depth > 0 ? `${out})` : out;
+}
+
 /** "  • 2 cups flour  " -> "2 cups flour". */
 export function cleanLine(raw: string): string {
-  return tidy(raw.replace(BULLET, '').replace(/\u00a0/g, ' '));
+  return tidy(flattenBrackets(raw.replace(BULLET, '').replace(/\u00a0/g, ' '))
+    // Recipe plugins write notes as "((optional))" and "(, sliced)"; footnote marks ("tempeh*") aren't part of the name.
+    .replace(/(\w)\*+/g, '$1').replace(/\s\*+(?=[\s(]|$)/g, ' ')).replace(/\(\s*[,;]\s*/g, '(');
 }
 
 /** Splits the words after the amount into the item and its note: "flour, sifted" -> flour / sifted. */
 function splitItem(rest: string): { item: string; note: string } {
   const notes: string[] = [];
+  // "plus 2 tablespoons sugar", "minus 2 tbsp flour": the extra is a note on the amount.
+  const extra = rest.match(new RegExp(`^(plus|minus|\\+)\\s+${NUMBER_RE}\\s*[a-z.]+\\s+`, 'i'));
+  if (extra) { notes.push(extra[0].trim()); rest = rest.slice(extra[0].length); }
   // Every bracketed part is a note: "(14 oz)", "(about 3 cups)".
   let text = rest.replace(/\(([^)]*)\)/g, (_m, inner: string) => { if (inner.trim()) notes.push(`(${inner.trim()})`); return ' '; });
   text = tidy(text).replace(/^of\s+/i, '');
@@ -57,10 +76,22 @@ function splitItem(rest: string): { item: string; note: string } {
 export function parseIngredientLine(raw: string): DraftIngredient {
   const line = cleanLine(raw);
   if (!line) return { quantity: null, quantity_max: null, unit: '', item: '', note: '' };
+  // "Optional: 1 to 2 tomatoes": the label goes to the note, so the amount is read.
+  const label = line.match(/^(optional|to serve|for serving|for garnish)\s*:\s*/i);
+  if (label) {
+    const p = parseIngredientLine(line.slice(label[0].length));
+    return { ...p, note: [p.note, label[1].toLowerCase()].filter(Boolean).join(', ') };
+  }
   const one = line.match(ONE_UNIT);
   if (one) {
     const { item, note } = splitItem(line.slice(one[0].length));
     return { quantity: 1, quantity_max: null, unit: COUNT_UNITS[one[1].toLowerCase()], item, note };
+  }
+  // "1/3 scant tsp salt": the qualifier goes to the note, so the unit is read.
+  const qualifier = line.match(new RegExp(`^(${NUMBER_RE}(?:\\s*(?:-|–|to)\\s*${NUMBER_RE})?)\\s+(scant|heaping|heaped|generous|level|rounded|good)\\s+`, 'i'));
+  if (qualifier) {
+    const p = parseIngredientLine(`${qualifier[1]} ${line.slice(qualifier[0].length)}`);
+    return { ...p, note: [qualifier[2].toLowerCase(), p.note].filter(Boolean).join(', ') };
   }
   const m = parseMeasure(line);
   if (m.quantity === null) {
@@ -72,7 +103,9 @@ export function parseIngredientLine(raw: string): DraftIngredient {
   const restLower = m.note.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   let rest = m.note;
   const at = restLower ? line.toLowerCase().lastIndexOf(restLower) : -1;
-  if (at >= 0) rest = line.slice(at, at + restLower.length) + (m.note.match(/\([^)]*\)/g) ?? []).map(p => ` ${p}`).join('');
+  // Bracketed parts as written where the line has them ("(or DIY)"); parseMeasure's own ("(400g)") otherwise.
+  const asWritten = (p: string) => { const i = line.toLowerCase().indexOf(p); return i >= 0 ? line.slice(i, i + p.length) : p; };
+  if (at >= 0) rest = line.slice(at, at + restLower.length) + (m.note.match(/\([^)]*\)/g) ?? []).map(p => ` ${asWritten(p)}`).join('');
   const { item, note } = splitItem(rest);
   return { quantity: m.quantity, quantity_max: m.quantityMax, unit: m.unit, item, note };
 }

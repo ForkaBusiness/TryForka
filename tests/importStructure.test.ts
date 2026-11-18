@@ -156,3 +156,26 @@ test('pesto counts as dairy as well as tree nut, unless it says otherwise', asyn
   assert.ok(!row.diets.includes('vegan'));
   assert.ok(row.diets.includes('vegetarian'));
 });
+
+test('recipe-plugin quirks: doubled brackets, leading commas, footnote marks', () => {
+  assert.deepEqual(line('8 oz tempeh*, finely chopped ((ensure gluten-free friendly as needed))'), [8, null, 'oz', 'tempeh', 'finely chopped (ensure gluten-free friendly as needed)']);
+  assert.deepEqual(line('1/2 tsp fennel seed ((optional))'), [0.5, null, 'tsp', 'fennel seed', '(optional)']);
+  assert.deepEqual(line('400 g white mushrooms (, sliced 6mm/0.2” thick)'), [400, null, 'g', 'white mushrooms', '(sliced 6mm/0.2” thick)']);
+  assert.deepEqual(line('2 (25-oz) jars favorite marinara sauce ((or DIY*))'), [2, null, 'jar', 'favorite marinara sauce', '(or DIY) (25-oz)']);
+});
+
+test('nested and unmatched brackets stay readable', () => {
+  assert.deepEqual(line('30 g unsalted butter, cold and cubed (keep refrigerated (until required))'), [30, null, 'g', 'unsalted butter', 'cold and cubed (keep refrigerated until required)']);
+  assert.deepEqual(line('2 1/2 cups beef stock (, low-sodium (Note 4)'), [2.5, null, 'cup', 'beef stock', '(low-sodium Note 4)']);
+});
+
+test('scant, heaping, plus and minus', () => {
+  assert.deepEqual(line('1/3 scant tsp sea salt'), [1 / 3, null, 'tsp', 'sea salt', 'scant']);
+  assert.deepEqual(line('1 heaping tablespoon cocoa powder'), [1, null, 'tbsp', 'cocoa powder', 'heaping']);
+  assert.deepEqual(line('2 cups minus 2 tablespoons cake flour (8 ½ ounces)'), [2, null, 'cup', 'cake flour', 'minus 2 tablespoons (8 ½ ounces)']);
+  assert.deepEqual(line('1 cup plus 2 tablespoons granulated sugar'), [1, null, 'cup', 'granulated sugar', 'plus 2 tablespoons']);
+});
+
+test('a leading "optional:" label does not hide the amount', () => {
+  assert.deepEqual(line('optional: 1 to 2 Roma tomatoes (seeded and diced)'), [1, 2, '', 'Roma tomatoes', '(seeded and diced), optional']);
+});

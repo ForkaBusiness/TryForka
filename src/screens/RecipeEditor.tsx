@@ -44,7 +44,7 @@ function sourceLabel(d: ImportDraft): string | null {
   return null;
 }
 
-export function RecipeEditor({ id, draft: incoming, duplicate }: { id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } }) {
+export function RecipeEditor({ id, draft: incoming, duplicate, note }: { id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string }; note?: string | null }) {
   const { userId, prefs, back, replace, weekPlan, saveWeek } = useApp();
   const [base, setBase] = useState<ImportDraft | null | undefined>(id ? undefined : incoming ?? emptyDraft());
   const [blockedOnOpen, setBlockedOnOpen] = useState<string[] | null>(null);
@@ -82,14 +82,14 @@ export function RecipeEditor({ id, draft: incoming, duplicate }: { id?: number; 
       </PageContainer>
     );
   }
-  return <Editor id={id} base={base} reviewing={reviewing} duplicate={duplicate} {...{ userId, prefs, back, replace, weekPlan, saveWeek }} />;
+  return <Editor id={id} base={base} reviewing={reviewing} duplicate={duplicate} note={note ?? null} {...{ userId, prefs, back, replace, weekPlan, saveWeek }} />;
 }
 
 type EditorProps = Pick<ReturnType<typeof useApp>, 'userId' | 'prefs' | 'back' | 'replace' | 'weekPlan' | 'saveWeek'> & {
-  id?: number; base: ImportDraft; reviewing: boolean; duplicate?: { id: number; title: string };
+  id?: number; base: ImportDraft; reviewing: boolean; duplicate?: { id: number; title: string }; note: string | null;
 };
 
-function Editor({ id, base, reviewing, duplicate, userId, prefs, back, replace, weekPlan, saveWeek }: EditorProps) {
+function Editor({ id, base, reviewing, duplicate, note, userId, prefs, back, replace, weekPlan, saveWeek }: EditorProps) {
   const [title, setTitle] = useState(base.title);
   const [servings, setServings] = useState(base.servings ? String(base.servings) : '');
   const [prep, setPrep] = useState(base.prep_minutes ? String(base.prep_minutes) : '');
@@ -287,8 +287,8 @@ function Editor({ id, base, reviewing, duplicate, userId, prefs, back, replace, 
         <h1 className="display mb-2 text-title text-ink md:text-display">{heading}</h1>
 
         {reviewing && (
-          <p role="status" className={cx('mb-5 rounded-input px-4 py-3 text-body', openFlags ? 'bg-terracotta-soft text-ink' : 'bg-green-soft text-ink')}>
-            {openFlags ? reviewNote(base.flags) : 'Got it. Look it over, then save.'}
+          <p role="status" className={cx('mb-5 rounded-input px-4 py-3 text-body', openFlags || note ? 'bg-terracotta-soft text-ink' : 'bg-green-soft text-ink')}>
+            {note ?? (openFlags ? reviewNote(base.flags) : 'Got it. Look it over, then save.')}
           </p>
         )}
 

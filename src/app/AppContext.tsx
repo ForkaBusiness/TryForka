@@ -24,7 +24,9 @@ export type Screen =
   | { name: 'collections'; id: number }
   | { name: 'pantry' }
   /** Write a recipe, edit the household's recipe `id`, or check an import (`draft`) before saving it. */
-  | { name: 'editor'; id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } };
+  | { name: 'editor'; id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } | null; note?: string | null }
+  /** Import from a link, text or photos. Opened with something already shared or chosen, it starts right away. */
+  | { name: 'import'; url?: string; text?: string; files?: File[]; mode?: 'link' | 'photos' | 'text' };
 
 export interface FavoriteEntry { id: number; title: string; image: string }
 

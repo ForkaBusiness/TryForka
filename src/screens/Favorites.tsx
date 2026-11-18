@@ -48,7 +48,7 @@ export function Favorites() {
   }, [ids, prefs, saved]);
 
   const browse = <Button size="lg" icon={BookOpen} onClick={() => go({ name: 'browse' })}>Browse recipes</Button>;
-  const addRecipe = () => go({ name: 'editor' });
+  const addRecipe = () => go({ name: 'import' });
   const loading = !error && (!saved || !cards);
   const visible = cards ? entries.filter(e => cards.has(e.id)) : [];
   const hidden = cards ? entries.length - visible.length : 0;
@@ -74,8 +74,8 @@ export function Favorites() {
       ) : loading ? (
         <div aria-busy aria-label="Loading your library"><RecipeGridSkeleton count={8} /></div>
       ) : !entries.length ? (
-        <EmptyState icon={BookHeart} title="Nothing saved yet" action={<div className="flex flex-wrap justify-center gap-3">{browse}<Button size="lg" variant="secondary" icon={Plus} onClick={addRecipe}>Add your own</Button></div>}>
-          Tap the heart on a recipe to keep it here, or add one of your own. To group recipes, like "Weeknight" or "Kids love it", open one and choose Add to collection.
+        <EmptyState icon={BookHeart} title="Nothing saved yet" action={<div className="flex flex-wrap justify-center gap-3">{browse}<Button size="lg" variant="secondary" icon={Plus} onClick={addRecipe}>Import a recipe</Button></div>}>
+          Tap the heart on a recipe to keep it here, or import one from a link or a photo. To group recipes, like "Weeknight" or "Kids love it", open one and choose Add to collection.
         </EmptyState>
       ) : (
         <>

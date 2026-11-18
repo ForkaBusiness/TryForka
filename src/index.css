@@ -320,3 +320,12 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Import in progress: an honest "working" bar, with no made-up percentage. */
+@keyframes import-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [class*='animate-[import-slide'] { animation: none; width: 100%; opacity: 0.5; }
+}
