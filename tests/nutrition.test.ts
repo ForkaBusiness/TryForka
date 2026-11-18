@@ -244,3 +244,92 @@ test('a slightly negative value from USDA is read as zero', () => {
 test('a splash is not a trace: it can\'t be weighed', () => {
   assert.equal(gramsOf(ing('Olive oil', '1 splash'), { tbsp: 13.5 }), null);
 });
+
+// ── 2026-11-18 cleanup: more ingredients matched and weighed ──────────────────
+import { MATCHING_IMPROVED_AT, needsLookup, RETRY_UNSETTLED_DAYS } from '../supabase/functions/_shared/nutrition.ts';
+
+test('pine nuts use the dried entry, which has cup weights; raw pine nuts have none', () => {
+  const results = [food(1, 'Nuts, pine nuts, raw', 689), food(2, 'Nuts, pine nuts, dried', 673)];
+  assert.equal(pickFood(searchTermFor('pine nut'), results)?.fdcId, 2);
+});
+
+test('saffron, sherry, breadcrumbs, semisweet chocolate, sesame oil, white vinegar and dark soy sauce find their USDA entries', () => {
+  // Descriptions as USDA lists them (checked live 2026-11-18), each against a near miss.
+  const cases: Array<[string, string[], number]> = [
+    ['saffron', ['Spices, saffron', 'Rice, white, with saffron, cooked'], 0],
+    ['dry sherry', ['Alcoholic beverage, wine, dessert, sweet', 'Alcoholic beverage, wine, dessert, dry'], 1],
+    ['sherry', ['Alcoholic beverage, wine, dessert, dry', 'Vinegar, sherry'], 0],
+    ['sweet sherry', ['Alcoholic beverage, wine, dessert, dry', 'Alcoholic beverage, wine, dessert, sweet'], 1],
+    ['breadcrumb', ['Bread, crumbs, dry, grated, seasoned', 'Bread, crumbs, dry, grated, plain'], 1],
+    ['semisweet chocolate', ['Candies, semisweet chocolate', 'Cookies, chocolate chip, semisweet'], 0],
+    ['sesame seed oil', ['Seeds, sesame seeds, whole, dried', 'Oil, sesame, salad or cooking'], 1],
+    ['white vinegar', ['Vinegar, cider', 'Vinegar, distilled'], 1],
+    ['dark soy sauce', ['Soy sauce made from soy and wheat (shoyu)', 'Soy sauce made from soy (tamari)'], 0],
+  ];
+  for (const [key, descriptions, want] of cases) {
+    const results = descriptions.map((d, i) => food(i + 1, d, 300));
+    assert.equal(pickFood(searchTermFor(key), results)?.fdcId, want + 1, key);
+  }
+  assert.equal(searchTermFor('sesame oil'), searchTermFor('sesame seed oil'));
+});
+
+test('"chicken" is a whole bird (meat and skin), not ground chicken', () => {
+  const results = [food(1, 'Chicken, ground, raw', 143), food(2, 'Chicken, broilers or fryers, meat and skin, raw', 215)];
+  assert.equal(pickFood(searchTermFor('chicken'), results)?.fdcId, 2);
+});
+
+// GET /fdc/v1/food/171447 (Chicken, broilers or fryers, meat and skin, raw), portions as listed.
+const WHOLE_CHICKEN: FdcFoodDetail = { foodPortions: [
+  { gramWeight: 460, sequenceNumber: 1, amount: 0.5, modifier: 'chicken, bone removed', measureUnit: { name: 'undetermined' } },
+  { gramWeight: 276, sequenceNumber: 2, amount: 1, modifier: 'unit (yield from 1 lb ready-to-cook chicken)', measureUnit: { name: 'undetermined' } },
+  { gramWeight: 113, sequenceNumber: 3, amount: 4, modifier: 'oz', measureUnit: { name: 'undetermined' } },
+] };
+
+test('one chicken weighs what USDA lists for a whole bird, not the yield from a pound', () => {
+  const portions = portionsOf(WHOLE_CHICKEN);
+  assert.equal(portions.each, 920, 'half a chicken is 460 g, so a whole one is 920 g');
+  assert.equal(gramsOf({ name_us: 'Chicken', quantity: 1, unit: '' }, portions), 920);
+  // The yield line is skipped even when it comes first.
+  assert.equal(portionsOf({ foodPortions: [WHOLE_CHICKEN.foodPortions![1], WHOLE_CHICKEN.foodPortions![0]] }).each, 920);
+  assert.equal(portionsOf({ foodPortions: [WHOLE_CHICKEN.foodPortions![1]] }).each, undefined, 'a yield alone is not a unit');
+});
+
+test("a counted ingredient uses the food's own piece when no size is listed", () => {
+  // GET /fdc/v1/food/171077 (chicken breast, skinless, boneless) and 173627 (thigh, meat only).
+  const breast = portionsOf({ foodPortions: [{ gramWeight: 113, amount: 4, modifier: 'oz' }, { gramWeight: 926, amount: 1, modifier: 'package' }, { gramWeight: 272, amount: 1, modifier: 'piece' }] });
+  assert.equal(gramsOf({ name_us: 'Chicken breasts', quantity: 2, unit: '' }, breast), 544);
+  const thigh = portionsOf({ foodPortions: [{ gramWeight: 113, amount: 4, modifier: 'oz' }, { gramWeight: 149, amount: 1, modifier: 'thigh without skin' }] });
+  assert.equal(gramsOf({ name_us: 'Chicken thighs', quantity: 6, unit: '' }, thigh), 894);
+  // A listed size still comes first.
+  assert.equal(portionsOf({ foodPortions: [{ gramWeight: 272, amount: 1, modifier: 'piece' }, { gramWeight: 150, amount: 1, modifier: 'large' }] }).each, 150);
+});
+
+test('a cached row is looked up again when it never settled and the matching has improved, or a month has passed', () => {
+  const now = MATCHING_IMPROVED_AT + 5 * 86_400_000;
+  const at = (ms: number) => new Date(ms).toISOString();
+  const weighed = { matched: true, portions: { cup: 135 } };
+  const unweighed = { matched: true, portions: {} };
+  const unmatched = { matched: false, portions: {} };
+  assert.equal(needsLookup({ ...weighed, checked_at: at(MATCHING_IMPROVED_AT - 86_400_000) }, now), false, 'a weighed match is final');
+  assert.equal(needsLookup({ ...unmatched, checked_at: at(MATCHING_IMPROVED_AT - 60_000) }, now), true, 'saved before the matching improved');
+  assert.equal(needsLookup({ ...unweighed, checked_at: at(MATCHING_IMPROVED_AT - 60_000) }, now), true, 'matched but unweighable, before the improvement');
+  assert.equal(needsLookup({ ...unmatched, checked_at: at(MATCHING_IMPROVED_AT + 60_000) }, now), false, 'looked up since: wait for the retry window');
+  const later = MATCHING_IMPROVED_AT + (RETRY_UNSETTLED_DAYS + 1) * 86_400_000;
+  assert.equal(needsLookup({ ...unmatched, checked_at: at(MATCHING_IMPROVED_AT + 60_000) }, later), true, 'a month on, USDA may have it');
+  assert.equal(needsLookup({ ...unmatched }, now), true, 'no date: look it up');
+});
+
+test('the "matching improved" time is never in the future, or every fresh lookup would count as stale', () => {
+  assert.ok(MATCHING_IMPROVED_AT <= Date.now(), 'set MATCHING_IMPROVED_AT to the time of the deploy, not later');
+});
+
+test('nutrition cache: a household-only ingredient stays private until someone else needs it', async () => {
+  const { cacheOwner } = await import('../supabase/functions/_shared/nutrition.ts');
+  const a = 'household-a', b = 'household-b';
+  assert.equal(cacheOwner(undefined, a), a, "first looked up for A's own recipe: A's");
+  assert.equal(cacheOwner(undefined, null), null, 'first looked up for a catalog recipe: shared');
+  assert.equal(cacheOwner(a, a), a, 'A again: still private');
+  assert.equal(cacheOwner(a, b), null, 'B needs it too: shared');
+  assert.equal(cacheOwner(a, null), null, 'a catalog recipe needs it: shared');
+  assert.equal(cacheOwner(null, a), null, 'shared stays shared');
+});

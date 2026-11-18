@@ -224,3 +224,38 @@ test('hard photo: the model calling it poor, or over 20% of lines unsure, flags 
   // Called poor: every amount, even with no line marked.
   assert.equal(isHardPhoto({ ingredients: [line('1 cup milk')], steps: [line('Mix.')], legibility: 'poor' }), true);
 });
+
+test('social: a TikTok page served without the post data is read once more, not twice more', async () => {
+  const post = 'https://www.tiktok.com/@dadthedish/video/7356680872847838497';
+  const caption = 'Creamy chorizo pasta! Ingredients: 300g rigatoni, 500ml chicken stock, 400g chopped tomatoes, 120ml double cream. Cook the chorizo, add the stock and simmer 10 mins, stir in the cream and serve.';
+  const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': { itemInfo: { itemStruct: { id: '1', desc: caption, author: { uniqueId: 'dadthedish' }, video: { cover: 'https://p16.example/c.jpg' } } } } } };
+  const withData = `<html><head><title>TikTok - Make Your Day</title></head><body><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(data)}</script></body></html>`;
+  const withoutData = '<html><head><title>TikTok - Make Your Day</title></head><body><div id="app"></div></body></html>';
+  const run = async (pages: string[]) => {
+    let reads = 0;
+    const fakeFetch = (async (input: string | URL) => {
+      const url = String(input);
+      // TikTok's oEmbed today: the player only, no caption.
+      if (url.includes('/oembed')) return new Response(JSON.stringify({ version: '1.0', type: 'video', html: '<iframe></iframe>' }), { headers: { 'content-type': 'application/json' } });
+      return new Response(pages[Math.min(reads++, pages.length - 1)], { headers: { 'content-type': 'text/html' } });
+    }) as typeof fetch;
+    const d: ImportDeps = {
+      fetchPage: url => safeFetch(url, { resolve: async () => ['93.184.216.34'], fetch: fakeFetch }),
+      readText: async () => ({ recipe: modelRecipe({ title: 'Creamy chorizo pasta', ingredients: ['300g rigatoni', '500ml chicken stock', '400g chopped tomatoes', '120ml double cream'].map(text => ({ text, unsure: 'none' as const })) }), model: 'fake' }),
+    };
+    return { result: await importLink(post, d), reads: () => reads };
+  };
+  // First read without the data, second with it: the recipe is read and credited.
+  const recovered = await run([withoutData, withData]);
+  assert.equal(recovered.result.status, 'ok');
+  assert.equal(recovered.reads(), 2);
+  if (recovered.result.status === 'ok') assert.equal(recovered.result.draft.source.handle, 'dadthedish');
+  // Both reads without it: one retry only, then the calm "no recipe" with the other ways in.
+  const missing = await run([withoutData, withoutData, withData]);
+  assert.equal(missing.result.status, 'no_recipe');
+  assert.equal(missing.reads(), 2);
+  // A complete first read needs no retry.
+  const first = await run([withData]);
+  assert.equal(first.result.status, 'ok');
+  assert.equal(first.reads(), 1);
+});
