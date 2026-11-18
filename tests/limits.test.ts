@@ -49,3 +49,15 @@ test('the weekly grocery list is never counted as a shopping list', () => {
   const sql = readFileSync(new URL('../supabase/migrations/20261116000004_plans_and_limits.sql', import.meta.url), 'utf8').replace(/--.*$/gm, '');
   assert.doesNotMatch(sql, /shopping_lists_count|shopping_list_week/, 'nothing stores a shopping-list count');
 });
+
+test("the household's own recipes count as saved recipes, each once", async () => {
+  const { savedRecipeCount, checkLimit } = await import('../src/lib/limits.ts');
+  assert.equal(savedRecipeCount([5, 1_000_000_001], [{ recipe_id: 1_000_000_001 }, { recipe_id: 9 }], [1_000_000_001, 1_000_000_002]), 4);
+  const usage = { plan: 'free' as const, saved_recipes: savedRecipeCount([], [], Array.from({ length: 20 }, (_, i) => 1_000_000_000 + i)), smart_imports: 0, shopping_lists: 0 };
+  assert.equal(checkLimit(usage, 'saved_recipes').allowed, false, 'twenty imported recipes reach the free limit (counted, not blocked yet)');
+});
+
+test('which import answers count as a smart import', async () => {
+  const { countsAsImport } = await import('../supabase/functions/_shared/imports/pipeline.ts');
+  assert.deepEqual(['ok', 'partial', 'no_recipe', 'failed', 'duplicate', 'capped'].map(countsAsImport), [true, true, false, false, false, false]);
+});

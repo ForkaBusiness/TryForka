@@ -31,13 +31,16 @@ import { SuggestionsPanel } from './screens/SuggestionsPanel';
 import { PhotoSearch } from './screens/PhotoSearch';
 import { Styleguide } from './screens/Styleguide';
 import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
+import { RecipeEditor } from './screens/RecipeEditor';
+import { ImportRecipe } from './screens/ImportRecipe';
+import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
 
 // Dev-only design system reference at /app/styleguide.
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
 
 const TABS: NavId[] = ['mealplan', 'groceries', 'favorites', 'settings'];
 /** Screens with a sticky bottom action bar: it takes the tab bar's place, and the timer tray sits above it. */
-const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking'];
+const WITH_BOTTOM_BAR: Screen['name'][] = ['recipe', 'rate', 'collections', 'cooking', 'editor'];
 
 const allergiesByMember = (members: FamilyMember[]): Record<string, string[]> => Object.fromEntries(members.map(m => [m.id, m.allergies]));
 const PLAN_CHECK_RETRY_MS = 4000;
@@ -110,6 +113,21 @@ function SignedIn({ session }: { session: Session }) {
   }, [userId, metaName]);
 
   const screen = stack[stack.length - 1];
+
+  // Something shared into Forka (Android share sheet, later an iOS extension): open the
+  // import with it, on top of the home screen, once the household's data has loaded.
+  const ready = prefs !== undefined && members !== undefined;
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    readPendingShare().then(share => {
+      if (cancelled || !share) return;
+      const next = share === 'failed' ? null : handleIncomingShare(share);
+      // Shared from outside the app: ready to import, started only when the household taps Import.
+      setStack(prev => [...prev, next?.name === 'import' ? { ...next, shared: true } : { name: 'import' }]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [ready]);
 
   // Each screen opens at the top.
   useEffect(() => { mainRef.current?.scrollTo(0, 0); window.scrollTo(0, 0); }, [stack]);
@@ -367,6 +385,8 @@ function SignedIn({ session }: { session: Session }) {
     case 'rate': content = <RateRecipe id={screen.id} />; break;
     case 'collections': content = <Collections id={screen.id} />; break;
     case 'pantry': content = <CookWithWhatYouHave />; break;
+    case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate ?? undefined} note={screen.note} />; break;
+    case 'import': content = <ImportRecipe key={`import:${stack.length}`} {...screen} />; break;
   }
 
   const root = stack[0].name as NavId;

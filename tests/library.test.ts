@@ -42,3 +42,13 @@ test('search finds every word, by name, cuisine or category, ignoring accents an
   assert.deepEqual(view('favorites', 'cheese'), [], 'search and filter together');
   assert.deepEqual(view('all', '   '), [3, 1, 2]);
 });
+
+test("the household's own recipes are in the library, once each, and have their own filter", async () => {
+  const { libraryEntries, inLibraryView } = await import('../src/lib/library.ts');
+  const entries = libraryEntries([5, 1_000_000_002], [{ collection_id: 'c1', recipe_id: 1_000_000_001 }, { collection_id: 'c1', recipe_id: 7 }], [1_000_000_002, 1_000_000_001]);
+  assert.deepEqual(entries.map(e => e.id), [5, 1_000_000_002, 1_000_000_001, 7]);
+  assert.deepEqual(entries.map(e => !!e.own), [false, true, true, false]);
+  const r = { title: 'Pasta', area: null, category: null, total_minutes: 20 };
+  assert.deepEqual(entries.filter(e => inLibraryView(e, r, 'mine', '')).map(e => e.id), [1_000_000_002, 1_000_000_001]);
+  assert.equal(entries.find(e => e.id === 1_000_000_001)!.collections[0], 'c1');
+});

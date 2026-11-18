@@ -2,6 +2,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
+import { notePendingShare, registerShareWorker } from './lib/incomingShare';
+
+// A recipe shared into the installed app: note it before anything else (it has to survive a
+// trip to the log-in page), and keep the worker that receives shares registered.
+notePendingShare();
+registerShareWorker();
 
 // Broken images (a missing recipe or ingredient photo) get a quiet placeholder instead
 // of the browser's broken-image icon.

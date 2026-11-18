@@ -23,6 +23,8 @@ export const isLeaving = () => leaving;
 /** Signs out and goes to the website home. Also used after deleting the account. */
 export async function signOutToWebsite() {
   leaving = true;
+  // A recipe left unsaved on this device belongs to the person signing out.
+  try { localStorage.removeItem('forka_unsaved_recipe'); } catch { /* nothing kept */ }
   try { await supabase.auth.signOut(); } catch { /* the local session is cleared regardless */ }
   window.location.assign(WEBSITE_HOME);
 }
