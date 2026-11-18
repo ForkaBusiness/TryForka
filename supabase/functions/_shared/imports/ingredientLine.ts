@@ -24,6 +24,10 @@ const TRAILING_NOTE = /\s+(to taste|for (?:garnish(?:ing)?|serving|frying|greasi
 
 // "a pinch of salt", "a handful of spinach": one of a countable unit, written in words.
 const ONE_UNIT = new RegExp(`^(?:a|an|one)\\s+(${Object.keys(COUNT_UNITS).join('|')})\\s+(?:of\\s+)?`, 'i');
+// "pinch of salt", "dash hot sauce": units that are written without a number mean one.
+const BARE_UNIT = /^(pinch|dash|splash|handful|knob|sprig|bunch)(?:es)?\s+(?:of\s+)?/i;
+// Units people write after the item: "2 celery stalks", "3 garlic cloves".
+const TRAILING_UNIT: Record<string, string> = { clove: 'clove', cloves: 'clove', stalk: 'stalk', stalks: 'stalk', sprig: 'sprig', sprigs: 'sprig', stick: 'stick', sticks: 'stick' };
 
 const tidy = (s: string) => s.replace(/\s+/g, ' ').replace(/\s+([,)])/g, '$1').replace(/\(\s+/g, '(').trim();
 
@@ -82,6 +86,11 @@ export function parseIngredientLine(raw: string): DraftIngredient {
     const p = parseIngredientLine(line.slice(label[0].length));
     return { ...p, note: [p.note, label[1].toLowerCase()].filter(Boolean).join(', ') };
   }
+  const bare = line.match(BARE_UNIT);
+  if (bare && !/^\s*(?:to taste|$)/i.test(line.slice(bare[0].length))) {
+    const { item, note } = splitItem(line.slice(bare[0].length));
+    return { quantity: 1, quantity_max: null, unit: COUNT_UNITS[bare[1].toLowerCase()], item, note };
+  }
   const one = line.match(ONE_UNIT);
   if (one) {
     const { item, note } = splitItem(line.slice(one[0].length));
@@ -95,7 +104,7 @@ export function parseIngredientLine(raw: string): DraftIngredient {
   }
   // On recipe cards a capital T is a tablespoon and a small t a teaspoon; parseMeasure
   // lowercases before it reads the unit, so the capital is read here first.
-  const bigT = line.match(new RegExp(`^(${NUMBER_RE}(?:\\s*(?:-|–|to)\\s*${NUMBER_RE})?)\\s*T\\.?(?=\\s|$)`));
+  const bigT = line.match(new RegExp(`^(${NUMBER_RE}(?:\\s*(?:-|–|to)\\s*${NUMBER_RE})?)\\s*(?:T|Tb|TB|TBS)\\.?(?=\\s|$)`));
   if (bigT) return parseIngredientLine(`${bigT[1]} tbsp${line.slice(bigT[0].length)}`);
   const m = parseMeasure(line);
   if (m.quantity === null) {
@@ -111,6 +120,12 @@ export function parseIngredientLine(raw: string): DraftIngredient {
   const asWritten = (p: string) => { const i = line.toLowerCase().indexOf(p); return i >= 0 ? line.slice(i, i + p.length) : p; };
   if (at >= 0) rest = line.slice(at, at + restLower.length) + (m.note.match(/\([^)]*\)/g) ?? []).map(p => ` ${asWritten(p)}`).join('');
   const { item, note } = splitItem(rest);
+  // "2 celery stalks", "3 garlic cloves": the unit came after the item. Read it as "2 stalks
+  // celery", so the grocery list adds it to "3 cloves garlic" from another recipe.
+  const last = item.match(/^(.+?)\s+([A-Za-z]+)$/);
+  if (!m.unit && last && TRAILING_UNIT[last[2].toLowerCase()]) {
+    return { quantity: m.quantity, quantity_max: m.quantityMax, unit: TRAILING_UNIT[last[2].toLowerCase()], item: last[1], note };
+  }
   return { quantity: m.quantity, quantity_max: m.quantityMax, unit: m.unit, item, note };
 }
 

@@ -4,7 +4,7 @@ import { draftFromModel, draftUsable, flaggedFields } from '../_shared/imports/m
 import { countsAsImport, host, importLink, importText, type ImportDeps, type ImportResult } from '../_shared/imports/pipeline.ts';
 import { safeFetch, safeFetchBytes } from '../_shared/imports/safeFetch.ts';
 import { detectPlatform } from '../_shared/imports/social.ts';
-import { PHOTO_RETRY_MODEL, readPhotos, readText, unsureShare, type Photo } from '../_shared/imports/extract.ts';
+import { readPhotos, readText, type Photo } from '../_shared/imports/extract.ts';
 
 // Import: a link, pasted text, or photos -> a draft recipe for the review screen. Nothing
 // is saved here; the household saves from the review screen.
@@ -26,8 +26,6 @@ const RATE_LIMIT = { kind: 'import', perMinute: 8, perDay: 50, noun: 'imports' }
 const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT = 20_000;
-/** More than this share of unsure lines on the first read: the photos get a second, stronger read. */
-const RETRY_UNSURE = 0.2;
 const PLATFORMS: SocialPlatform[] = ['tiktok', 'instagram', 'youtube', 'pinterest', 'facebook'];
 
 const resolve = async (hostname: string): Promise<string[]> => [
@@ -162,11 +160,8 @@ serve(async (body, req) => {
         if (data.size > MAX_PHOTO_BYTES) throw new AppError('One of the photos is too large. Try a smaller one.', 413);
         photos.push({ base64: toBase64(new Uint8Array(await data.arrayBuffer())), mediaType: mediaTypeOf(path, data.type) });
       }
-      // The first read is the cheap model; photos it finds hard get a second read by a stronger one.
-      let read = await readPhotos(photos);
-      if (read.recipe.is_recipe && unsureShare(read.recipe) > RETRY_UNSURE && PHOTO_RETRY_MODEL !== read.model) {
-        read = await readPhotos(photos, PHOTO_RETRY_MODEL, 'medium');
-      }
+      // One read by the photo model; what it couldn't read is flagged for the household to check.
+      const read = await readPhotos(photos);
       model = read.model;
       const draft = draftFromModel(read.recipe, { kind: 'photo', url: null, site_name: null, platform: null, handle: null });
       result = read.recipe.is_recipe && draftUsable(draft)

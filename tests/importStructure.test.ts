@@ -187,3 +187,28 @@ test('recipe-card T and t: tablespoon and teaspoon', () => {
   assert.deepEqual(line('2 Tbsp oil'), [2, null, 'tbsp', 'oil', '']);
   assert.deepEqual(line('1 1/2 c flour'), [1.5, null, 'cup', 'flour', '']);
 });
+
+test('photo eval units: unit after the item, a bare pinch, Tb for tablespoon', () => {
+  assert.deepEqual(line('2 celery stalks, sliced'), [2, null, 'stalk', 'celery', 'sliced']);
+  assert.deepEqual(line('3 garlic cloves, minced'), [3, null, 'clove', 'garlic', 'minced']);
+  assert.deepEqual(line('2 garlic cloves'), [2, null, 'clove', 'garlic', '']);
+  assert.deepEqual(line('3 cloves garlic'), [3, null, 'clove', 'garlic', '']);
+  assert.deepEqual(line('2 sprigs fresh thyme'), [2, null, 'sprig', 'fresh thyme', '']);
+  assert.deepEqual(line('pinch of salt'), [1, null, 'pinch', 'salt', '']);
+  assert.deepEqual(line('Pinch salt'), [1, null, 'pinch', 'salt', '']);
+  assert.deepEqual(line('dash of hot sauce'), [1, null, 'dash', 'hot sauce', '']);
+  assert.deepEqual(line('1 Tb chopped parsley'), [1, null, 'tbsp', 'chopped parsley', '']);
+  assert.deepEqual(line('1 TB chopped parsley'), [1, null, 'tbsp', 'chopped parsley', '']);
+  // Words that only look like a trailing unit stay part of the item.
+  assert.deepEqual(line('2 cinnamon sticks'), [2, null, 'stick', 'cinnamon', '']);
+  assert.deepEqual(line('4 chicken breasts'), [4, null, '', 'chicken breasts', '']);
+  assert.deepEqual(line('1/4 c grated parm'), [0.25, null, 'cup', 'grated parm', '']);
+});
+
+test('the same ingredient written two ways merges on the grocery list', () => {
+  const a = draftToRow(draft(['3 garlic cloves, minced'], ['Cook.']));
+  const b = draftToRow(draft(['2 cloves garlic'], ['Cook.']));
+  const items = combine([{ id: 1, title: 'A', ingredients: a.ingredients }, { id: 2, title: 'B', ingredients: b.ingredients }], () => undefined);
+  const garlic = items.find(i => i.key === 'garlic')!;
+  assert.deepEqual(garlic.amounts, [{ family: 'count:clove', value: 5 }]);
+});

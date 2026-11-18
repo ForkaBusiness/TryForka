@@ -39,3 +39,8 @@ supabase/.temp/
 
 # MediaPipe wasm, copied from node_modules at build time (scripts/copy-mediapipe.mjs)
 public/mediapipe/wasm/
+
+# Photo eval: the model's raw answers (they can hold recipe text from real photos), and the
+# lockfile Deno writes when the eval is run
+test-imports/eval-raw.json
+deno.lock
