@@ -51,6 +51,20 @@ export function needsLookup(row: { matched: boolean; portions: Record<string, nu
   return checked <= Math.max(now - RETRY_UNSETTLED_DAYS * 86_400_000, MATCHING_IMPROVED_AT);
 }
 
+/**
+ * Who may read a cached ingredient (ingredient_nutrition.owner_id; null = everyone). A row
+ * first looked up for a household's own recipe belongs to that household, so an unusual
+ * ingredient name it typed stays private. As soon as anyone else needs the same ingredient
+ * (another household, or a catalog recipe, which has no owner), the row is shared: they use
+ * it too, so its name tells them nothing new.
+ *   existing   the row's owner now; undefined when there's no row yet
+ *   requester  the owner of the recipe asking; null for a catalog recipe
+ */
+export function cacheOwner(existing: string | null | undefined, requester: string | null): string | null {
+  if (existing === undefined) return requester;
+  return existing === requester ? existing : null;
+}
+
 /** The catalog has no servings field: a recipe as written is taken to serve this many. */
 export const BASE_SERVINGS = 4;
 

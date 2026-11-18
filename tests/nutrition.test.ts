@@ -322,3 +322,14 @@ test('a cached row is looked up again when it never settled and the matching has
 test('the "matching improved" time is never in the future, or every fresh lookup would count as stale', () => {
   assert.ok(MATCHING_IMPROVED_AT <= Date.now(), 'set MATCHING_IMPROVED_AT to the time of the deploy, not later');
 });
+
+test('nutrition cache: a household-only ingredient stays private until someone else needs it', async () => {
+  const { cacheOwner } = await import('../supabase/functions/_shared/nutrition.ts');
+  const a = 'household-a', b = 'household-b';
+  assert.equal(cacheOwner(undefined, a), a, "first looked up for A's own recipe: A's");
+  assert.equal(cacheOwner(undefined, null), null, 'first looked up for a catalog recipe: shared');
+  assert.equal(cacheOwner(a, a), a, 'A again: still private');
+  assert.equal(cacheOwner(a, b), null, 'B needs it too: shared');
+  assert.equal(cacheOwner(a, null), null, 'a catalog recipe needs it: shared');
+  assert.equal(cacheOwner(null, a), null, 'shared stays shared');
+});

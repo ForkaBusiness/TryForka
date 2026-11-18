@@ -1,5 +1,5 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
-import { factsFromFdc, hasNoCalories, needsLookup, nutritionKey, pickFood, searchTermFor, type Facts, type FdcFoodDetail, type FdcSearchFood } from '../_shared/nutrition.ts';
+import { cacheOwner, factsFromFdc, hasNoCalories, needsLookup, nutritionKey, pickFood, searchTermFor, type Facts, type FdcFoodDetail, type FdcSearchFood } from '../_shared/nutrition.ts';
 
 // Nutrition facts for a recipe's ingredients, from USDA FoodData Central.
 //   { recipe_id } -> { facts: Facts[] }   (one per ingredient that needs a lookup)
@@ -51,9 +51,12 @@ serve(async (body, req) => {
   if (!Number.isInteger(recipeId) || recipeId <= 0) throw new AppError('Unknown recipe.', 400);
   await claimRequest(db, RATE_LIMIT);
 
-  const { data: recipe, error } = await db.from('recipes').select('ingredients').eq('id', recipeId).maybeSingle();
+  // Read as the caller: a household's own recipe is only found by that household.
+  const { data: recipe, error } = await db.from('recipes').select('ingredients, owner_id').eq('id', recipeId).maybeSingle();
   if (error) throw new AppError("Couldn't load the recipe. Try again.", 502);
   if (!recipe) throw new AppError('Unknown recipe.', 404);
+  /** Whose recipe this is: cache rows it creates are private to them (null: a catalog recipe, shared). */
+  const requester = (recipe.owner_id as string | null) ?? null;
 
   const names = new Map<string, string>();
   for (const ing of (recipe.ingredients ?? []) as Array<{ name_us?: string; name?: string }>) {
@@ -63,10 +66,19 @@ serve(async (body, req) => {
   if (!names.size) return { facts: [] };
 
   const admin = serviceClient();
-  const { data: cached, error: cacheError } = await admin.from('ingredient_nutrition').select(`${COLUMNS}, checked_at`).in('key', [...names.keys()]);
+  const { data: cached, error: cacheError } = await admin.from('ingredient_nutrition').select(`${COLUMNS}, checked_at, owner_id`).in('key', [...names.keys()]);
   if (cacheError) {
     console.error('[nutrition] cache read failed:', cacheError);
     throw new AppError('Nutrition is not set up on the server.', 500);
+  }
+  // Rows another household owns that this recipe needs too become shared (see cacheOwner).
+  const owners = new Map((cached ?? []).map(row => [row.key as string, (row.owner_id as string | null) ?? null]));
+  const toShare = [...owners].filter(([, owner]) => owner !== null && owner !== requester).map(([key]) => key);
+  if (toShare.length) {
+    const { error: shareError } = await admin.from('ingredient_nutrition').update({ owner_id: null }).in('key', toShare);
+    // Not fatal: this request gets its answer either way; the household reads it through here.
+    if (shareError) console.error('[nutrition] sharing rows failed:', shareError);
+    for (const key of toShare) owners.set(key, null);
   }
   // Unmatched rows, and matched rows saved without portions, are looked up again after a
   // while (USDA adds data), or as soon as the matching has improved since they were saved.
@@ -84,7 +96,11 @@ serve(async (body, req) => {
         if (result.status === 'fulfilled') found.push(result.value); else failed++;
       }
     }
-    const keep = found.filter(f => f.cache).map(f => ({ ...f.facts, checked_at: new Date().toISOString() }));
+    const keep = found.filter(f => f.cache).map(f => ({
+      ...f.facts,
+      checked_at: new Date().toISOString(),
+      owner_id: cacheOwner(owners.has(f.facts.key) ? owners.get(f.facts.key) : undefined, requester),
+    }));
     if (keep.length) {
       const { error: saveError } = await admin.from('ingredient_nutrition').upsert(keep, { onConflict: 'key' });
       // The answer is still good for this request; it will be looked up again next time.
@@ -92,6 +108,6 @@ serve(async (body, req) => {
     }
     console.log(`[nutrition] recipe ${recipeId}: looked up ${found.length}, matched ${found.filter(f => f.facts.matched).length}, failed ${failed}`);
   }
-  const facts = [...known.values()].map(({ checked_at: _checked, ...row }) => row as unknown as Facts).concat(found.map(f => f.facts));
+  const facts = [...known.values()].map(({ checked_at: _checked, owner_id: _owner, ...row }) => row as unknown as Facts).concat(found.map(f => f.facts));
   return { facts };
 });
