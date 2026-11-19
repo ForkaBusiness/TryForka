@@ -189,6 +189,8 @@ export function CookingMode({ id }: { id: number }) {
   // "Missing something?" opened on one ingredient, or null to pick.
   const [missingStart, setMissingStart] = useState<number | null>(null);
   const openMissing = (index: number | null) => { setMissingStart(index); setSheet('missing'); };
+  // One stable close: a sheet re-runs its focus handling whenever onClose changes.
+  const closeSheet = useCallback(() => setSheet(null), []);
   // Ingredients ticked off while prepping, and the step this visit picked up at.
   const [checked, setChecked] = useState<ReadonlySet<number>>(() => new Set());
   const [resumedAt, setResumedAt] = useState<number | null>(null);
@@ -484,16 +486,16 @@ export function CookingMode({ id }: { id: number }) {
         scale={servings / baseServings}
         units={prefs.units}
         prefs={prefs}
-        onClose={() => setSheet(null)}
+        onClose={closeSheet}
       />
-      <VariationsSheet open={sheet === 'variations'} recipeId={recipe.id} servings={servings} units={prefs.units} prefs={prefs} onClose={() => setSheet(null)} />
-      <TextSizeSheet open={sheet === 'text'} value={textSize} onChange={setTextSize} onClose={() => setSheet(null)} />
+      <VariationsSheet open={sheet === 'variations'} recipeId={recipe.id} servings={servings} units={prefs.units} prefs={prefs} onClose={closeSheet} />
+      <TextSizeSheet open={sheet === 'text'} value={textSize} onChange={setTextSize} onClose={closeSheet} />
       <StepsSheet
         open={sheet === 'steps'}
         steps={recipe.steps.map((_, i) => stepText(i))}
         current={step}
         onPick={i => { setStep(i); setSheet(null); }}
-        onClose={() => setSheet(null)}
+        onClose={closeSheet}
       />
       <IngredientsSheet
         open={sheet === 'ingredients'}
@@ -503,7 +505,7 @@ export function CookingMode({ id }: { id: number }) {
         onToggle={toggleChecked}
         onMissing={openMissing}
         onClear={() => setChecked(new Set())}
-        onClose={() => setSheet(null)}
+        onClose={closeSheet}
       />
     </div>
   );
