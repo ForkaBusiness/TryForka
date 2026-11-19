@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Type, X } from 'lucide-react';
 import { useHandsFree, type HandShape, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
 import { fitToBox } from '../lib/handFit';
@@ -8,6 +8,8 @@ import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
 import { keepScreenOn, markWakeTipSeen, wakeTipSeen, type WakeLockApi } from '../lib/wakeLock';
+import { cookScale, loadTextSize, saveTextSize, type TextSizeId } from '../lib/cookText';
+import { TextSizeSheet, ToolButton, useSystemTextScale } from '../components/cooking/CookTools';
 import { HiddenRecipe } from '../components/AllergyReminder';
 import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip, cx } from '../components/ds';
 
@@ -167,6 +169,11 @@ export function CookingMode({ id }: { id: number }) {
   const [introOpen, setIntroOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [wakeTip, dismissWakeTip] = useWakeLock();
+  // Text size: the cook's choice on this device, times the device's own setting.
+  const [textSize, setTextSizeState] = useState<TextSizeId>(() => loadTextSize(safeStorage()));
+  const setTextSize = (v: TextSizeId) => { setTextSizeState(v); saveTextSize(safeStorage(), v); };
+  const systemScale = useSystemTextScale();
+  const [sheet, setSheet] = useState<'text' | null>(null);
 
   useEffect(() => {
     getRecipe(id, prefs).then(r => { setBlockedBy(r?.blockedBy ?? null); setRecipe(r?.recipe ?? null); }).catch(() => setRecipe(null));
@@ -234,6 +241,8 @@ export function CookingMode({ id }: { id: number }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (finished || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // A sheet is open: its own buttons get the keys.
+      if (sheet || introOpen) return;
       // Space on a focused button presses that button instead.
       if (e.key === ' ' && e.target instanceof HTMLButtonElement) return;
       if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
@@ -241,7 +250,10 @@ export function CookingMode({ id }: { id: number }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [next, prev, finished]);
+  }, [next, prev, finished, sheet, introOpen]);
+
+  // A new step starts at the top, so large text never leaves the cook mid-paragraph.
+  useEffect(() => { window.scrollTo(0, 0); }, [step]);
 
   if (blockedBy) return <HiddenRecipe blockedBy={blockedBy} onBack={back} />;
   if (recipe === undefined) {
@@ -282,12 +294,12 @@ export function CookingMode({ id }: { id: number }) {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-cream">
+    <div className="flex min-h-dvh flex-col bg-cream" style={{ '--cook-scale': cookScale(textSize, systemScale) } as React.CSSProperties}>
       <header className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-10">
         <div className="flex items-center gap-3">
           <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
           <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</p>
-          <ToggleChip selected={handsFree} onToggle={toggleHandsFree}>Hands-free</ToggleChip>
+          <ToggleChip size="lg" selected={handsFree} onToggle={toggleHandsFree}>Hands-free</ToggleChip>
         </div>
         {handsFree && (
           <HandsFreePanel
@@ -308,11 +320,14 @@ export function CookingMode({ id }: { id: number }) {
         <div className="mt-4">
           <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />
         </div>
+        <div className="mt-4 flex gap-2">
+          <ToolButton icon={Type} label="Text size" onClick={() => setSheet('text')} />
+        </div>
       </header>
 
       <div className="mx-auto w-full max-w-column flex-1 px-gutter pt-8 pb-6 md:pt-12">
         <p className="label" aria-live="polite">Step {step + 1} of {total}</p>
-        <p className="mt-4 text-step font-medium text-ink md:text-step-lg">
+        <p className="cook-step mt-4 font-medium text-ink">
           {prefs.units === 'metric' ? current.text_metric : current.text_us}
         </p>
         {current.timers.length > 0 && (
@@ -344,6 +359,7 @@ export function CookingMode({ id }: { id: number }) {
       >
         <p className="text-body text-ink">{HANDS_FREE_PROMISE}</p>
       </BottomSheet>
+      <TextSizeSheet open={sheet === 'text'} value={textSize} onChange={setTextSize} onClose={() => setSheet(null)} />
     </div>
   );
 }

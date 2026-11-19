@@ -29,9 +29,11 @@ export interface ToggleChipProps {
   children: React.ReactNode;
   /** Single-choice chips (filters) use radio semantics instead of pressed buttons. */
   role?: 'radio';
+  /** lg is a 48px target, for screens used at arm's length (cooking mode). */
+  size?: 'md' | 'lg';
 }
 
-export function ToggleChip({ selected, onToggle, children, role }: ToggleChipProps) {
+export function ToggleChip({ selected, onToggle, children, role, size = 'md' }: ToggleChipProps) {
   return (
     <button
       type="button"
@@ -40,7 +42,8 @@ export function ToggleChip({ selected, onToggle, children, role }: ToggleChipPro
       aria-checked={role ? selected : undefined}
       onClick={onToggle}
       className={cx(
-        'inline-flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-body font-medium whitespace-nowrap transition-[transform,background-color,border-color] duration-150 ease-spring active:scale-98',
+        'inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-body font-medium whitespace-nowrap transition-[transform,background-color,border-color] duration-150 ease-spring active:scale-98',
+        size === 'lg' ? 'h-12' : 'h-10',
         selected ? 'border-green bg-green-soft text-green' : 'border-line bg-surface text-ink hover:border-ink-muted',
       )}
     >

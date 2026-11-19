@@ -296,6 +296,24 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Cooking mode's text, scaled by --cook-scale: the cook's text size times the device's
+     (CookingMode sets it; lib/cookText). The step reads from an arm's length away. */
+  .cook-step {
+    font-size: calc(var(--text-step) * var(--cook-scale, 1));
+    line-height: calc(var(--text-step--line-height) * var(--cook-scale, 1));
+  }
+  @media (min-width: 48rem) {
+    .cook-step {
+      font-size: calc(var(--text-step-lg) * var(--cook-scale, 1));
+      line-height: calc(var(--text-step-lg--line-height) * var(--cook-scale, 1));
+    }
+  }
+  /* Amounts and names beside the step grow with it, a little less. */
+  .cook-detail {
+    font-size: calc(var(--text-body) * (1 + (var(--cook-scale, 1) - 1) * 0.75));
+    line-height: calc(var(--text-body--line-height) * (1 + (var(--cook-scale, 1) - 1) * 0.75));
+  }
+
   /* Horizontal strips scroll without a visible bar. */
   .no-scrollbar {
     scrollbar-width: none;
