@@ -150,10 +150,11 @@ const DRIED_HERB = new RegExp(`^dried\\s+(${HERB})(?:\\s+leaf)?$`);
 function entryFor(names: string[]): Entry | null {
   for (const raw of names) {
     const n = normalizeIngredient(raw);
-    if (/\bbuttermilk\b/.test(n)) return BUTTERMILK;
+    // The ingredient itself, not a product named after it ("buttermilk biscuits").
+    if (/^(?:(?:low fat|lowfat|full fat|cultured)\s+)?buttermilk$/.test(n)) return BUTTERMILK;
     if (/^(?:(?:large|medium|small|extra large|free range|whole|organic|beaten|room temperature)\s+)*egg$/.test(n)) return EGG;
     if (/^(?:(?:unsalted|salted|softened|melted|cold|chilled|cubed|room temperature)\s+)*butter$/.test(n)) return BUTTER;
-    if (/\bsour cream\b/.test(n)) return SOUR_CREAM;
+    if (/^(?:(?:light|low fat|full fat|reduced fat)\s+)?sour cream$/.test(n)) return SOUR_CREAM;
     if (/^(?:dry\s+|crisp\s+)?white wine$|^wine$/.test(n)) return WHITE_WINE;
     if (/^(?:dry\s+|full bodied\s+)?red wine$/.test(n)) return RED_WINE;
     const dried = n.match(DRIED_HERB);
@@ -216,7 +217,8 @@ export function safeHelp<T>(items: readonly T[], prefs: FoodPrefs, parts: (item:
     const { uses, text } = parts(item);
     const names = [...uses, ...text].map(s => s.trim()).filter(Boolean);
     const allergens = [...new Set(names.flatMap(ingredientAllergens))];
-    const { diets } = classifyRecipe({ name: '', category: '', ingredientNames: uses });
+    // Diets read every word too: a swap that says "chicken stock" isn't vegetarian, whatever it lists.
+    const { diets } = classifyRecipe({ name: '', category: '', ingredientNames: names });
     return check({ name: '', ingredient_names: names, allergens, diets }).allowed;
   });
 }

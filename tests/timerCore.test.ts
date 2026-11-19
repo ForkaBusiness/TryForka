@@ -2,7 +2,7 @@
 // show as finished on return; several run at once, each labeled with its step.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addMinute, createTimer, formatClock, pause, remainingMs, resume, settle, timerAction, timerDetail, type Timer } from '../src/lib/timerCore.ts';
+import { addMinute, createTimer, findTimer, formatClock, pause, remainingMs, resume, settle, timerAction, timerDetail, type Timer } from '../src/lib/timerCore.ts';
 
 const T0 = 1_800_000_000_000;
 const MIN = 60_000;
@@ -54,6 +54,15 @@ test('timers: a paused timer does not run down while locked', () => {
   assert.equal(remainingMs(list[0], T0 + 60 * MIN), 8 * MIN);
   t = resume(list[0], T0 + 60 * MIN);
   assert.equal(remainingMs(t, T0 + 61 * MIN), 7 * MIN);
+});
+
+test('timers: a chip finds its own step\'s timer, even when two steps say the same', () => {
+  const step2 = createTimer({ label: 'Cook 5 min', seconds: 300, recipeId: 7, recipeTitle: 'Soup', step: 2 }, T0, 's2');
+  assert.equal(findTimer([step2], 7, 'Cook 5 min', 2)?.id, 's2');
+  assert.equal(findTimer([step2], 7, 'Cook 5 min', 5), undefined, 'step 5 starts its own');
+  assert.equal(findTimer([step2], 8, 'Cook 5 min', 2), undefined, 'another recipe');
+  const old = { ...step2, step: null };
+  assert.equal(findTimer([old], 7, 'Cook 5 min', 5)?.id, 's2', 'a timer saved before steps were kept still shows');
 });
 
 test('timers: never more time left than the timer is long (a clock read a moment early)', () => {

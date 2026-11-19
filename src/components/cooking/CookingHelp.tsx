@@ -154,14 +154,17 @@ export function VariationsSheet({ open, recipeId, servings, units, prefs, onClos
 }) {
   const [state, setState] = useState<VariationState>({ status: 'loading' });
   const request = useRef(0);
+  const asked = useRef(false);
   const load = () => {
+    asked.current = true;
     const id = ++request.current;
     setState({ status: 'loading' });
     void askVariations({ recipeId, servings, units, prefs }).then(r => { if (id === request.current) setState(r); });
   };
-  // Asked each time it opens: the household chose to.
+  // Asked the first time it opens, and kept for this visit: closing and opening it again
+  // (even while it's still looking) doesn't ask again or count again. A failure asks again.
   useEffect(() => {
-    if (open) load(); else request.current++;
+    if (open && (!asked.current || state.status === 'failed')) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening
   }, [open]);
 

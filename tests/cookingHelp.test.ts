@@ -45,7 +45,7 @@ test('table: fresh herbs to dried, and back', () => {
 });
 
 test('table: only what it covers (the model answers the rest)', () => {
-  for (const name of ['Peanut butter', 'Butternut squash', 'Eggplant', 'Egg noodles', 'Egg yolks', 'Red wine vinegar', 'Ground coriander', 'Saffron', 'Cream'])
+  for (const name of ['Buttermilk biscuits', 'Sour cream and onion chips', 'Peanut butter', 'Butternut squash', 'Eggplant', 'Egg noodles', 'Egg yolks', 'Red wine vinegar', 'Ground coriander', 'Saffron', 'Cream'])
     assert.equal(tableSwaps(ing(name, 1, 'cup'), 1, 'us'), null, name);
   assert.equal(tableSwaps(ing('Buttermilk', 1, 'cup'), 1, 'us')?.missing, 'buttermilk', 'buttermilk is not butter');
 });
@@ -83,6 +83,9 @@ test('allergy filter: model answers mentioning an allergen anywhere are dropped'
   const safe = safeSwaps(fromModel, { allergies: ['tree_nut', 'sesame', 'fish'], skip_ingredients: [] }).map(s => s.use);
   assert.deepEqual(safe, ['Use 1 cup coconut milk']);
   assert.equal(safeSwaps(fromModel, NONE).length, 5);
+  // Diets read the words too: meat the model didn't list is still caught.
+  const vegetarian = { diet: 'vegetarian', allergies: [], skip_ingredients: [] };
+  assert.deepEqual(safeSwaps([{ use: 'Use 1 cup chicken stock', how: 'Same amount.', uses: ['stock'] }, { use: 'Use 1 cup vegetable stock', how: 'Same amount.', uses: ['stock'] }], vegetarian).map(s => s.use), ['Use 1 cup vegetable stock']);
 });
 
 test('allergy filter: variations', () => {
@@ -96,6 +99,8 @@ test('allergy filter: variations', () => {
   assert.deepEqual(titles({ allergies: ['dairy', 'peanut'], skip_ingredients: [] }), ['Smoky paprika', 'With bacon']);
   assert.deepEqual(titles({ diet: 'vegetarian', allergies: [], skip_ingredients: [] }), ['Spinach and feta', 'Smoky paprika', 'Peanut crunch']);
   assert.deepEqual(titles({ allergies: [], skip_ingredients: ['pork'] }), ['Spinach and feta', 'Smoky paprika', 'Peanut crunch']);
+  const sneaky: Variation = { title: 'Smoky', summary: 'Smoky.', changes: ['Fry 4 slices bacon.'], adds: ['paprika'], removes: [] };
+  assert.deepEqual(safeVariations([sneaky], { diet: 'vegetarian', allergies: [], skip_ingredients: [] }), []);
 });
 
 test('model text: no em dashes or emoji', () => {

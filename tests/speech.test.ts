@@ -43,6 +43,11 @@ test('spoken amounts: ranges, counts, temperatures and times in step text', () =
   assert.equal(speakable('Cut into 2-inch pieces.'), 'Cut into two inch pieces.');
   assert.equal(speakable('Cook them in 2 batches in a pan.'), 'Cook them in two batches in a pan.');
   assert.equal(speakable('Roll out to 5 mm thick.'), 'Roll out to five millimeters thick.');
+  assert.equal(speakable('Cut into 1/2-inch pieces.'), 'Cut into half inch pieces.');
+  assert.equal(speakable('Roll to 1/4" thick.'), 'Roll to a quarter inch thick.');
+  assert.equal(speakable('Use a 9x13 pan.'), 'Use a nine by thirteen pan.');
+  assert.equal(speakable('Add 1 c. flour and 2 tbsp. sugar.'), 'Add one cup flour and two tablespoons sugar.');
+  assert.equal(speakable('Stir in 2 tbsp.'), 'Stir in two tablespoons.');
 });
 
 test('step script: number, text, then the amounts it needs', () => {

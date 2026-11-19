@@ -101,3 +101,11 @@ export function timerDetail(t: Timer): string {
   if (t.range) return where ? `${where} · ${t.range}` : t.range;
   return where;
 }
+
+/**
+ * The running/paused/done timer for this chip, if any (so a chip shows its state): same
+ * recipe, label and step, so two steps that both say "cook 5 min" each have their own.
+ */
+export function findTimer(list: Timer[], recipeId: number | null, label: string, step?: number | null): Timer | undefined {
+  return list.find(t => t.recipeId === recipeId && t.label === label && (step == null || t.step == null || t.step === step));
+}

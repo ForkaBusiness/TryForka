@@ -25,7 +25,7 @@ function useNow(active: boolean): number {
  */
 export function TimerChip({ timer, recipeId, recipeTitle, step, size = 'md' }: { timer: StepTimer; recipeId: number; recipeTitle: string; step?: number; size?: 'md' | 'lg' }) {
   const timers = useTimers();
-  const existing = findTimer(timers, recipeId, timer.label);
+  const existing = findTimer(timers, recipeId, timer.label, step);
   const now = useNow(!!existing && existing.endAt !== null);
   const base = cx(
     'inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border font-semibold transition-[transform,background-color,border-color] duration-150 ease-spring active:scale-98',

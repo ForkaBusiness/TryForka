@@ -11,7 +11,7 @@ import type { NewTimer, Timer } from './timerCore';
 // A finished timer stays until it is dismissed.
 
 export type { Timer };
-export { formatClock, remainingMs, timerAction, timerDetail } from './timerCore';
+export { findTimer, formatClock, remainingMs, timerAction, timerDetail } from './timerCore';
 
 const KEY = 'forka_timers_v1';
 const ASKED_KEY = 'forka_timer_notifications_asked';
@@ -156,9 +156,4 @@ export function addMinute(id: string) {
 /** Stops and removes a timer (cancel, or dismiss once it's done). */
 export function removeTimer(id: string) {
   commit(timers.filter(t => t.id !== id));
-}
-
-/** The running/paused/done timer for this label in this recipe, if any (so a chip shows its state). */
-export function findTimer(list: Timer[], recipeId: number | null, label: string): Timer | undefined {
-  return list.find(t => t.recipeId === recipeId && t.label === label);
 }

@@ -40,7 +40,10 @@ const UNITS: Array<[RegExp, string, string]> = [
 ];
 const UNIT_WORDS = String.raw`fl\.?\s?oz|fluid ounces?|cups?|c|tbsps?|tbs|tbl|tblsp|T|Tbsp|tablespoons?|tsps?|t|teaspoons?|oz|ounces?|lbs?|pounds?|g|gr|grams?|kgs?|kilos?|kilograms?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|qts?|quarts?|pts?|pints?|mins?|minutes?|hrs?|hours?|secs?|seconds?|cm|centimet(?:er|re)s?|mm|millimet(?:er|re)s?|inch|inches`;
 const NUM = String.raw`\d+\s+\d\/\d|\d+\/\d+|\d*\s?[½⅓⅔¼¾⅛⅜⅝⅞]|\d+(?:\.\d+)?`;
-const AMOUNT = new RegExp(String.raw`(?<![\w/.])(${NUM})(?:\s*(?:-|–|to)\s*(${NUM}))?(?:\s*(${UNIT_WORDS})(?![\w]))?`, 'g');
+// A unit abbreviation's own period ("1 c. flour") is dropped when the sentence goes on.
+const AMOUNT = new RegExp(String.raw`(?<![\w/.])(${NUM})(?:\s*(?:-|–|to)\s*(${NUM}))?(?:\s*(${UNIT_WORDS})(?![\w])(?:\.(?=\s+[a-z]))?)?`, 'g');
+// "1/2-inch", "1/4\"", "2 inch": an amount in inches, said whole.
+const INCHES = new RegExp(String.raw`(?<![\w/.])(${NUM})\s*(?:"|”|-inch\b|-in\b)`, 'g');
 
 const article = (word: string) => (/^[aeiou]/i.test(word) ? 'an' : 'a');
 
@@ -94,7 +97,9 @@ export function speakable(text: string): string {
     // Temperatures: "425°F", "200 °C", "180C".
     .replace(/(\d{2,3})\s*(?:°|º|˚|degrees?)\s*([CF])\b/g, (_, n, u) => `${n} degrees ${u === 'F' ? 'Fahrenheit' : 'Celsius'}`)
     .replace(/(\d{3})([CF])\b/g, (_, n, u) => `${n} degrees ${u === 'F' ? 'Fahrenheit' : 'Celsius'}`)
-    .replace(/(\d+)\s*(?:"|”|-inch\b)/g, (_, n) => `${numberWord(Number(n))} inch`)
+    // Pan sizes: "9x13" -> "9 by 13".
+    .replace(/(\d+)\s*[x×]\s*(\d+)/g, '$1 by $2')
+    .replace(INCHES, (_, n: string) => `${sayNumber(n).words} inch`)
     .replace(AMOUNT, (m, lo: string, hi: string | undefined, unit: string | undefined) => {
       // Leave years, times of day and long numbers alone.
       if (!unit && !hi && /^\d{3,}$/.test(lo.trim())) return m;
