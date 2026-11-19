@@ -50,7 +50,7 @@ export function StepsSheet({ open, steps, current, onPick, onClose }: {
 }
 
 /** The ingredients this step uses, with their amounts, under the step. */
-export function StepIngredients({ items, servings }: { items: CookIngredient[]; servings: number }) {
+export function StepIngredients({ items, servings, onMissing }: { items: CookIngredient[]; servings: number; onMissing: () => void }) {
   if (!items.length) return null;
   return (
     <section aria-label="Ingredients for this step" className="mt-8">
@@ -63,14 +63,15 @@ export function StepIngredients({ items, servings }: { items: CookIngredient[]; 
           </li>
         ))}
       </ul>
+      <Button variant="ghost" className="mt-2 -ml-2" onClick={onMissing}>Missing something?</Button>
     </section>
   );
 }
 
 /** Every ingredient, to tick off while prepping. */
-export function IngredientsSheet({ open, items, checked, servings, onToggle, onClear, onClose }: {
+export function IngredientsSheet({ open, items, checked, servings, onToggle, onMissing, onClear, onClose }: {
   open: boolean; items: CookIngredient[]; checked: ReadonlySet<number>; servings: number;
-  onToggle: (index: number, checked: boolean) => void; onClear: () => void; onClose: () => void;
+  onToggle: (index: number, checked: boolean) => void; onMissing: (index: number) => void; onClear: () => void; onClose: () => void;
 }) {
   const ready = items.filter(i => checked.has(i.index)).length;
   return (
@@ -105,6 +106,7 @@ export function IngredientsSheet({ open, items, checked, servings, onToggle, onC
                   </span>
                 }
               />
+              <Button variant="ghost" className="shrink-0 px-3" aria-label={`Missing? Swaps for ${ing.name}`} onClick={() => onMissing(ing.index)}>Missing?</Button>
             </li>
           );
         })}

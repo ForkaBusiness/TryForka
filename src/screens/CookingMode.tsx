@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ListChecks, Type, Volume2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ListChecks, Shuffle, Type, Volume2, X } from 'lucide-react';
 import { useHandsFree, type HandShape, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
 import { fitToBox } from '../lib/handFit';
@@ -15,6 +15,7 @@ import { useReadAloud } from '../lib/useReadAloud';
 import { stepScript } from '../lib/speech';
 import { useSystemTextScale } from '../lib/useSystemTextScale';
 import { IngredientsSheet, StepIngredients, StepsSheet, type CookIngredient } from '../components/cooking/StepNav';
+import { MissingSheet, VariationsSheet } from '../components/cooking/CookingHelp';
 import { stepIngredients } from '../lib/stepIngredients';
 import { clearSession, loadSession, saveSession } from '../lib/cookSession';
 import { BASE_SERVINGS, servingsFor } from '../lib/nutrition';
@@ -184,7 +185,10 @@ export function CookingMode({ id }: { id: number }) {
   const [textSize, setTextSizeState] = useState<TextSizeId>(() => loadTextSize(safeStorage()));
   const setTextSize = (v: TextSizeId) => { setTextSizeState(v); saveTextSize(safeStorage(), v); };
   const systemScale = useSystemTextScale();
-  const [sheet, setSheet] = useState<'text' | 'steps' | 'ingredients' | null>(null);
+  const [sheet, setSheet] = useState<'text' | 'steps' | 'ingredients' | 'missing' | 'variations' | null>(null);
+  // "Missing something?" opened on one ingredient, or null to pick.
+  const [missingStart, setMissingStart] = useState<number | null>(null);
+  const openMissing = (index: number | null) => { setMissingStart(index); setSheet('missing'); };
   // Ingredients ticked off while prepping, and the step this visit picked up at.
   const [checked, setChecked] = useState<ReadonlySet<number>>(() => new Set());
   const [resumedAt, setResumedAt] = useState<number | null>(null);
@@ -404,6 +408,7 @@ export function CookingMode({ id }: { id: number }) {
           <ToolButton icon={ListChecks} label="Ingredients" detail={`${ingredients.filter(i => checked.has(i.index)).length}/${ingredients.length}`} onClick={() => setSheet('ingredients')} />
           <ToolButton icon={Type} label="Text size" onClick={() => setSheet('text')} />
           {speech.available && <ToolButton icon={Volume2} label="Read aloud" pressed={reading} onClick={toggleReading} />}
+          <ToolButton icon={Shuffle} label="Make it different" onClick={() => setSheet('variations')} />
         </div>
         {reading && (
           <ReadAloudBar
@@ -442,7 +447,7 @@ export function CookingMode({ id }: { id: number }) {
             {current.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} step={step + 1} size="lg" />)}
           </div>
         )}
-        <StepIngredients items={usedHere} servings={servings} />
+        <StepIngredients items={usedHere} servings={servings} onMissing={() => openMissing(null)} />
         {error && <p role="alert" className="mt-6 text-body text-terracotta-deep">{error}</p>}
         {timerCount > 0 && <div aria-hidden style={{ height: timerCount * 62 + 24 }} />}
       </div>
@@ -468,6 +473,20 @@ export function CookingMode({ id }: { id: number }) {
       >
         <p className="text-body text-ink">{HANDS_FREE_PROMISE}</p>
       </BottomSheet>
+      <MissingSheet
+        open={sheet === 'missing'}
+        start={missingStart}
+        ingredients={ingredients}
+        raw={recipe.ingredients}
+        inStep={usedHere.map(i => i.index)}
+        recipeId={recipe.id}
+        servings={servings}
+        scale={servings / baseServings}
+        units={prefs.units}
+        prefs={prefs}
+        onClose={() => setSheet(null)}
+      />
+      <VariationsSheet open={sheet === 'variations'} recipeId={recipe.id} servings={servings} units={prefs.units} prefs={prefs} onClose={() => setSheet(null)} />
       <TextSizeSheet open={sheet === 'text'} value={textSize} onChange={setTextSize} onClose={() => setSheet(null)} />
       <StepsSheet
         open={sheet === 'steps'}
@@ -482,6 +501,7 @@ export function CookingMode({ id }: { id: number }) {
         checked={checked}
         servings={servings}
         onToggle={toggleChecked}
+        onMissing={openMissing}
         onClear={() => setChecked(new Set())}
         onClose={() => setSheet(null)}
       />

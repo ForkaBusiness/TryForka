@@ -7,6 +7,8 @@ export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, x-client-info',
+  // The app reads how long a limit lasts (a daily cap vs "too many at once").
+  'Access-Control-Expose-Headers': 'Retry-After',
 };
 
 export function json(obj: unknown, status: number, headers: Record<string, string> = {}): Response {

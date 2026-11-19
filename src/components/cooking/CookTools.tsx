@@ -23,7 +23,7 @@ export function ToolButton({ icon: Icon, label, onClick, pressed, detail }: {
       )}
     >
       <Icon size={20} strokeWidth={1.75} aria-hidden className="shrink-0" />
-      <span className="max-w-full truncate">
+      <span className="line-clamp-2 max-w-full text-center leading-tight">
         {label}
         {detail && <span className="tabular font-medium text-ink-muted"> {detail}</span>}
       </span>
