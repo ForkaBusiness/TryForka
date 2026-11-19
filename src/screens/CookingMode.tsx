@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Type, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ListChecks, Type, X } from 'lucide-react';
 import { useHandsFree, type HandShape, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
 import { fitToBox } from '../lib/handFit';
@@ -9,7 +9,13 @@ import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
 import { keepScreenOn, markWakeTipSeen, wakeTipSeen, type WakeLockApi } from '../lib/wakeLock';
 import { cookScale, loadTextSize, saveTextSize, type TextSizeId } from '../lib/cookText';
-import { TextSizeSheet, ToolButton, useSystemTextScale } from '../components/cooking/CookTools';
+import { TextSizeSheet, ToolButton } from '../components/cooking/CookTools';
+import { useSystemTextScale } from '../lib/useSystemTextScale';
+import { IngredientsSheet, StepIngredients, StepsSheet, type CookIngredient } from '../components/cooking/StepNav';
+import { stepIngredients } from '../lib/stepIngredients';
+import { clearSession, loadSession, saveSession } from '../lib/cookSession';
+import { BASE_SERVINGS, servingsFor } from '../lib/nutrition';
+import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts';
 import { HiddenRecipe } from '../components/AllergyReminder';
 import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip, cx } from '../components/ds';
 
@@ -173,14 +179,59 @@ export function CookingMode({ id }: { id: number }) {
   const [textSize, setTextSizeState] = useState<TextSizeId>(() => loadTextSize(safeStorage()));
   const setTextSize = (v: TextSizeId) => { setTextSizeState(v); saveTextSize(safeStorage(), v); };
   const systemScale = useSystemTextScale();
-  const [sheet, setSheet] = useState<'text' | null>(null);
+  const [sheet, setSheet] = useState<'text' | 'steps' | 'ingredients' | null>(null);
+  // Ingredients ticked off while prepping, and the step this visit picked up at.
+  const [checked, setChecked] = useState<ReadonlySet<number>>(() => new Set());
+  const [resumedAt, setResumedAt] = useState<number | null>(null);
+  const restored = useRef(false);
 
   useEffect(() => {
-    getRecipe(id, prefs).then(r => { setBlockedBy(r?.blockedBy ?? null); setRecipe(r?.recipe ?? null); }).catch(() => setRecipe(null));
+    getRecipe(id, prefs).then(r => {
+      setBlockedBy(r?.blockedBy ?? null);
+      const loaded = r?.recipe ?? null;
+      // Back to the step (and ticks) from earlier in this cooking session, once per visit.
+      if (loaded && !restored.current) {
+        restored.current = true;
+        const session = loadSession(safeStorage(), id, loaded.steps.length);
+        if (session) {
+          setStep(session.step);
+          setChecked(new Set(session.checked.filter(i => i < loaded.ingredients.length)));
+          if (session.step > 0) setResumedAt(session.step);
+        }
+      }
+      setRecipe(loaded);
+    }).catch(() => setRecipe(null));
   }, [id, prefs]);
 
   const total = recipe?.steps.length ?? 0;
   const last = step >= total - 1;
+
+  // Remembered as the cook goes, so leaving and coming back picks up here.
+  useEffect(() => {
+    if (!recipe || finished || !total) return;
+    saveSession(safeStorage(), id, { step, checked: [...checked] });
+  }, [recipe, finished, total, id, step, checked]);
+
+  // Amounts for the servings chosen on the recipe page (a catalog recipe serves BASE_SERVINGS as written).
+  const baseServings = recipe?.servings ?? BASE_SERVINGS;
+  const servings = servingsFor(id, baseServings);
+  const ingredients: CookIngredient[] = useMemo(() => (recipe?.ingredients ?? []).map((ing, index) => ({
+    index,
+    name: ing.name_us || ing.name,
+    amount: formatMeasure({ quantity: ing.quantity, quantityMax: ing.quantity_max, unit: ing.unit, note: ing.note }, prefs.units, servings / baseServings),
+  })), [recipe, prefs.units, servings, baseServings]);
+  const stepText = (i: number) => (recipe ? (prefs.units === 'metric' ? recipe.steps[i].text_metric : recipe.steps[i].text_us) : '');
+  const usedHere = useMemo(() => {
+    if (!recipe || !total) return [];
+    const s = recipe.steps[Math.min(step, total - 1)];
+    return stepIngredients(`${s.text_us} ${s.text_metric}`, recipe.ingredients).map(i => ingredients[i]);
+  }, [recipe, total, step, ingredients]);
+  const toggleChecked = (index: number, on: boolean) => setChecked(prevSet => {
+    const nextSet = new Set(prevSet);
+    if (on) nextSet.add(index); else nextSet.delete(index);
+    return nextSet;
+  });
+  const startOver = () => { setStep(0); setChecked(new Set()); setResumedAt(null); };
 
   const finishing = useRef(false);
   const finish = useCallback(async () => {
@@ -190,6 +241,7 @@ export function CookingMode({ id }: { id: number }) {
     setError(null);
     try {
       await markCooked(userId, id);
+      clearSession(safeStorage(), id);
       setFinished(true);
     } catch {
       setError("Couldn't mark it as cooked. Check your connection and try again.");
@@ -321,20 +373,34 @@ export function CookingMode({ id }: { id: number }) {
           <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />
         </div>
         <div className="mt-4 flex gap-2">
+          <ToolButton icon={ListChecks} label="Ingredients" detail={`${ingredients.filter(i => checked.has(i.index)).length}/${ingredients.length}`} onClick={() => setSheet('ingredients')} />
           <ToolButton icon={Type} label="Text size" onClick={() => setSheet('text')} />
         </div>
+        {resumedAt !== null && step === resumedAt && (
+          <div role="status" className="mt-3 flex items-center gap-3 rounded-card border border-line bg-surface py-2 pr-2 pl-4">
+            <p className="min-w-0 flex-1 text-small text-ink">Picked up where you left off, at step {resumedAt + 1}.</p>
+            <Button variant="secondary" className="shrink-0" onClick={startOver}>Start over</Button>
+          </div>
+        )}
       </header>
 
-      <div className="mx-auto w-full max-w-column flex-1 px-gutter pt-8 pb-6 md:pt-12">
-        <p className="label" aria-live="polite">Step {step + 1} of {total}</p>
-        <p className="cook-step mt-4 font-medium text-ink">
-          {prefs.units === 'metric' ? current.text_metric : current.text_us}
-        </p>
+      <div className="mx-auto w-full max-w-column flex-1 px-gutter pt-6 pb-6 md:pt-10">
+        <button
+          type="button"
+          onClick={() => setSheet('steps')}
+          className="-ml-3 inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full px-3 hover:bg-green-soft"
+        >
+          <span className="label text-ink!" aria-live="polite">Step {step + 1} of {total}</span>
+          <span className="sr-only">. Show all steps</span>
+          <ChevronDown size={18} strokeWidth={2} aria-hidden className="text-ink-muted" />
+        </button>
+        <p className="cook-step mt-3 font-medium text-ink">{stepText(step)}</p>
         {current.timers.length > 0 && (
           <div className="mt-8 flex flex-wrap gap-3">
             {current.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} size="lg" />)}
           </div>
         )}
+        <StepIngredients items={usedHere} servings={servings} />
         {error && <p role="alert" className="mt-6 text-body text-terracotta-deep">{error}</p>}
       </div>
 
@@ -360,6 +426,22 @@ export function CookingMode({ id }: { id: number }) {
         <p className="text-body text-ink">{HANDS_FREE_PROMISE}</p>
       </BottomSheet>
       <TextSizeSheet open={sheet === 'text'} value={textSize} onChange={setTextSize} onClose={() => setSheet(null)} />
+      <StepsSheet
+        open={sheet === 'steps'}
+        steps={recipe.steps.map((_, i) => stepText(i))}
+        current={step}
+        onPick={i => { setStep(i); setSheet(null); }}
+        onClose={() => setSheet(null)}
+      />
+      <IngredientsSheet
+        open={sheet === 'ingredients'}
+        items={ingredients}
+        checked={checked}
+        servings={servings}
+        onToggle={toggleChecked}
+        onClear={() => setChecked(new Set())}
+        onClose={() => setSheet(null)}
+      />
     </div>
   );
 }
