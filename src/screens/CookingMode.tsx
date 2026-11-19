@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ListChecks, Type, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ListChecks, Type, Volume2, X } from 'lucide-react';
 import { useHandsFree, type HandShape, type HandsFreeStatus } from '../lib/useHandsFree';
 import { handsFreeSupport } from '../lib/handTracking';
 import { fitToBox } from '../lib/handFit';
@@ -10,7 +10,9 @@ import { TimerChip } from '../components/Timers';
 import { useTimers } from '../lib/timers';
 import { keepScreenOn, markWakeTipSeen, wakeTipSeen, type WakeLockApi } from '../lib/wakeLock';
 import { cookScale, loadTextSize, saveTextSize, type TextSizeId } from '../lib/cookText';
-import { TextSizeSheet, ToolButton } from '../components/cooking/CookTools';
+import { ReadAloudBar, TextSizeSheet, ToolButton } from '../components/cooking/CookTools';
+import { useReadAloud } from '../lib/useReadAloud';
+import { stepScript } from '../lib/speech';
 import { useSystemTextScale } from '../lib/useSystemTextScale';
 import { IngredientsSheet, StepIngredients, StepsSheet, type CookIngredient } from '../components/cooking/StepNav';
 import { stepIngredients } from '../lib/stepIngredients';
@@ -236,6 +238,29 @@ export function CookingMode({ id }: { id: number }) {
   });
   const startOver = () => { setStep(0); setChecked(new Set()); setResumedAt(null); };
 
+  // Read aloud: off each time cooking mode opens. Once on, every step is read when it
+  // shows, whatever moved it (a tap, a key, a wave, the step list).
+  const speech = useReadAloud();
+  const [reading, setReading] = useState(false);
+  const script = recipe && total ? stepScript(step + 1, total, stepText(step), usedHere) : '';
+  const spokenStep = useRef<number | null>(null);
+  const toggleReading = () => {
+    if (reading) { setReading(false); speech.stop(); spokenStep.current = null; return; }
+    setReading(true);
+    // Spoken from inside the tap: iOS only starts speech that a tap asked for.
+    speech.speak(script);
+    spokenStep.current = step;
+  };
+  const { speak, stop: stopSpeech, failed: speechFailed } = speech;
+  useEffect(() => {
+    if (!reading || finished || !script || spokenStep.current === step) return;
+    spokenStep.current = step;
+    speak(script);
+  }, [reading, finished, step, script, speak]);
+  // A device that can't speak turns it off and says so; the step stays on screen.
+  useEffect(() => { if (speechFailed) { setReading(false); spokenStep.current = null; } }, [speechFailed]);
+  useEffect(() => { if (finished) stopSpeech(); }, [finished, stopSpeech]);
+
   const finishing = useRef(false);
   const finish = useCallback(async () => {
     if (finishing.current) return; // already saving
@@ -378,7 +403,21 @@ export function CookingMode({ id }: { id: number }) {
         <div className="mt-4 flex gap-2">
           <ToolButton icon={ListChecks} label="Ingredients" detail={`${ingredients.filter(i => checked.has(i.index)).length}/${ingredients.length}`} onClick={() => setSheet('ingredients')} />
           <ToolButton icon={Type} label="Text size" onClick={() => setSheet('text')} />
+          {speech.available && <ToolButton icon={Volume2} label="Read aloud" pressed={reading} onClick={toggleReading} />}
         </div>
+        {reading && (
+          <ReadAloudBar
+            state={speech.state}
+            step={step + 1}
+            onRepeat={() => { spokenStep.current = step; speak(script); }}
+            onPause={speech.pause}
+            onResume={speech.resume}
+            onStop={stopSpeech}
+          />
+        )}
+        {speechFailed && !reading && (
+          <p role="alert" className="mt-3 text-small text-terracotta-deep">Read aloud stopped because this device couldn't speak the step. The steps are all still here to read.</p>
+        )}
         {resumedAt !== null && step === resumedAt && (
           <div role="status" className="mt-3 flex items-center gap-3 rounded-card border border-line bg-surface py-2 pr-2 pl-4">
             <p className="min-w-0 flex-1 text-small text-ink">Picked up where you left off, at step {resumedAt + 1}.</p>

@@ -1,5 +1,6 @@
-import { Check, type LucideIcon } from 'lucide-react';
-import { BottomSheet, Button, cx } from '../ds';
+import { Check, Pause, Play, RotateCcw, Square, type LucideIcon } from 'lucide-react';
+import { BottomSheet, Button, IconButton, cx } from '../ds';
+import type { ReadAloudState } from '../../lib/useReadAloud';
 import { TEXT_SIZES, type TextSizeId } from '../../lib/cookText';
 
 // The row of tools under the step progress in cooking mode, and the text size sheet.
@@ -65,5 +66,21 @@ export function TextSizeSheet({ open, value, onChange, onClose }: { open: boolea
       </div>
       <p className="mt-4 text-small text-ink-muted">Steps also follow your device's text size. Saved on this device.</p>
     </BottomSheet>
+  );
+}
+
+/** While read aloud is on: what it's doing, and repeat, pause or resume, and stop. */
+export function ReadAloudBar({ state, step, onRepeat, onPause, onResume, onStop }: {
+  state: ReadAloudState; step: number; onRepeat: () => void; onPause: () => void; onResume: () => void; onStop: () => void;
+}) {
+  const text = state === 'speaking' ? `Reading step ${step} aloud` : state === 'paused' ? `Paused on step ${step}` : 'Each step is read as you go';
+  return (
+    <div role="group" aria-label="Read aloud" className="mt-3 flex min-h-14 items-center gap-1 rounded-card border border-line bg-surface py-1 pr-1.5 pl-4">
+      <p aria-live="polite" className="min-w-0 flex-1 truncate text-small font-semibold text-ink">{text}</p>
+      <IconButton icon={RotateCcw} label="Repeat this step" onClick={onRepeat} />
+      {state === 'speaking' && <IconButton icon={Pause} label="Pause reading" onClick={onPause} />}
+      {state === 'paused' && <IconButton icon={Play} label="Resume reading" onClick={onResume} />}
+      {state !== 'idle' && <IconButton icon={Square} label="Stop reading" onClick={onStop} />}
+    </div>
   );
 }
