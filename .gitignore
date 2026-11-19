@@ -50,3 +50,6 @@ deno.lock
 test-imports/truth.local.json
 test-imports/*.webp
 test-imports/images.jpeg
+
+# The production QA account's sign-in (qa@tryforka.com). Stays on this machine.
+.qa-account.local

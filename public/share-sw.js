@@ -1,5 +1,6 @@
-// Forka's service worker does one thing: receive what Android shares into the installed
-// app (the manifest's share_target posts to /app/share-target). It keeps the shared link,
+// Forka's service worker does two things: receive what Android shares into the installed
+// app (the manifest's share_target posts to /app/share-target), and bring the app forward
+// when a cooking timer's notification is tapped (src/lib/timers.ts shows it). It keeps the shared link,
 // text and photos in a cache for a moment and opens the app, which picks them up
 // (src/lib/incomingShare.ts). Every other request goes to the network as usual: nothing is
 // cached for offline use, and nothing is sent anywhere.
@@ -33,5 +34,16 @@ self.addEventListener('fetch', event => {
       return Response.redirect('/app/?share=failed', 303);
     }
     return Response.redirect(`/app/?share=${id}`, 303);
+  })());
+});
+
+// A finished timer's notification: tapping it brings the open app forward, or opens it.
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const app = windows.find(w => new URL(w.url).pathname.startsWith('/app'));
+    if (app) return app.focus();
+    return self.clients.openWindow('/app/');
   })());
 });

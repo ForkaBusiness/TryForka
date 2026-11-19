@@ -96,7 +96,7 @@ export function Checkbox({ checked, onChange, label, ariaLabel, className }: Che
           {checked && <Check size={15} strokeWidth={3} />}
         </span>
       </span>
-      {label && <span className="text-body text-ink">{label}</span>}
+      {label && <span className="min-w-0 flex-1 text-body text-ink">{label}</span>}
     </label>
   );
 }
