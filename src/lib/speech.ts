@@ -36,14 +36,15 @@ const UNITS: Array<[RegExp, string, string]> = [
   [/^(?:secs?|seconds?)$/i, 'second', 'seconds'],
   [/^(?:cm|centimet(?:er|re)s?)$/i, 'centimeter', 'centimeters'],
   [/^(?:mm|millimet(?:er|re)s?)$/i, 'millimeter', 'millimeters'],
-  [/^(?:inch|inches)$/i, 'inch', 'inches'],
+  // Said "inch" either way: "two inch cubes", "roll it two inch thick" reads naturally.
+  [/^(?:inch|inches)$/i, 'inch', 'inch'],
 ];
 const UNIT_WORDS = String.raw`fl\.?\s?oz|fluid ounces?|cups?|c|tbsps?|tbs|tbl|tblsp|T|Tbsp|tablespoons?|tsps?|t|teaspoons?|oz|ounces?|lbs?|pounds?|g|gr|grams?|kgs?|kilos?|kilograms?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|qts?|quarts?|pts?|pints?|mins?|minutes?|hrs?|hours?|secs?|seconds?|cm|centimet(?:er|re)s?|mm|millimet(?:er|re)s?|inch|inches`;
 const NUM = String.raw`\d+\s+\d\/\d|\d+\/\d+|\d*\s?[½⅓⅔¼¾⅛⅜⅝⅞]|\d+(?:\.\d+)?`;
 // A unit abbreviation's own period ("1 c. flour") is dropped when the sentence goes on.
 const AMOUNT = new RegExp(String.raw`(?<![\w/.])(${NUM})(?:\s*(?:-|–|to)\s*(${NUM}))?(?:\s*(${UNIT_WORDS})(?![\w])(?:\.(?=\s+[a-z]))?)?`, 'g');
 // "1/2-inch", "1/4\"", "2 inch": an amount in inches, said whole.
-const INCHES = new RegExp(String.raw`(?<![\w/.])(${NUM})\s*(?:"|”|-inch\b|-in\b)`, 'g');
+const INCHES = new RegExp(String.raw`(?<![\w/.])(${NUM})\s*(?:"|”|-inch\b|-in\b\.?)`, 'g');
 
 const article = (word: string) => (/^[aeiou]/i.test(word) ? 'an' : 'a');
 
@@ -98,7 +99,8 @@ export function speakable(text: string): string {
     .replace(/(\d{2,3})\s*(?:°|º|˚|degrees?)\s*([CF])\b/g, (_, n, u) => `${n} degrees ${u === 'F' ? 'Fahrenheit' : 'Celsius'}`)
     .replace(/(\d{3})([CF])\b/g, (_, n, u) => `${n} degrees ${u === 'F' ? 'Fahrenheit' : 'Celsius'}`)
     // Pan sizes: "9x13" -> "9 by 13".
-    .replace(/(\d+)\s*[x×]\s*(\d+)/g, '$1 by $2')
+    // (Not counted cans: "2 x 400g tins".)
+    .replace(/(\d+)\s*[x×]\s*(\d+)(?![\d.]|\s*(?:g|kg|ml|l|oz|lb|grams?)\b)/g, '$1 by $2')
     .replace(INCHES, (_, n: string) => `${sayNumber(n).words} inch`)
     .replace(AMOUNT, (m, lo: string, hi: string | undefined, unit: string | undefined) => {
       // Leave years, times of day and long numbers alone.
