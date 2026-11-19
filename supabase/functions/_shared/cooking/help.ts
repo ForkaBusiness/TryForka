@@ -152,7 +152,7 @@ function entryFor(names: string[]): Entry | null {
     const n = normalizeIngredient(raw);
     // The ingredient itself, not a product named after it ("buttermilk biscuits").
     if (/^(?:(?:low fat|lowfat|full fat|cultured)\s+)?buttermilk$/.test(n)) return BUTTERMILK;
-    if (/^(?:(?:large|medium|small|extra large|free range|whole|organic|beaten|room temperature)\s+)*egg$/.test(n)) return EGG;
+    if (/^(?:(?:large|medium|small|extra large|free range|whole|organic|beaten|room temperature)\s+)*egg(?:\s+(?:lightly\s+)?(?:beaten|whisked))?$/.test(n)) return EGG;
     if (/^(?:(?:unsalted|salted|softened|melted|cold|chilled|cubed|room temperature)\s+)*butter$/.test(n)) return BUTTER;
     if (/^(?:(?:light|low fat|full fat|reduced fat)\s+)?sour cream$/.test(n)) return SOUR_CREAM;
     if (/^(?:dry\s+|crisp\s+)?white wine$|^wine$/.test(n)) return WHITE_WINE;
@@ -228,6 +228,18 @@ export const safeSwaps = (swaps: readonly Swap[], prefs: FoodPrefs) =>
 
 export const safeVariations = (variations: readonly Variation[], prefs: FoodPrefs) =>
   safeHelp(variations, prefs, v => ({ uses: v.adds, text: [v.title, v.summary, ...v.changes] }));
+
+/**
+ * A title in the app's sentence case: "Bright Lemon Herb" -> "Bright lemon herb". Only when
+ * every word is capitalized (a Title Case answer); names in a sentence-case title stay.
+ */
+export function sentenceCase(title: string): string {
+  const minor = /^(and|or|of|in|with|the|a|an|to|for|on|over)$/i;
+  const words = title.split(' ');
+  const main = words.filter(w => !minor.test(w));
+  if (main.length < 2 || !main.every(w => /^[A-Z]/.test(w))) return title;
+  return words.map((w, i) => (i === 0 ? w : w.toLowerCase())).join(' ');
+}
 
 /** Model text in the app's voice: no em dashes, no emoji. */
 export function tidyText(text: string): string {

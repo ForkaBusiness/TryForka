@@ -2,7 +2,7 @@
 // family's allergy filter on every suggestion, from the table or the model.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { safeSwaps, safeVariations, tableSwaps, tidyText, type Swap, type Variation } from '../supabase/functions/_shared/cooking/help.ts';
+import { safeSwaps, safeVariations, sentenceCase, tableSwaps, tidyText, type Swap, type Variation } from '../supabase/functions/_shared/cooking/help.ts';
 
 const ing = (name: string, quantity: number | null, unit = '') => ({ name, name_us: name, quantity, unit });
 const uses = (r: ReturnType<typeof tableSwaps>) => r?.swaps.map(s => s.use) ?? [];
@@ -25,6 +25,7 @@ test('table: buttermilk, with amounts for what the recipe needs', () => {
 test('table: eggs, butter, sour cream, wine', () => {
   assert.equal(uses(tableSwaps(ing('Eggs', 2), 1, 'us'))[0], 'Use 2 tbsp ground flaxseed plus 6 tbsp water');
   assert.equal(uses(tableSwaps(ing('Large eggs', 3), 1, 'us'))[2], 'Use 3/4 cup unsweetened applesauce');
+  assert.equal(tableSwaps(ing('Free-range egg, beaten', 1), 1, 'us')?.missing, 'eggs');
   assert.equal(uses(tableSwaps(ing('Butter', 4, 'tbsp'), 1, 'us'))[0], 'Use 3 tbsp olive oil');
   assert.equal(uses(tableSwaps(ing('Unsalted butter', 1, 'stick'), 1, 'us'))[0], 'Use 6 tbsp olive oil');
   assert.equal(uses(tableSwaps(ing('Butter', 1, 'cup'), 1, 'us'))[0], 'Use 3/4 cup olive oil');
@@ -106,4 +107,8 @@ test('allergy filter: variations', () => {
 test('model text: no em dashes or emoji', () => {
   assert.equal(tidyText('Use yogurt — it works 🙂'), 'Use yogurt, it works');
   assert.equal(tidyText('Bake 25–30 minutes'), 'Bake 25-30 minutes');
+  assert.equal(sentenceCase('Bright Lemon Herb'), 'Bright lemon herb');
+  assert.equal(sentenceCase('Chicken in Place of Tuna'), 'Chicken in place of tuna');
+  assert.equal(sentenceCase('Lemon and spinach'), 'Lemon and spinach');
+  assert.equal(sentenceCase('Smoky paprika'), 'Smoky paprika');
 });

@@ -4,7 +4,7 @@ import { familyFood } from '../_shared/household.ts';
 import { BASE_SERVINGS } from '../_shared/nutrition.ts';
 import { allergyLabel, recipeChecker, type FoodPrefs } from '../_shared/catalog/recipeFilter.ts';
 import { formatMeasure, type UnitSystem } from '../_shared/catalog/units.ts';
-import { safeSwaps, safeVariations, tableSwaps, tidyText, type Swap, type Variation } from '../_shared/cooking/help.ts';
+import { safeSwaps, safeVariations, sentenceCase, tableSwaps, tidyText, type Swap, type Variation } from '../_shared/cooking/help.ts';
 
 // Cooking help, from cooking mode.
 //   { mode: "substitute", recipe_id, ingredient, servings?, units? } -> { missing, swaps: Swap[], source: "table" | "model" }
@@ -59,12 +59,12 @@ const VOICE = 'Write plainly, like a calm friend in the kitchen: short sentences
 const SUBSTITUTE_SYSTEM = `You help a home cook who is partway through a recipe and has just found they are missing one ingredient.
 Suggest up to 3 substitutions that work in this specific recipe, best first, using things most home kitchens have. Give the amount for what the recipe needs, in the units given. If the dish works without it, one option can be to leave it out and what to do instead.
 ${VOICE}
-For each: "use" says what to use with its amount, starting with "Use" (or "Leave it out"); "how" says in one or two sentences how to use it and what changes; "uses" lists each ingredient it uses, by name.`;
+For each: "use" says what to use with its amount, starting with "Use" (or "Leave it out"), in under 15 words; "how" says in one or two short sentences how to use it and what changes; "uses" lists each ingredient it uses by name only, no amounts ("milk", "lemon juice").`;
 
 const VARIATIONS_SYSTEM = `You suggest a few ways a family can make a recipe a little different tonight, without starting over.
 Suggest 3 variations: different flavors, a swap of the main vegetable or protein, a topping or side folded in. Prefer ingredients the family has on hand or likes, when they fit. Keep the method the same as far as possible.
 ${VOICE}
-For each: a short "title" (2 to 5 words), a one-sentence "summary", "changes" as 2 to 4 short instructions with amounts, "adds" listing each ingredient it adds by name, and "removes" listing each ingredient it leaves out.`;
+For each: a "title" of 2 to 5 words in sentence case ("Lemon and spinach"), a one-sentence "summary", "changes" as 2 or 3 instructions with amounts, each under 25 words, "adds" listing each ingredient it adds by name only, no amounts ("spinach", "lemon"), and "removes" listing each ingredient it leaves out, by name only.`;
 
 const SWAPS_SCHEMA = {
   type: 'object',
@@ -159,7 +159,8 @@ serve(async (body, req) => {
       system: SUBSTITUTE_SYSTEM,
       content: `${recipeText(recipe, scale, units, servings)}\n\nMissing: ${line(ing, scale, units)}\nUnits: ${units === 'metric' ? 'metric' : 'US cups and spoons'}\n${onHand.length ? `They have on hand: ${onHand.join(', ')}.\n` : ''}${avoidText(prefs)}`,
       schema: SWAPS_SCHEMA,
-      maxTokens: 700,
+      // Room for the model's reasoning as well as the answer (both count toward the limit).
+      maxTokens: 4000,
       effort: 'low',
       model: MODEL,
       label: 'cooking-help substitute',
@@ -176,13 +177,13 @@ serve(async (body, req) => {
     system: VARIATIONS_SYSTEM,
     content: `${recipeText(recipe, scale, units, servings)}\n\nUnits: ${units === 'metric' ? 'metric' : 'US cups and spoons'}\n${onHand.length ? `They have on hand and want to use up: ${onHand.join(', ')}.\n` : ''}${likes.length ? `The family likes: ${likes.join(', ')}.\n` : ''}${avoidText(prefs)}`,
     schema: VARIATIONS_SCHEMA,
-    maxTokens: 1400,
+    maxTokens: 6000,
     effort: 'low',
     model: MODEL,
     label: 'cooking-help variations',
   });
   const variations = safeVariations((out.variations ?? []).slice(0, 5).map(v => ({
-    title: tidyText(v.title ?? '').slice(0, 60),
+    title: sentenceCase(tidyText(v.title ?? '')).slice(0, 60),
     summary: tidyText(v.summary ?? '').slice(0, 240),
     changes: words(v.changes, 5),
     adds: words(v.adds, 10),
