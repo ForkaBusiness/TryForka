@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Pause, Play, Plus, Timer as TimerIcon, X } from 'lucide-react';
 import { cx } from './ds';
 import {
-  addMinute, findTimer, formatClock, pauseTimer, remainingMs, removeTimer, resumeTimer, startTimer, useTimers, type Timer,
+  addMinute, findTimer, formatClock, pauseTimer, remainingMs, removeTimer, resumeTimer, startTimer, timerAction, timerDetail, useTimers, type Timer,
 } from '../lib/timers';
 import type { StepTimer } from '../lib/catalog';
+import { formatRange } from '../../supabase/functions/_shared/catalog/steps.ts';
 
 /** Re-renders every half second while anything is counting down. */
 function useNow(active: boolean): number {
@@ -18,10 +19,11 @@ function useNow(active: boolean): number {
 }
 
 /**
- * Inline chip for one duration in a step ("Soak 30 min"). Tapping starts a timer;
- * while it runs the chip shows the time left and opens nothing else (the tray has controls).
+ * Inline chip for one duration in a step ("Soak 30 min", "Bake 25-30 min"). Tapping starts
+ * a timer (a range counts its lower end); while it runs the chip shows the time left and
+ * pauses or resumes it, and once done a tap dismisses it. The tray has the other controls.
  */
-export function TimerChip({ timer, recipeId, recipeTitle, size = 'md' }: { timer: StepTimer; recipeId: number; recipeTitle: string; size?: 'md' | 'lg' }) {
+export function TimerChip({ timer, recipeId, recipeTitle, step, size = 'md' }: { timer: StepTimer; recipeId: number; recipeTitle: string; step?: number; size?: 'md' | 'lg' }) {
   const timers = useTimers();
   const existing = findTimer(timers, recipeId, timer.label);
   const now = useNow(!!existing && existing.endAt !== null);
@@ -38,7 +40,7 @@ export function TimerChip({ timer, recipeId, recipeTitle, size = 'md' }: { timer
         className={cx(base, existing.done ? 'border-green bg-green text-surface' : 'border-ink bg-ink text-surface')}
       >
         <TimerIcon size={size === 'lg' ? 20 : 16} strokeWidth={1.75} aria-hidden />
-        <span>{timer.label.replace(/\s[\d-]+\s?(min|hr|sec).*$/, '')}</span>
+        <span>{timerAction(timer.label)}</span>
         <span className="tabular font-bold">{existing.done ? 'Done' : formatClock(remainingMs(existing, now))}</span>
       </button>
     );
@@ -46,7 +48,10 @@ export function TimerChip({ timer, recipeId, recipeTitle, size = 'md' }: { timer
   return (
     <button
       type="button"
-      onClick={() => startTimer({ label: timer.label, seconds: timer.seconds, recipeId, recipeTitle })}
+      onClick={() => startTimer({
+        label: timer.label, seconds: timer.seconds, recipeId, recipeTitle, step: step ?? null,
+        range: timer.maxSeconds && timer.maxSeconds > timer.seconds ? formatRange(timer.seconds, timer.maxSeconds) : null,
+      })}
       aria-label={`Start timer: ${timer.label}`}
       className={cx(base, 'border-line bg-surface text-ink shadow-sm hover:border-ink-muted')}
     >
@@ -61,24 +66,24 @@ function TrayRow({ t, now }: { t: Timer; now: number }) {
   return (
     <li className="flex items-center gap-2 py-2">
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-small font-semibold text-surface">{t.label}</span>
-        <span className="block truncate text-caption text-surface/80">{t.recipeTitle}</span>
+        <span className="block truncate text-small font-semibold text-surface">{timerAction(t.label)}</span>
+        <span className={cx('block text-caption text-surface/80', t.done && t.range ? '' : 'truncate')}>{timerDetail(t)}</span>
       </span>
       <span className={cx('tabular text-heading font-bold', t.done ? 'rounded-full bg-surface px-3 text-green' : 'text-surface')} aria-live={t.done ? 'assertive' : 'off'}>
         {t.done ? 'Done' : formatClock(remainingMs(t, now))}
       </span>
       {!t.done && (
         <button type="button" onClick={() => (paused ? resumeTimer(t.id) : pauseTimer(t.id))} aria-label={`${paused ? 'Resume' : 'Pause'} ${t.label}`}
-          className="flex size-9 cursor-pointer items-center justify-center rounded-full text-surface hover:bg-surface/10">
+          className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-surface hover:bg-surface/10">
           {paused ? <Play size={18} strokeWidth={1.75} aria-hidden /> : <Pause size={18} strokeWidth={1.75} aria-hidden />}
         </button>
       )}
       <button type="button" onClick={() => addMinute(t.id)} aria-label={`Add 1 minute to ${t.label}`}
-        className="flex h-9 cursor-pointer items-center gap-0.5 rounded-full px-2 text-small font-semibold text-surface hover:bg-surface/10">
+        className="flex h-11 shrink-0 cursor-pointer items-center gap-0.5 rounded-full px-2 text-small font-semibold text-surface hover:bg-surface/10">
         <Plus size={16} strokeWidth={1.75} aria-hidden />1 min
       </button>
       <button type="button" onClick={() => removeTimer(t.id)} aria-label={t.done ? `Dismiss ${t.label}` : `Cancel ${t.label}`}
-        className="flex size-9 cursor-pointer items-center justify-center rounded-full text-surface hover:bg-surface/10">
+        className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-surface hover:bg-surface/10">
         <X size={18} strokeWidth={1.75} aria-hidden />
       </button>
     </li>

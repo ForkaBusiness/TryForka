@@ -7,6 +7,7 @@ import { useApp } from '../app/AppContext';
 import { getRecipe, recipeTitle, type Recipe } from '../lib/catalog';
 import { markCooked } from '../lib/cooked';
 import { TimerChip } from '../components/Timers';
+import { useTimers } from '../lib/timers';
 import { keepScreenOn, markWakeTipSeen, wakeTipSeen, type WakeLockApi } from '../lib/wakeLock';
 import { cookScale, loadTextSize, saveTextSize, type TextSizeId } from '../lib/cookText';
 import { TextSizeSheet, ToolButton } from '../components/cooking/CookTools';
@@ -175,6 +176,8 @@ export function CookingMode({ id }: { id: number }) {
   const [introOpen, setIntroOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [wakeTip, dismissWakeTip] = useWakeLock();
+  // The timer tray floats over the bottom of the screen; the step leaves room for it.
+  const timerCount = useTimers().length;
   // Text size: the cook's choice on this device, times the device's own setting.
   const [textSize, setTextSizeState] = useState<TextSizeId>(() => loadTextSize(safeStorage()));
   const setTextSize = (v: TextSizeId) => { setTextSizeState(v); saveTextSize(safeStorage(), v); };
@@ -397,11 +400,12 @@ export function CookingMode({ id }: { id: number }) {
         <p className="cook-step mt-3 font-medium text-ink">{stepText(step)}</p>
         {current.timers.length > 0 && (
           <div className="mt-8 flex flex-wrap gap-3">
-            {current.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} size="lg" />)}
+            {current.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} step={step + 1} size="lg" />)}
           </div>
         )}
         <StepIngredients items={usedHere} servings={servings} />
         {error && <p role="alert" className="mt-6 text-body text-terracotta-deep">{error}</p>}
+        {timerCount > 0 && <div aria-hidden style={{ height: timerCount * 62 + 24 }} />}
       </div>
 
       <div className="sticky bottom-0 bg-linear-to-t from-cream from-75% to-cream/0">

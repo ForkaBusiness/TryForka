@@ -234,7 +234,7 @@ export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab 
                         <p className="text-body text-ink">{prefs.units === 'metric' ? s.text_metric : s.text_us}</p>
                         {s.timers.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {s.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} />)}
+                            {s.timers.map(t => <TimerChip key={t.label} timer={t} recipeId={recipe.id} recipeTitle={title} step={i + 1} />)}
                           </div>
                         )}
                       </div>
