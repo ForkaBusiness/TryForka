@@ -16,7 +16,8 @@ import { initialSwipeState, mainHand, palmFromLandmarks, stepSwipe, type Swipe }
  */
 export interface HandShape { points: ReadonlyArray<{ x: number; y: number }>; aspect: number }
 
-export type HandsFreeStatus = 'off' | 'starting' | 'on' | 'paused' | 'unsupported' | 'interrupted' | CameraProblem;
+/** 'starting': asking for the camera; 'loading': the camera is on, the hand model is still getting ready. */
+export type HandsFreeStatus = 'off' | 'starting' | 'loading' | 'on' | 'paused' | 'unsupported' | 'interrupted' | CameraProblem;
 
 /** Every frame of the 15 fps camera, at most about 16 a second: plenty to follow a wave, easy on the battery. */
 const FRAME_MS = 60;
@@ -52,11 +53,37 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
-  // The tracker is loaded once per visit to cooking mode and closed on the way out.
-  useEffect(() => () => {
-    void tracker.current?.then(t => t.landmarker.close()).catch(() => {});
-    tracker.current = null;
+  // The tracker is loaded once per visit to cooking mode and closed on the way out. It
+  // starts loading as soon as cooking mode opens (once the step is on screen), so it's
+  // usually ready by the time hands-free is turned on. Only the model loads early: the
+  // camera is never touched until hands-free is on. Skipped when the device asks to save
+  // data; it then loads when hands-free is turned on, as before.
+  const ready = useRef(false);
+  useEffect(() => {
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    let idle: number | null = null;
+    if (handsFreeSupport() === 'ok' && !saveData) {
+      const preload = () => { idle = null; if (!tracker.current) startTracker(); };
+      const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void };
+      idle = w.requestIdleCallback ? w.requestIdleCallback(preload, { timeout: 2500 }) : window.setTimeout(preload, 1200);
+    }
+    return () => {
+      if (idle !== null) {
+        const w = window as Window & { cancelIdleCallback?: (h: number) => void };
+        if (w.cancelIdleCallback) w.cancelIdleCallback(idle); else window.clearTimeout(idle);
+      }
+      void tracker.current?.then(t => t.landmarker.close()).catch(() => {});
+      tracker.current = null;
+      ready.current = false;
+    };
   }, []);
+  /** Starts loading the tracker (once), remembering when it's ready and forgetting a failed one. */
+  function startTracker(prefer?: 'CPU') {
+    const loading = createHandTracker(prefer);
+    tracker.current = loading;
+    loading.then(() => { if (tracker.current === loading) ready.current = true; }, () => { if (tracker.current === loading) tracker.current = null; });
+    return loading;
+  }
 
   useEffect(() => {
     if (!enabled) { setStatus('off'); setHandSeen(false); return; }
@@ -128,8 +155,9 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
       }
       let current: HandTracker;
       try {
-        tracker.current ??= createHandTracker();
-        current = await tracker.current;
+        // The camera is on; if the model is still loading, say so ("Getting ready").
+        if (!ready.current) setStatus('loading');
+        current = await (tracker.current ?? startTracker());
       } catch (err) {
         console.error('[hands-free] could not start the tracker:', err);
         tracker.current = null; // the tracker itself failed: try afresh next time
@@ -170,8 +198,7 @@ export function useHandsFree(enabled: boolean, onSwipe: (swipe: Swipe) => boolea
               fellBack = true;
               console.info('[hands-free] GPU failed while tracking, using the CPU:', err);
               current.landmarker.close();
-              tracker.current = createHandTracker('CPU');
-              tracker.current.then(t => { current = t; if (!cancelled) schedule(); }).catch(() => { tracker.current = null; if (!cancelled) { stopCamera(); setStatus('failed'); } });
+              startTracker('CPU').then(t => { current = t; if (!cancelled) schedule(); }).catch(() => { tracker.current = null; if (!cancelled) { stopCamera(); setStatus('failed'); } });
               return;
             }
             console.error('[hands-free] tracking failed:', err);
