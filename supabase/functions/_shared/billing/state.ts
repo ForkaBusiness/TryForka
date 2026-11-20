@@ -134,7 +134,8 @@ export function effectivePlan(row: Pick<PlanRow, 'plan' | 'founding' | 'pro_unti
 /** What the app shows about the plan. */
 export type BillingView =
   | { kind: 'founding' }
-  | { kind: 'free'; lapsed: boolean }
+  /** owed: past the grace period while Stripe still retries the card (fixed in the portal, not a new checkout). */
+  | { kind: 'free'; lapsed: boolean; owed?: boolean }
   | { kind: 'trialing'; endsAt: string; ending: boolean; cancelled: boolean; interval: Interval | null }
   | { kind: 'active'; renewsAt: string | null; interval: Interval | null }
   | { kind: 'cancelled'; endsAt: string | null; interval: Interval | null }
@@ -144,7 +145,7 @@ export function billingView(row: PlanRow | null | undefined, now: Date): Billing
   if (!row) return { kind: 'free', lapsed: false };
   if (row.founding) return { kind: 'founding' };
   if (effectivePlan(row, now) === 'free') {
-    return { kind: 'free', lapsed: ['ended', 'refunded', 'past_due'].includes(row.billing_status) };
+    return { kind: 'free', lapsed: ['ended', 'refunded', 'past_due'].includes(row.billing_status), owed: row.billing_status === 'past_due' };
   }
   if (row.billing_status === 'trialing' && row.trial_end) {
     const ending = new Date(row.trial_end).getTime() - now.getTime() <= TRIAL_ENDING_DAYS * DAY;

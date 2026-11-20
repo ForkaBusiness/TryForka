@@ -72,7 +72,9 @@ const dateFmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(
 export function planLine(v: BillingView): { title: string; detail: string } {
   switch (v.kind) {
     case 'founding': return { title: 'Founding family', detail: 'Pro is yours for life. Thank you for being here early.' };
-    case 'free': return v.lapsed
+    case 'free': return v.owed
+      ? { title: 'Payment didn\'t go through', detail: 'Pro is paused until your card is updated. Everything you saved is still here.' }
+      : v.lapsed
       ? { title: 'Free', detail: 'Your Pro plan has ended. Everything you saved is still here.' }
       : { title: 'Free', detail: 'Dinners planned around your family, groceries, nutrition and cooking mode.' };
     case 'trialing': return v.cancelled

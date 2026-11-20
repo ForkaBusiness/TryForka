@@ -180,7 +180,7 @@ test('failed payment: Pro for a 7-day grace period, then Free; a working card br
   assert.equal(w.state.row.pro_until, later(GRACE_DAYS).toISOString());
   // After the grace period: Free (nothing deleted; see limits), and the view says it lapsed.
   assert.equal(effectivePlan(w.state.row, later(GRACE_DAYS)), 'free');
-  assert.deepEqual(billingView(w.state.row, later(8)), { kind: 'free', lapsed: true });
+  assert.deepEqual(billingView(w.state.row, later(8)), { kind: 'free', lapsed: true, owed: true });
   // The card is updated and the invoice paid: Pro again.
   w.setSub(w.sub('active'));
   w.state.now = later(9);
@@ -235,7 +235,7 @@ test('cancel: Pro until the period ends, then Free', async () => {
   await processEvent(w.event('customer.subscription.deleted', { id: 'sub_1', customer: 'cus_1' }), w.deps);
   assert.equal(w.state.row.plan, 'free');
   assert.equal(w.state.row.cancel_at_period_end, false);
-  assert.deepEqual(billingView(w.state.row, later(30)), { kind: 'free', lapsed: true });
+  assert.deepEqual(billingView(w.state.row, later(30)), { kind: 'free', lapsed: true, owed: false });
 });
 
 test('cancel from the portal on newer API versions (a cancel date, not the flag): still Pro until that date', async () => {
@@ -385,4 +385,12 @@ test('refund: a refunded charge from an earlier subscription leaves the current 
   await processEvent(w.event('charge.refunded', { id: 'ch_new', customer: 'cus_1', amount: 3999, amount_refunded: 3999 }), w.deps);
   assert.equal(w.state.row.plan, 'free');
   assert.deepEqual(w.state.cancelled, ['sub_2']);
+});
+
+test('past the grace period with the card still being retried: Free, and the way back is updating the card', () => {
+  const now = later(20);
+  const row = { ...FREE_ROW, plan: 'pro', billing_status: 'past_due', pro_until: later(10).toISOString(), stripe_subscription_id: 'sub_1' } as PlanRow;
+  assert.equal(effectivePlan(row, now), 'free');
+  assert.deepEqual(billingView(row, now), { kind: 'free', lapsed: true, owed: true });
+  assert.deepEqual(billingView({ ...row, billing_status: 'ended' }, now), { kind: 'free', lapsed: true, owed: false });
 });

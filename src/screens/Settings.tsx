@@ -109,9 +109,11 @@ export function Settings() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-heading font-semibold text-ink">{plan.title}</p>
-            <p className={billing.view.kind === 'payment_failed' ? 'mt-1 text-body text-terracotta-deep' : 'mt-1 text-body text-ink-muted'}>{plan.detail}</p>
+            <p className={billing.view.kind === 'payment_failed' || (billing.view.kind === 'free' && billing.view.owed) ? 'mt-1 text-body text-terracotta-deep' : 'mt-1 text-body text-ink-muted'}>{plan.detail}</p>
           </div>
-          {known && billing.view.kind === 'free' && <Button className="shrink-0" onClick={() => go({ name: 'pro' })}>See Pro</Button>}
+          {known && billing.view.kind === 'free' && (billing.view.owed
+            ? <Button className="shrink-0" loading={portalBusy} onClick={manage}>Update card</Button>
+            : <Button className="shrink-0" onClick={() => go({ name: 'pro' })}>See Pro</Button>)}
           {known && ['trialing', 'active', 'cancelled', 'payment_failed'].includes(billing.view.kind) && (
             <Button variant={billing.view.kind === 'payment_failed' ? 'primary' : 'secondary'} className="shrink-0" loading={portalBusy} onClick={manage}>
               {billing.view.kind === 'payment_failed' ? 'Update card' : billing.view.kind === 'cancelled' ? 'Renew or manage' : 'Manage plan'}
