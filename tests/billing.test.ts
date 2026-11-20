@@ -6,7 +6,7 @@ import {
   billingView, effectivePlan, FREE_ROW, GRACE_DAYS, signPayload, subscriptionPatch, trialAllowed, verifyStripeSignature,
   type PlanRow, type StripeSubscription,
 } from '../supabase/functions/_shared/billing/state.ts';
-import { processEvent, type StripeEvent, type WebhookDeps } from '../supabase/functions/_shared/billing/webhook.ts';
+import { changedFields, LOCK_MINUTES, processEvent, reconcile, runEvent, type ReconcileDeps, type StripeEvent, type WebhookDeps } from '../supabase/functions/_shared/billing/webhook.ts';
 import { priceText, trialReminderEmail } from '../supabase/functions/_shared/billing/email.ts';
 
 const SECRET = 'whsec_test_secret';
@@ -43,7 +43,7 @@ test('signature: tampering, the wrong secret, old timestamps and missing headers
 function world(row: Partial<PlanRow> = {}) {
   const state = {
     row: { ...FREE_ROW, stripe_customer_id: 'cus_1', ...row } as PlanRow,
-    events: new Set<string>(),
+    events: new Map<string, { status: 'received' | 'processing' | 'processed' | 'failed'; lockedAt: number; event: StripeEvent; error?: string }>(),
     subs: new Map<string, StripeSubscription>(),
     emails: [] as Array<{ to: string; trialEnd: Date; amount: number }>,
     cancelled: [] as string[],
@@ -52,8 +52,21 @@ function world(row: Partial<PlanRow> = {}) {
     updates: 0,
   };
   const deps: WebhookDeps = {
-    claim: async id => { if (state.events.has(id)) return false; state.events.add(id); return true; },
-    release: async id => { state.events.delete(id); },
+    record: async ev => {
+      const had = state.events.get(ev.id);
+      if (had) return had.status === 'processed' ? 'done' : 'unfinished';
+      state.events.set(ev.id, { status: 'received', lockedAt: 0, event: ev });
+      return 'new';
+    },
+    lock: async id => {
+      const e = state.events.get(id);
+      if (!e || e.status === 'processed') return false;
+      if (e.status === 'processing' && state.now.getTime() - e.lockedAt < LOCK_MINUTES * 60_000) return false;
+      e.status = 'processing'; e.lockedAt = state.now.getTime();
+      return true;
+    },
+    finish: async id => { state.events.get(id)!.status = 'processed'; },
+    fail: async (id, error) => { const e = state.events.get(id)!; e.status = 'failed'; e.error = error; },
     findUser: async ({ customer, userId }) => (customer === state.row.stripe_customer_id || userId === 'user_1' ? { userId: 'user_1', row: state.row, email: 'qa@tryforka.com' } : null),
     updatePlan: async (_id, patch) => {
       if (state.failNextUpdate) { state.failNextUpdate = false; throw new Error('database unavailable'); }
@@ -87,7 +100,7 @@ test('idempotency: the same event delivered twice is applied once', async () => 
   assert.equal(w.state.updates, updates, 'no second write');
 });
 
-test('idempotency: a failure releases the event, so Stripe\'s retry applies it', async () => {
+test('durability: a failure leaves the event unfinished, so Stripe\'s retry applies it', async () => {
   const w = world();
   w.setSub(w.sub('active'));
   const e = w.event('customer.subscription.updated', { id: 'sub_1', customer: 'cus_1' });
@@ -403,4 +416,96 @@ test('billing switch: off, everyone has everything; on, the plan as Stripe left 
   assert.equal(appPlan({ ...free, billing_on: true }, T0), 'free');
   assert.equal(appPlan({ ...free, billing_on: true, founding: true }, T0), 'pro');
   assert.equal(appPlan({ ...free, billing_on: true, plan: 'pro', billing_status: 'active' }, T0), 'pro');
+});
+
+
+// ── Durability and reconciliation ─────────────────────────────────────────
+
+test('durability: an event is stored before it is handled, and marked processed only after', async () => {
+  const w = world();
+  w.setSub(w.sub('active'));
+  const e = w.event('customer.subscription.updated', { id: 'sub_1', customer: 'cus_1' });
+  let seen: string | undefined;
+  const update = w.deps.updatePlan;
+  w.deps.updatePlan = async (id, patch) => { seen = w.state.events.get(e.id)?.status; await update(id, patch); };
+  await processEvent(e, w.deps);
+  assert.equal(seen, 'processing', 'stored and locked while the plan is written');
+  assert.equal(w.state.events.get(e.id)!.status, 'processed');
+  assert.deepEqual(w.state.events.get(e.id)!.event, e, 'the full event is kept');
+});
+
+test('durability: killed mid-event, the event is processed again once its lock is old', async () => {
+  const w = world();
+  w.setSub(w.sub('active'));
+  const e = w.event('checkout.session.completed', { mode: 'subscription', subscription: 'sub_1', customer: 'cus_1', client_reference_id: 'user_1' });
+  // The function dies after taking the event and before writing the plan: no finish, no fail.
+  await w.deps.record(e);
+  assert.equal(await w.deps.lock(e.id), true);
+  assert.equal(w.state.row.plan, 'free');
+  // Stripe retries a minute later: still locked by the dead delivery.
+  w.state.now = new Date(T0.getTime() + 60_000);
+  assert.equal((await processEvent(e, w.deps)).status, 'busy');
+  assert.equal(w.state.row.plan, 'free');
+  // Six minutes on, the lock has expired: processed.
+  w.state.now = new Date(T0.getTime() + 6 * 60_000);
+  assert.equal((await processEvent(e, w.deps)).status, 'processed');
+  assert.equal(w.state.row.plan, 'pro');
+  assert.equal(w.state.events.get(e.id)!.status, 'processed');
+  // And a later duplicate does nothing.
+  assert.equal((await processEvent(e, w.deps)).status, 'duplicate');
+});
+
+function reconcileWorld(row: Partial<PlanRow>) {
+  const w = world(row);
+  const deps: ReconcileDeps = {
+    ...w.deps,
+    unfinishedEvents: async minutes => [...w.state.events.values()]
+      .filter(x => x.status !== 'processed' && (x.status !== 'processing' || w.state.now.getTime() - x.lockedAt >= minutes * 60_000))
+      .map(x => x.event),
+    subscribedRows: async () => (w.state.row.stripe_subscription_id ? [{ userId: 'user_1', row: w.state.row }] : []),
+  };
+  return { ...w, rdeps: deps };
+}
+
+test('reconciliation: a plan that disagrees with Stripe is fixed; one that agrees is left alone', async () => {
+  // The database says active; Stripe says the subscription was cancelled (a missed event).
+  const w = reconcileWorld({ plan: 'pro', billing_status: 'active', stripe_subscription_id: 'sub_1', current_period_end: later(30).toISOString() });
+  w.setSub(w.sub('canceled'));
+  const first = await reconcile(w.rdeps);
+  assert.equal(first.checked, 1);
+  assert.equal(first.fixed, 1);
+  assert.ok(first.details[0].fields!.includes('plan') && first.details[0].fields!.includes('billing_status'));
+  assert.equal(w.state.row.plan, 'free');
+  assert.equal(w.state.row.billing_status, 'ended');
+  const writes = w.state.updates;
+  const second = await reconcile(w.rdeps);
+  assert.equal(second.fixed, 0, 'nothing left to fix');
+  assert.equal(w.state.updates, writes, 'no write when nothing differs');
+});
+
+test('reconciliation: finishes an event a crash left behind, and keeps a running grace period', async () => {
+  const w = reconcileWorld({ plan: 'pro', billing_status: 'past_due', stripe_subscription_id: 'sub_1', pro_until: later(5).toISOString() });
+  w.setSub(w.sub('past_due'));
+  const e = w.event('customer.subscription.trial_will_end', { id: 'sub_1' });
+  w.setSub(w.sub('trialing', { trial_end: s(later(3)) }));
+  await w.deps.record(e);
+  await w.deps.lock(e.id); // the delivery that took it died
+  w.state.now = new Date(T0.getTime() + 15 * 60_000);
+  const report = await reconcile(w.rdeps);
+  assert.equal(report.eventsRedone, 1);
+  assert.equal(w.state.events.get(e.id)!.status, 'processed');
+  assert.equal(w.state.emails.length, 1, 'the reminder the crash lost is sent');
+  // Grace is never restarted by a reconciliation.
+  const g = reconcileWorld({ plan: 'pro', billing_status: 'past_due', stripe_subscription_id: 'sub_1', pro_until: later(5).toISOString() });
+  g.setSub(g.sub('past_due'));
+  g.state.now = later(3);
+  await reconcile(g.rdeps);
+  assert.equal(g.state.row.pro_until, later(5).toISOString());
+});
+
+test('reconciliation: dates written differently but meaning the same moment are not a change', () => {
+  const row = { ...FREE_ROW, current_period_end: '2026-12-04T06:20:23+00:00' } as PlanRow;
+  assert.deepEqual(changedFields(row, { current_period_end: '2026-12-04T06:20:23.000Z' }), []);
+  assert.deepEqual(changedFields(row, { current_period_end: '2026-12-05T06:20:23.000Z' }), ['current_period_end']);
+  void runEvent;
 });

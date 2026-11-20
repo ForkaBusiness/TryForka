@@ -2,8 +2,12 @@
 // database, email), so tests/billing.test.ts runs every path with fakes. The function in
 // supabase/functions/stripe-webhook wires the real ones in.
 //
-// Idempotent: each event id is claimed once (stripe_events); a duplicate delivery does
-// nothing. If handling fails the claim is released so Stripe's retry runs it again.
+// Durable and idempotent: each event is stored (stripe_events, with its payload) before
+// anything is done, then processed from that record under a short lock, and marked
+// processed only once the plan is written. A duplicate of a processed event does nothing.
+// If handling fails, or the function dies mid-event, the record stays unfinished: Stripe's
+// retry, or the daily reconciliation (reconcile below), processes it again. Handling is
+// safe to repeat: subscriptions are read fresh, the reminder is sent once per trial.
 // Order-proof: subscription events never trust the event's copy; the subscription is read
 // fresh from Stripe and the user's row is set from that.
 
@@ -12,10 +16,14 @@ import { customerId, FREE_ROW, LIVE, refundPatch, subscriptionPatch, type PlanRo
 export interface StripeEvent { id: string; type: string; created: number; data: { object: Record<string, unknown> } }
 
 export interface WebhookDeps {
-  /** Records the event id; false if it was already there (a duplicate). */
-  claim(eventId: string, type: string): Promise<boolean>;
-  /** Forgets a claim after a failure, so a retry is processed. */
-  release(eventId: string): Promise<void>;
+  /** Stores the event before anything is done: 'new', 'done' (already processed), or 'unfinished' (stored before, not processed yet). */
+  record(event: StripeEvent): Promise<'new' | 'done' | 'unfinished'>;
+  /** Takes the stored event for processing; false while another delivery holds a lock younger than LOCK_MINUTES. */
+  lock(eventId: string): Promise<boolean>;
+  /** Marks it processed. */
+  finish(eventId: string): Promise<void>;
+  /** Marks it failed, with the error, for a retry. */
+  fail(eventId: string, error: string): Promise<void>;
   /** The user for a Stripe customer (or the user id Stripe carries in metadata). */
   findUser(ref: { customer?: string | null; userId?: string | null }): Promise<{ userId: string; row: PlanRow; email: string | null } | null>;
   /** Writes billing columns for a user (service role). */
@@ -30,7 +38,10 @@ export interface WebhookDeps {
   log?(message: string): void;
 }
 
-export type WebhookResult = { status: 'processed' | 'duplicate' | 'ignored'; detail?: string };
+export type WebhookResult = { status: 'processed' | 'duplicate' | 'ignored' | 'busy'; detail?: string };
+
+/** A lock older than this belongs to a delivery that died: the event may be taken again. */
+export const LOCK_MINUTES = 5;
 
 const str = (v: unknown) => (typeof v === 'string' ? v : v && typeof v === 'object' && 'id' in v ? String((v as { id: unknown }).id) : null);
 
@@ -137,17 +148,82 @@ async function handle(event: StripeEvent, deps: WebhookDeps): Promise<WebhookRes
   }
 }
 
-/** One delivery: claimed once, handled, released on failure so Stripe retries it. */
+/** One delivery from Stripe: stored first, then processed (unless it already was). */
 export async function processEvent(event: StripeEvent, deps: WebhookDeps): Promise<WebhookResult> {
-  if (!(await deps.claim(event.id, event.type))) return { status: 'duplicate' };
+  if ((await deps.record(event)) === 'done') return { status: 'duplicate' };
+  return runEvent(event, deps);
+}
+
+/** Processes a stored event: locked, handled, then marked processed, or failed for a retry. */
+export async function runEvent(event: StripeEvent, deps: WebhookDeps): Promise<WebhookResult> {
+  if (!(await deps.lock(event.id))) return { status: 'busy', detail: 'another delivery is processing it' };
   try {
     const result = await handle(event, deps);
+    await deps.finish(event.id);
     deps.log?.(`[stripe] ${event.type} ${event.id}: ${result.status}${result.detail ? ` (${result.detail})` : ''}`);
     return result;
   } catch (err) {
-    await deps.release(event.id).catch(() => {});
+    await deps.fail(event.id, err instanceof Error ? err.message : String(err)).catch(() => {});
     throw err;
   }
+}
+
+// ── The daily reconciliation ───────────────────────────────────────────────
+
+export interface ReconcileDeps extends WebhookDeps {
+  /** Stored events not processed yet whose last attempt is older than `minutes`. */
+  unfinishedEvents(minutes: number): Promise<StripeEvent[]>;
+  /** Every plan row with a Stripe subscription (founding families excluded). */
+  subscribedRows(): Promise<Array<{ userId: string; row: PlanRow }>>;
+}
+
+export interface ReconcileReport { checked: number; fixed: number; eventsRedone: number; details: Array<{ userId?: string; event?: string; fields?: string[]; error?: string }> }
+
+const sameValue = (a: unknown, b: unknown) => {
+  if (a === b || (a == null && b == null)) return true;
+  if (typeof a === 'string' && typeof b === 'string') {
+    const ta = Date.parse(a), tb = Date.parse(b);
+    if (!Number.isNaN(ta) && !Number.isNaN(tb) && /\d{4}-\d{2}-\d{2}T/.test(a) && /\d{4}-\d{2}-\d{2}T/.test(b)) return ta === tb;
+  }
+  return false;
+};
+
+/** The fields a patch would actually change. */
+export function changedFields(row: PlanRow, patch: Partial<PlanRow>): string[] {
+  return Object.keys(patch).filter(k => !sameValue((row as unknown as Record<string, unknown>)[k], (patch as Record<string, unknown>)[k]));
+}
+
+/**
+ * Finishes events left unfinished (a crash mid-event, a failure), then compares every
+ * subscription with Stripe and writes only what differs. Safe to run any time.
+ */
+export async function reconcile(deps: ReconcileDeps): Promise<ReconcileReport> {
+  const report: ReconcileReport = { checked: 0, fixed: 0, eventsRedone: 0, details: [] };
+  for (const event of await deps.unfinishedEvents(LOCK_MINUTES * 2)) {
+    try {
+      const r = await runEvent(event, deps);
+      if (r.status !== 'busy') { report.eventsRedone++; report.details.push({ event: `${event.type} ${event.id}: ${r.status}` }); }
+    } catch (err) {
+      report.details.push({ event: event.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  for (const { userId, row } of await deps.subscribedRows()) {
+    if (!row.stripe_subscription_id || row.founding) continue;
+    report.checked++;
+    try {
+      let fields: string[] = [];
+      // Writes only what differs; the same rules as the webhook (grace kept, older subscriptions ignored).
+      const writeIfChanged: WebhookDeps['updatePlan'] = async (id, patch) => {
+        fields = changedFields(row, patch);
+        if (fields.length) await deps.updatePlan(id, Object.fromEntries(fields.map(f => [f, (patch as Record<string, unknown>)[f]])) as Partial<PlanRow>);
+      };
+      await applySubscription({ ...deps, updatePlan: writeIfChanged, findUser: async () => ({ userId, row, email: null }) }, row.stripe_subscription_id, { customer: row.stripe_customer_id, userId }, deps.now());
+      if (fields.length) { report.fixed++; report.details.push({ userId, fields }); }
+    } catch (err) {
+      report.details.push({ userId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return report;
 }
 
 export { FREE_ROW };
