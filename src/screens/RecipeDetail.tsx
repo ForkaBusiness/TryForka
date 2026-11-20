@@ -24,6 +24,8 @@ type Tab = 'ingredients' | 'steps';
 
 export function RecipeDetail({ id, initialTab }: { id: number; initialTab?: Tab }) {
   const { prefs, userId, back, go, favorites, toggleFavorite, weekPlan, saveWeek } = useApp();
+  // Cooking mode lives in its own file: fetch it while the recipe is read, so Start cooking is instant.
+  useEffect(() => { void import('./CookingMode').catch(() => {}); }, []);
   const [recipe, setRecipe] = useState<Recipe | null | undefined>(undefined);
   /** Set when the family's settings don't allow this recipe: it isn't shown at all. */
   const [blockedBy, setBlockedBy] = useState<string[] | null>(null);

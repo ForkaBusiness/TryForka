@@ -19,6 +19,17 @@ document.addEventListener('error', e => {
   img.classList.add('broken-image-fallback');
 }, true);
 
+// After a new version is deployed, a screen file from the old one may be gone: load the new
+// version once instead of showing a broken screen (at most once a minute, so it can't loop).
+window.addEventListener('vite:preloadError', event => {
+  let last = 0;
+  try { last = Number(sessionStorage.getItem('forka_reloaded_for_update') ?? 0); } catch { /* reload anyway */ }
+  if (Date.now() - last < 60_000) return;
+  try { sessionStorage.setItem('forka_reloaded_for_update', String(Date.now())); } catch { /* fine */ }
+  event.preventDefault();
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
