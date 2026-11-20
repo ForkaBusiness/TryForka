@@ -53,3 +53,9 @@ test-imports/images.jpeg
 
 # The production QA account's sign-in (qa@tryforka.com). Stays on this machine.
 .qa-account.local
+
+# Stripe sandbox and Resend keys for Phase 4 testing. Stay on this machine.
+.billing.local
+
+# Subagent worktrees
+.claude/worktrees/

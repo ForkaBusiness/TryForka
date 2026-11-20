@@ -34,6 +34,12 @@ import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
 import { RecipeEditor } from './screens/RecipeEditor';
 import { ImportRecipe } from './screens/ImportRecipe';
 import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
+import { billingView, effectivePlan, loadPlanRow, openPortal, readBillingReturn, type BillingReturn, type PlanRow } from './lib/billing';
+import { FREE_ROW } from '../supabase/functions/_shared/billing/state.ts';
+import { UpgradeSheet } from './components/UpgradeSheet';
+import { CheckoutSheet } from './components/CheckoutSheet';
+import { Pro } from './screens/Pro';
+import type { UpgradeReason } from './app/AppContext';
 
 // Dev-only design system reference at /app/styleguide.
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
@@ -87,6 +93,12 @@ function SignedIn({ session }: { session: Session }) {
   const [suggestions, setSuggestions] = useState<{ open: boolean; target: SuggestionsTarget | null }>({ open: false, target: null });
   const [photoOpen, setPhotoOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // Forka Pro: the plan as the Stripe webhook wrote it, the upgrade sheet, and Stripe's return.
+  const [planRow, setPlanRow] = useState<PlanRow>(FREE_ROW);
+  // Until the plan is read, nothing claims Free and no upgrade prompt shows.
+  const [planState, setPlanState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeReason | null>(null);
+  const [billingReturn, setBillingReturn] = useState<BillingReturn>(null);
   const mainRef = useRef<HTMLElement>(null);
   const planRef = useRef<SavedWeekPlan | null | undefined>(undefined);
   planRef.current = weekPlan;
@@ -104,6 +116,8 @@ function SignedIn({ session }: { session: Session }) {
     fetchOnHand(userId).then(o => { if (!cancelled) setOnHand(o); }).catch(() => {});
     fetchProfile(userId).then(p => { if (!cancelled) setProfile({ ...p, full_name: p.full_name || metaName }); }).catch(() => {});
     fetchWeekPlan(userId).then(p => { if (!cancelled) setWeekPlan(p); }).catch(() => { if (!cancelled) setWeekPlan(null); });
+    // Unreadable reads as Free: nothing the household saved depends on it.
+    loadPlanRow(userId).then(r => { if (!cancelled) { setPlanRow(r); setPlanState('ready'); } }).catch(() => { if (!cancelled) setPlanState('failed'); });
     supabase.from('favorites').select('recipe_id, recipe_title, recipe_image').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => {
         if (cancelled) return;
@@ -128,6 +142,21 @@ function SignedIn({ session }: { session: Session }) {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [ready]);
+
+  // Coming back from Stripe (Checkout, the Customer Portal) or from the trial email's link.
+  useEffect(() => {
+    if (!ready) return;
+    const ret = readBillingReturn();
+    if (ret === 'manage') { void openPortal().catch(() => setStack(prev => [...prev, { name: 'settings' }])); return; }
+    if (ret === 'portal_returned') { void loadPlanRow(userId).then(r => { setPlanRow(r); setPlanState('ready'); }).catch(() => {}); return; }
+    if (ret) setBillingReturn(ret);
+  }, [ready, userId]);
+
+  const refreshPlan = useCallback(async () => { const r = await loadPlanRow(userId); setPlanRow(r); setPlanState('ready'); return r; }, [userId]);
+  const billing = useMemo(() => {
+    const now = new Date();
+    return { row: planRow, plan: effectivePlan(planRow, now), view: billingView(planRow, now), status: planState, refresh: refreshPlan, upgrade: (reason: UpgradeReason) => setUpgradeReason(reason) };
+  }, [planRow, planState, refreshPlan]);
 
   // Each screen opens at the top.
   useEffect(() => { mainRef.current?.scrollTo(0, 0); window.scrollTo(0, 0); }, [stack]);
@@ -355,7 +384,8 @@ function SignedIn({ session }: { session: Session }) {
     weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, setPlanReview, undoPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
+    billing,
+  } : null), [billing, session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
   if (prefs === undefined || members === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {
@@ -385,6 +415,7 @@ function SignedIn({ session }: { session: Session }) {
     case 'rate': content = <RateRecipe id={screen.id} />; break;
     case 'collections': content = <Collections id={screen.id} />; break;
     case 'pantry': content = <CookWithWhatYouHave />; break;
+    case 'pro': content = <Pro />; break;
     case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate ?? undefined} note={screen.note} />; break;
     case 'import': content = <ImportRecipe key={`import:${stack.length}`} {...screen} />; break;
   }
@@ -405,6 +436,8 @@ function SignedIn({ session }: { session: Session }) {
             <SuggestionsPanel open={suggestions.open} target={suggestions.target} onClose={() => setSuggestions(s => ({ ...s, open: false }))} />
             <PhotoSearch open={photoOpen} onClose={() => setPhotoOpen(false)} />
             <TimerTray />
+            <UpgradeSheet reason={billing.plan === 'pro' || planState !== 'ready' ? null : upgradeReason} onClose={() => setUpgradeReason(null)} onSeePro={() => { setUpgradeReason(null); go({ name: 'pro' }); }} />
+            <CheckoutSheet ret={billingReturn} onClose={() => setBillingReturn(null)} />
           </>}
         >
           {content}

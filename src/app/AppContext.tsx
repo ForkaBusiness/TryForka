@@ -1,3 +1,4 @@
+import type { BillingView, Plan, PlanRow } from '../lib/billing';
 import { createContext, useContext } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Preferences, Profile } from '../lib/preferences';
@@ -23,6 +24,8 @@ export type Screen =
   | { name: 'rate'; id: number }
   | { name: 'collections'; id: number }
   | { name: 'pantry' }
+  /** Forka Pro: what it adds, and the plans. */
+  | { name: 'pro' }
   /** Write a recipe, edit the household's recipe `id`, or check an import (`draft`) before saving it. */
   | { name: 'editor'; id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } | null; note?: string | null }
   /** Import from a link, text or photos. Opened with something already shared or chosen, it starts right away. */
@@ -31,6 +34,25 @@ export type Screen =
       shared?: boolean };
 
 export interface FavoriteEntry { id: number; title: string; image: string }
+
+/** The household's plan, as the Stripe webhook last wrote it. */
+export interface BillingState {
+  row: PlanRow;
+  plan: Plan;
+  view: BillingView;
+  /** 'loading' until the plan has been read; 'failed' if it couldn't be (nothing claims Free then). */
+  status: 'loading' | 'ready' | 'failed';
+  /** Reads the plan again (after checkout, or coming back from Stripe). */
+  refresh: () => Promise<PlanRow>;
+  /**
+   * Shows the calm "this is a Pro feature" sheet. Only call it when the household hits a
+   * limit or taps a Pro feature; never on its own.
+   */
+  upgrade: (reason: UpgradeReason) => void;
+}
+
+/** Why the upgrade sheet opened: a limit reached, or a Pro feature tapped. */
+export type UpgradeReason = 'saved_recipes' | 'smart_imports' | 'shopping_lists' | 'variations' | 'cooking_help' | 'meals' | 'goals' | 'meal_prep' | 'leftovers';
 
 export interface SuggestionsTarget { day: Day; slot: Slot }
 
@@ -90,6 +112,7 @@ export interface AppState {
   /** Opens the photo search (Find meals like this). */
   openPhotoSearch: () => void;
   isPhone: boolean;
+  billing: BillingState;
 }
 
 export const AppContext = createContext<AppState | null>(null);

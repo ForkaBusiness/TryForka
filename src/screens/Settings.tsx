@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, FileText, LogOut, Trash2 } from 'lucide-react';
+import { Camera, FileText, LogOut, Sparkle, Trash2 } from 'lucide-react';
+import { openPortal, planLine } from '../lib/billing';
 import { useApp } from '../app/AppContext';
 import { signOutToWebsite, supabase } from '../lib/supabase';
 import { saveProfile, type Preferences, type Profile } from '../lib/preferences';
 import { callFunction } from '../lib/plan';
 import { AllergyPicker, DietPicker, PlanningPicker, SkipList } from '../components/PrefControls';
 import { FamilySettings } from '../components/FamilySettings';
-import { BottomSheet, Button, Card, Input, ListGroup, ListRow, PageContainer, SaveStatus, Segmented, Stepper } from '../components/ds';
+import { BottomSheet, Button, Card, Input, ListGroup, ListRow, PageContainer, SaveStatus, Segmented, Stepper, Tag } from '../components/ds';
 
 // One scrolling page of grouped cards: Household, Family, Allergies, Diet, Ingredients we skip,
 // Planning, Units, Account, About. Every change saves on its own with a quiet "Saved".
@@ -34,7 +35,19 @@ function Avatar({ url, name }: { url?: string; name: string }) {
 
 export function Settings() {
   // The saved household settings: each person's own allergies are edited under Family.
-  const { session, userId, householdPrefs: prefs, updatePrefs, profile, setProfile, go, familyAvailable } = useApp();
+  const { session, userId, householdPrefs: prefs, updatePrefs, profile, setProfile, go, familyAvailable, billing } = useApp();
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const manage = async () => {
+    setPortalBusy(true);
+    setPortalError(null);
+    try { await openPortal(); } catch (err) { setPortalError(err instanceof Error ? err.message : "Couldn't open your plan. Try again."); setPortalBusy(false); }
+  };
+  const plan = billing.status === 'loading' ? { title: 'Checking your plan', detail: 'One moment.' }
+    : billing.status === 'failed' ? { title: "Couldn't load your plan", detail: 'Check your connection, then reload. Nothing about your plan has changed.' }
+    : planLine(billing.view);
+  const known = billing.status === 'ready';
+  const founding = billing.view.kind === 'founding';
   const [state, setState] = useState<SaveState>('idle');
   const [draft, setDraft] = useState<Profile>(profile);
   const [avatar, setAvatar] = useState<string | undefined>(session.user.user_metadata?.avatar_url);
@@ -92,6 +105,23 @@ export function Settings() {
 
   return (
     <PageContainer title="Settings" actions={<SaveStatus state={state} />}>
+      <Section id="plan" title="Plan">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-heading font-semibold text-ink">{plan.title}</p>
+            <p className={billing.view.kind === 'payment_failed' ? 'mt-1 text-body text-terracotta-deep' : 'mt-1 text-body text-ink-muted'}>{plan.detail}</p>
+          </div>
+          {known && billing.view.kind === 'free' && <Button className="shrink-0" onClick={() => go({ name: 'pro' })}>See Pro</Button>}
+          {known && ['trialing', 'active', 'cancelled', 'payment_failed'].includes(billing.view.kind) && (
+            <Button variant={billing.view.kind === 'payment_failed' ? 'primary' : 'secondary'} className="shrink-0" loading={portalBusy} onClick={manage}>
+              {billing.view.kind === 'payment_failed' ? 'Update card' : billing.view.kind === 'cancelled' ? 'Renew or manage' : 'Manage plan'}
+            </Button>
+          )}
+        </div>
+        {known && ['trialing', 'active'].includes(billing.view.kind) && <p className="mt-3 text-small text-ink-muted">Change plan, update your card or cancel on Stripe's secure page.</p>}
+        {portalError && <p role="alert" className="mt-3 text-small text-terracotta-deep">{portalError}</p>}
+      </Section>
+
       <Section id="household" title="Household">
         <div className="grid gap-5">
           <Input label="Household name" placeholder="The Millers" value={draft.household_name} onChange={e => editProfile({ household_name: e.target.value })} />
@@ -134,6 +164,7 @@ export function Settings() {
         <div className="grid gap-5">
           <div className="flex items-center gap-4">
             <Avatar url={avatar} name={draft.full_name || email} />
+            {founding && <Tag tone="green" icon={Sparkle}>Founding family</Tag>}
             <input ref={fileInput} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden
               onChange={e => { const f = e.target.files?.[0]; if (f) void uploadPhoto(f); e.target.value = ''; }} />
             <Button variant="secondary" size="sm" icon={Camera} loading={uploading} onClick={() => fileInput.current?.click()}>
@@ -146,7 +177,6 @@ export function Settings() {
       </Section>
 
       <ListGroup className="mb-6">
-        <ListRow title="Plan" trailing={<span className="text-body text-ink-muted">Free plan</span>} />
         <ListRow leading={<LogOut size={20} strokeWidth={1.75} aria-hidden className="text-ink-muted" />} title="Sign out" onClick={() => void signOutToWebsite()} />
         <ListRow leading={<Trash2 size={20} strokeWidth={1.75} aria-hidden className="text-terracotta" />} title="Delete account" destructive onClick={() => setConfirmDelete(true)} />
       </ListGroup>
