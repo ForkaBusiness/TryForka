@@ -37,9 +37,16 @@ export function withFamilyAllergies<P extends { allergies: string[] }>(prefs: P,
 const words = (items: string[]) => items.map(i => i.toLowerCase()).join(', ');
 
 /** "Kid. Allergic to peanut. Likes rice." */
-export function memberSummary(m: Pick<FamilyMember, 'kind' | 'allergies' | 'likes' | 'dislikes'>): string {
+const GOAL_SUMMARY: Record<string, (m: Pick<FamilyMember, 'goal_calories' | 'goal_protein'>) => string> = {
+  lighter: () => 'Goal: lighter', more_protein: () => 'Goal: more protein', growing_kid: () => 'Goal: growing well',
+  calories: m => `Goal: about ${(m.goal_calories ?? 0).toLocaleString('en-US')} kcal a day`, protein: m => `Goal: about ${m.goal_protein ?? 0} g protein a day`,
+};
+
+export function memberSummary(m: Pick<FamilyMember, 'kind' | 'allergies' | 'likes' | 'dislikes'> & Partial<Pick<FamilyMember, 'school_lunch' | 'goal' | 'goal_calories' | 'goal_protein'>>): string {
   return [
     m.kind === 'kid' ? 'Kid' : 'Adult',
+    m.kind === 'kid' && m.school_lunch ? 'School lunch on weekdays' : '',
+    m.goal && GOAL_SUMMARY[m.goal] ? GOAL_SUMMARY[m.goal](m) : '',
     m.allergies.length ? `Allergic to ${words(m.allergies.map(allergyLabel))}` : '',
     m.likes.length ? `Likes ${words(m.likes)}` : '',
     m.dislikes.length ? `Doesn't like ${words(m.dislikes)}` : '',

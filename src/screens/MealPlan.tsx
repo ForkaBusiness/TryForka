@@ -12,6 +12,9 @@ import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, plannedSlots as planSlots, planEn
 const OTHER_SLOTS = SLOTS.filter((s): s is Exclude<Slot, 'dinner'> => s !== 'dinner');
 import { CheckIn } from '../components/CheckIn';
 import { slotOnDay } from '../lib/meals';
+import { hasGoals, portionsForDay, type DayPortions } from '../lib/goals';
+import { ESTIMATE_NOTE, portionLabel, type PersonPortion } from '../lib/portions';
+import type { FamilyMember } from '../lib/familyPrefs';
 import { MealsCheckIn } from '../components/MealsCheckIn';
 import { activeOnHand } from '../lib/onHand';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
@@ -149,9 +152,66 @@ function DayRow({ day, entry, card, others, blocked, past, onSelect }: {
   );
 }
 
+/** " Goal for these meals: about 910 kcal." for adults with a goal; nothing for children. */
+function aimFor(p: PersonPortion, members: FamilyMember[]): string {
+  if (members.find(m => m.id === p.id)?.kind === 'kid') return '';
+  if (p.target.kcal != null) return ` Goal for these meals: about ${p.target.kcal.toLocaleString('en-US')} kcal.`;
+  if (p.target.protein != null) return ` Goal for these meals: about ${Math.round(p.target.protein)} g protein.`;
+  return '';
+}
+
+/** Each person's portion for the day and the estimated totals (Pro, when anyone has a goal). */
+function DayPortionsCard({ day, plan, members }: { day: Day; plan: WeekPlan; members: FamilyMember[] }) {
+  const [state, setState] = useState<DayPortions | 'loading' | 'error'>('loading');
+  const key = JSON.stringify(SLOTS.map(s => plan[day][s]?.id ?? null));
+  useEffect(() => {
+    let cancelled = false;
+    setState('loading');
+    portionsForDay(plan, day, members).then(r => { if (!cancelled) setState(r); }).catch(() => { if (!cancelled) setState('error'); });
+    return () => { cancelled = true; };
+    // The plan's meals for this day and the family are what the estimate depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, key, members]);
+  if (!planEntries(plan).some(e => e.day === day)) return null;
+  return (
+    <section aria-labelledby="portions" className="mt-5">
+      <p id="portions" className="label mb-2 px-1">Portions, estimated</p>
+      <Card className="p-4">
+        {state === 'loading' ? (
+          <p aria-busy className="text-small text-ink-muted">Working out portions…</p>
+        ) : state === 'error' ? (
+          <p className="text-small text-ink-muted">Couldn't work out portions right now. Check your connection.</p>
+        ) : (
+          <>
+            <ul className="divide-y divide-line">
+              {state.people.map(p => (
+                <li key={p.id} className="flex items-baseline justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                  <span className="min-w-0">
+                    <span className="block truncate text-body font-medium text-ink">{p.name}</span>
+                    <span className="block text-small text-ink-muted">
+                      {p.planned.kcal > 0 ? `About ${p.planned.kcal.toLocaleString('en-US')} kcal and ${Math.round(p.planned.protein)} g protein from these meals.` : 'No estimate for these meals.'}
+                      {/* Children have general goals only: no number aims are shown for them. */}
+                      {p.planned.kcal > 0 && aimFor(p, members)}
+                    </span>
+                  </span>
+                  <span className="tabular shrink-0 text-small font-semibold text-ink">{portionLabel(p.portion)}</span>
+                </li>
+              ))}
+            </ul>
+            {state.missing.length > 0 && <p className="mt-3 text-small text-ink-muted">Not counted: {state.missing.join(', ')}. Not enough is known about their ingredients.</p>}
+            <p className="mt-3 text-caption text-ink-muted">{ESTIMATE_NOTE} Totals cover the meals planned here.</p>
+          </>
+        )}
+      </Card>
+    </section>
+  );
+}
+
 /** What you can do with one day's dinner. */
-function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, message, onClose, act }: {
+function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, message, goals, onClose, act }: {
   day: Day | null; plan: WeekPlan; cards: Map<number, RecipeCard>; today: Day; blocked: (d: Day, s: Slot) => boolean; plannedSlots: Slot[]; busy: boolean;
+  /** The family, when anyone has a goal (Pro): the sheet shows each person's portion. */
+  goals: FamilyMember[] | null;
   /** What came of the last action, when the sheet stays open to say it. */
   message: string | null;
   onClose: () => void;
@@ -240,6 +300,7 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
           })}
         </ListGroup>
       )}
+      {!moving && goals && <DayPortionsCard day={day} plan={plan} members={goals} />}
     </BottomSheet>
   );
 }
@@ -484,6 +545,7 @@ export function MealPlan() {
       </div>
 
       <DaySheet day={sheetDay} plan={plan} cards={cards} today={today} blocked={isBlocked} plannedSlots={plannedSlots} busy={busyDay !== null} message={sheetMessage}
+        goals={billing.plan === 'pro' && hasGoals(members) ? members : null}
         onClose={() => setSheetDay(null)} act={act} />
 
       <BottomSheet
