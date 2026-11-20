@@ -167,7 +167,7 @@ function useWakeLock(): [boolean, () => void] {
 }
 
 export function CookingMode({ id }: { id: number }) {
-  const { prefs, userId, replace, back } = useApp();
+  const { prefs, userId, replace, back, billing } = useApp();
   const [recipe, setRecipe] = useState<Recipe | null | undefined>(undefined);
   const [blockedBy, setBlockedBy] = useState<string[] | null>(null);
   const [step, setStep] = useState(0);
@@ -410,7 +410,7 @@ export function CookingMode({ id }: { id: number }) {
           <ToolButton icon={ListChecks} label="Ingredients" detail={`${ingredients.filter(i => checked.has(i.index)).length}/${ingredients.length}`} onClick={() => setSheet('ingredients')} />
           <ToolButton icon={Type} label="Text size" onClick={() => setSheet('text')} />
           {speech.available && <ToolButton icon={Volume2} label="Read aloud" pressed={reading} onClick={toggleReading} />}
-          <ToolButton icon={Shuffle} label="Make it different" onClick={() => setSheet('variations')} />
+          <ToolButton icon={Shuffle} label="Make it different" onClick={() => (billing.plan === 'pro' ? setSheet('variations') : billing.upgrade('variations'))} />
         </div>
         {reading && (
           <ReadAloudBar

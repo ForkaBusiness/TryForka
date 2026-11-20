@@ -37,6 +37,7 @@ import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
 import { billingView, effectivePlan, loadPlanRow, openPortal, readBillingReturn, type BillingReturn, type PlanRow } from './lib/billing';
 import { FREE_ROW } from '../supabase/functions/_shared/billing/state.ts';
 import { UpgradeSheet } from './components/UpgradeSheet';
+import { canSaveRecipe } from './lib/usage';
 import { CheckoutSheet } from './components/CheckoutSheet';
 import { Pro } from './screens/Pro';
 import type { UpgradeReason } from './app/AppContext';
@@ -368,6 +369,8 @@ function SignedIn({ session }: { session: Session }) {
 
   const toggleFavorite = useCallback(async (entry: FavoriteEntry) => {
     const has = favorites.has(entry.id);
+    // Free keeps 20 saved recipes: unhearting always works; hearting a new one past the limit opens the upgrade sheet.
+    if (!has && !(await canSaveRecipe(userId, entry.id))) { setUpgradeReason('saved_recipes'); return; }
     setFavorites(prev => { const next = new Map(prev); if (has) next.delete(entry.id); else next.set(entry.id, entry); return next; });
     const { error } = has
       ? await supabase.from('favorites').delete().eq('user_id', userId).eq('recipe_id', entry.id)

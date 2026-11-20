@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, CalendarPlus, Check, ExternalLink, ImagePlus, ListPlus, Plus, Trash2, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
+import { canSaveRecipe } from '../lib/usage';
 import { getRecipe, householdRecipeForEdit, isHouseholdRecipe } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
@@ -99,6 +100,7 @@ type EditorProps = Pick<ReturnType<typeof useApp>, 'userId' | 'prefs' | 'back' |
 };
 
 function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, prefs, back, replace, weekPlan, saveWeek }: EditorProps) {
+  const { billing } = useApp();
   const [title, setTitle] = useState(base.title);
   const [servings, setServings] = useState(base.servings ? String(base.servings) : '');
   const [prep, setPrep] = useState(base.prep_minutes ? String(base.prep_minutes) : '');
@@ -221,6 +223,12 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
     if (issue) { setProblem(issue); return; }
     setSaving(true);
     setProblem(null);
+    // A new recipe counts as saved: Free keeps 20 (editing one that's already saved never counts).
+    if (!id && !(await canSaveRecipe(userId, null))) {
+      setSaving(false);
+      billing.upgrade('saved_recipes');
+      return;
+    }
     try {
       const savedId = await saveDraft(userId, draft, id);
       setDirty(false);

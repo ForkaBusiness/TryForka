@@ -3,6 +3,7 @@ import { BookOpen, Camera, ClipboardPaste, Clock, FileText, ImagePlus, Link2, Pe
 import { useApp } from '../app/AppContext';
 import { findLink, importFromLink, importFromPhotos, importFromText, importPickedRecipe, MAX_IMPORT_PHOTOS, type ImportAnswer, type PhotoStep } from '../lib/imports';
 import { clearUnsaved, readUnsaved } from '../lib/householdRecipes';
+import { canImport } from '../lib/usage';
 import { Button, Card, IconButton, Input, PageContainer, Spinner, Textarea, cx } from '../components/ds';
 import type { DraftSource } from '../../supabase/functions/_shared/imports/draft.ts';
 
@@ -19,6 +20,7 @@ type Phase =
   | { name: 'no_recipe'; message: string; source: DraftSource | null; caption: string | null }
   | { name: 'failed'; message: string; retry: () => void }
   | { name: 'capped'; message: string }
+  | { name: 'limit'; message: string }
   | { name: 'choose'; recipes: Array<{ title: string; has_method: boolean }>; paths: string[] };
 
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
@@ -79,6 +81,7 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
         if (answer.caption) setText(answer.caption);
         return;
       case 'capped': setPhase({ name: 'capped', message: answer.message }); return;
+      case 'limit': setPhase({ name: 'limit', message: answer.message }); return;
       case 'choose': setPhase({ name: 'choose', recipes: answer.recipes, paths: answer.paths }); return;
       default: setPhase({ name: 'failed', message: answer.message, retry });
     }
@@ -90,17 +93,27 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
     handle(await importPickedRecipe(paths, title), () => runPick(paths, title));
   };
 
+  /** Free's 20 imports: checked before anything is uploaded or read (the server checks too). */
+  const LIMIT_MESSAGE = "You've used the 20 imports Free includes. Every recipe you imported stays yours, and you can still write one in by hand.";
+  const importFits = async () => {
+    if (await canImport(userId)) return true;
+    setPhase({ name: 'limit', message: LIMIT_MESSAGE });
+    return false;
+  };
+
   const runLink = async (raw: string, allowDuplicate = false) => {
     const url = findLink(raw) ?? (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(raw.trim()) ? `https://${raw.trim()}` : null);
     if (!url) { setLinkError("That doesn't look like a link. Copy the address of the recipe or post and paste it here."); return; }
     setLinkError(null);
     setLink(url);
+    if (!(await importFits())) return;
     setPhase({ name: 'working', title: 'Importing', detail: `Reading the recipe from ${host(url)}` });
     handle(await importFromLink(url, { allowDuplicate }), () => runLink(url, allowDuplicate), url);
   };
 
   const runText = async (body: string, source: DraftSource | null) => {
     if (body.trim().length < 20) return;
+    if (!(await importFits())) return;
     setPhase({ name: 'working', title: 'Importing', detail: 'Reading the recipe from your text' });
     handle(await importFromText(body, source), () => runText(body, source));
   };
@@ -113,6 +126,7 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   };
   const runPhotos = async (files: File[]) => {
     if (!files.length) return;
+    if (!(await importFits())) return;
     setPhase({ name: 'working', title: 'Importing', detail: photoStep({ step: 'preparing', done: 0, total: files.length }, files.length) });
     const answer = await importFromPhotos(userId, files, s => setPhase({ name: 'working', title: 'Importing', detail: photoStep(s, files.length), step: s.step }));
     handle(answer, () => runPhotos(files));
@@ -210,6 +224,20 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
             </li>
           ))}
         </ul>
+      </PageContainer>
+    );
+  }
+  if (phase.name === 'limit') {
+    return (
+      <PageContainer title="You've used your 20 imports" onBack={back}>
+        <Card className="p-6">
+          <p className="text-body text-ink">{phase.message}</p>
+          <p className="mt-3 text-body text-ink-muted">Pro imports as many recipes as you like, and plans your family's whole week.</p>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <Button size="lg" onClick={() => go({ name: 'pro' })}>See what Pro adds</Button>
+            <Button size="lg" variant="secondary" icon={PenLine} onClick={writeIt}>Add a recipe by hand</Button>
+          </div>
+        </Card>
       </PageContainer>
     );
   }

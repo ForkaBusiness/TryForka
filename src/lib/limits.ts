@@ -7,12 +7,14 @@
 // blocked by these yet; features and the paywall will ask checkLimit() (or checkUsage() in
 // usage.ts, which reads the numbers first). Pure, tested in tests/limits.test.ts.
 
+import { FREE_LIMITS } from '../../supabase/functions/_shared/billing/limits.ts';
+
 export type PlanTier = 'free' | 'pro';
 export type LimitKind = 'saved_recipes' | 'smart_imports' | 'shopping_lists';
 export const LIMIT_KINDS: readonly LimitKind[] = ['saved_recipes', 'smart_imports', 'shopping_lists'];
 
 export const PLAN_LIMITS: Record<PlanTier, Record<LimitKind, number>> = {
-  free: { saved_recipes: 20, smart_imports: 20, shopping_lists: 2 },
+  free: { ...FREE_LIMITS },
   pro: { saved_recipes: Infinity, smart_imports: Infinity, shopping_lists: Infinity },
 };
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { useApp } from '../app/AppContext';
+import { canSaveRecipe } from '../lib/usage';
 import { supabase } from '../lib/supabase';
 import { recipeTitle, safeCardMap } from '../lib/catalog';
 import { Button, Card, Checkbox, Input, ListSkeleton, PageContainer } from '../components/ds';
@@ -9,7 +10,7 @@ import { fetchCollections, recipeCount, type CollectionRow } from '../lib/collec
 // Add a recipe to collections: tick the ones it belongs in, create new ones, Save.
 
 export function Collections({ id }: { id: number }) {
-  const { userId, back, prefs } = useApp();
+  const { userId, back, prefs, billing } = useApp();
   const [collections, setCollections] = useState<CollectionRow[] | null>(null);
   const [initial, setInitial] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -50,6 +51,12 @@ export function Collections({ id }: { id: number }) {
     try {
       const add = [...selected].filter(c => !initial.has(c));
       const remove = [...initial].filter(c => !selected.has(c));
+      // Free keeps 20 saved recipes; one already saved (hearted or in another collection) doesn't count again.
+      if (add.length && !initial.size && !(await canSaveRecipe(userId, id))) {
+        setSaving(false);
+        billing.upgrade('saved_recipes');
+        return;
+      }
       if (add.length) {
         const { error: err } = await supabase.from('collection_recipes').insert(add.map(collection_id => ({ collection_id, recipe_id: id, recipe_title: title })));
         if (err) throw err;
