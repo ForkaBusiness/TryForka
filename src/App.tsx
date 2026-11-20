@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSITE_LOGIN, WEBSITE_RESET_PASSWORD } from './lib/supabase';
 import { useMediaQuery } from './lib/useMediaQuery';
@@ -15,27 +15,35 @@ import { AppFrame } from './components/Shell';
 import type { NavId } from './components/nav';
 import { TimerTray } from './components/Timers';
 import { Button, PageContainer, Skeleton } from './components/ds';
-import { Terms } from './screens/Terms';
 import { Onboarding } from './screens/Onboarding';
 import { MealPlan } from './screens/MealPlan';
 import { BrowseRecipes } from './screens/BrowseRecipes';
 import { RecipeDetail } from './screens/RecipeDetail';
-import { CookingMode } from './screens/CookingMode';
-import { Notes } from './screens/Notes';
-import { RateRecipe } from './screens/RateRecipe';
-import { Collections } from './screens/Collections';
 import { Favorites } from './screens/Favorites';
 import { Groceries } from './screens/Groceries';
 import { Settings } from './screens/Settings';
-import { SuggestionsPanel } from './screens/SuggestionsPanel';
-import { PhotoSearch } from './screens/PhotoSearch';
-import { Styleguide } from './screens/Styleguide';
-import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
-import { RecipeEditor } from './screens/RecipeEditor';
-import { ImportRecipe } from './screens/ImportRecipe';
 import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
 
+// Screens not needed on first load come in their own files, fetched when first opened
+// (cooking mode is fetched ahead while a recipe is open: see RecipeDetail).
+const Terms = lazy(() => import('./screens/Terms').then(m => ({ default: m.Terms })));
+const CookingMode = lazy(() => import('./screens/CookingMode').then(m => ({ default: m.CookingMode })));
+const Notes = lazy(() => import('./screens/Notes').then(m => ({ default: m.Notes })));
+const RateRecipe = lazy(() => import('./screens/RateRecipe').then(m => ({ default: m.RateRecipe })));
+const Collections = lazy(() => import('./screens/Collections').then(m => ({ default: m.Collections })));
+const SuggestionsPanel = lazy(() => import('./screens/SuggestionsPanel').then(m => ({ default: m.SuggestionsPanel })));
+const PhotoSearch = lazy(() => import('./screens/PhotoSearch').then(m => ({ default: m.PhotoSearch })));
+const Styleguide = lazy(() => import('./screens/Styleguide').then(m => ({ default: m.Styleguide })));
+const CookWithWhatYouHave = lazy(() => import('./screens/CookWithWhatYouHave').then(m => ({ default: m.CookWithWhatYouHave })));
+const RecipeEditor = lazy(() => import('./screens/RecipeEditor').then(m => ({ default: m.RecipeEditor })));
+const ImportRecipe = lazy(() => import('./screens/ImportRecipe').then(m => ({ default: m.ImportRecipe })));
+
 // Dev-only design system reference at /app/styleguide.
+/** While a screen's file arrives (usually a moment): a quiet placeholder, said aloud as loading. */
+function ScreenLoading() {
+  return <div aria-busy aria-label="Loading" className="h-full w-full" />;
+}
+
 const SHOW_STYLEGUIDE = import.meta.env.DEV && window.location.pathname === `${import.meta.env.BASE_URL}styleguide`;
 
 const TABS: NavId[] = ['mealplan', 'groceries', 'favorites', 'settings'];
@@ -86,6 +94,10 @@ function SignedIn({ session }: { session: Session }) {
   const [stack, setStack] = useState<Screen[]>([{ name: 'mealplan' }]);
   const [suggestions, setSuggestions] = useState<{ open: boolean; target: SuggestionsTarget | null }>({ open: false, target: null });
   const [photoOpen, setPhotoOpen] = useState(false);
+  // Panels whose files have been fetched (the first time each opens); they stay mounted after.
+  const [panelsOpened, setPanelsOpened] = useState({ suggestions: false, photo: false });
+  useEffect(() => { if (suggestions.open) setPanelsOpened(p => (p.suggestions ? p : { ...p, suggestions: true })); }, [suggestions.open]);
+  useEffect(() => { if (photoOpen) setPanelsOpened(p => (p.photo ? p : { ...p, photo: true })); }, [photoOpen]);
   const [loadError, setLoadError] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   const planRef = useRef<SavedWeekPlan | null | undefined>(undefined);
@@ -402,12 +414,15 @@ function SignedIn({ session }: { session: Session }) {
           showNav={showNav}
           mainRef={mainRef}
           overlay={<>
-            <SuggestionsPanel open={suggestions.open} target={suggestions.target} onClose={() => setSuggestions(s => ({ ...s, open: false }))} />
-            <PhotoSearch open={photoOpen} onClose={() => setPhotoOpen(false)} />
+            {/* Fetched the first time they open, then kept (so they can animate closed). */}
+            <Suspense fallback={null}>
+              {(suggestions.open || panelsOpened.suggestions) && <SuggestionsPanel open={suggestions.open} target={suggestions.target} onClose={() => setSuggestions(s => ({ ...s, open: false }))} />}
+              {(photoOpen || panelsOpened.photo) && <PhotoSearch open={photoOpen} onClose={() => setPhotoOpen(false)} />}
+            </Suspense>
             <TimerTray />
           </>}
         >
-          {content}
+          <Suspense fallback={<ScreenLoading />}>{content}</Suspense>
         </AppFrame>
       </div>
     </AppContext.Provider>
@@ -444,7 +459,7 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (SHOW_STYLEGUIDE) return <div className="h-dvh overflow-y-auto"><Styleguide /></div>;
+  if (SHOW_STYLEGUIDE) return <div className="h-dvh overflow-y-auto"><Suspense fallback={null}><Styleguide /></Suspense></div>;
   if (session === undefined) return <Blank />;
   if (!session) return <ToLogin />;
   return <SignedIn key={session.user.id} session={session} />;
