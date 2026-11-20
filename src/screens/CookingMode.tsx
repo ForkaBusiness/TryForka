@@ -389,7 +389,8 @@ export function CookingMode({ id }: { id: number }) {
       <header className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-10">
         <div className="flex items-center gap-3">
           <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
-          <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</p>
+          {/* The page's heading: the recipe being cooked (same look as before). */}
+          <h1 className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</h1>
           <ToggleChip size="lg" selected={handsFree} onToggle={toggleHandsFree}>Hands-free</ToggleChip>
         </div>
         {handsFree && (

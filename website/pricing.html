@@ -200,7 +200,7 @@
   </div>
 </nav>
 
-<div class="mobile-menu" id="mobileMenu" aria-hidden="true">
+<div class="mobile-menu" id="mobileMenu" aria-hidden="true" inert>
   <div class="mobile-menu-header">
     <a href="index.html" class="nav-logo">
       <div class="logo-icon" style="background:transparent;">
@@ -410,8 +410,8 @@
   var btn=document.getElementById('hamburgerBtn');
   var menu=document.getElementById('mobileMenu');
   var close=document.getElementById('mobileClose');
-  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');}
-  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');}
+  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');menu.inert=false;}
+  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');menu.inert=true;}
   btn.addEventListener('click',function(){menu.classList.contains('open')?closeMenu():openMenu();});
   close.addEventListener('click',closeMenu);
 })();

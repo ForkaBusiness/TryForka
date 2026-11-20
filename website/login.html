@@ -35,7 +35,7 @@
   .feature-list { display: flex; flex-direction: column; gap: 20px; margin-bottom: 48px; }
   .feature-item { display: flex; align-items: flex-start; gap: 14px; }
   .feature-icon { width: 40px; height: 40px; border-radius: 10px; background: rgba(31,143,99,0.2); border: 1px solid rgba(31,143,99,0.4); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; }
-  .feature-item h4 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 14px; color: #fff; margin-bottom: 3px; }
+  .feature-item h3 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 14px; color: #fff; margin: 0 0 3px; }
   .feature-item p { font-size: 13px; color: rgba(255,255,255,0.55); line-height: 1.5; }
   .left-cta { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .left-cta p { font-size: 14px; color: rgba(255,255,255,0.8); line-height: 1.5; }
@@ -58,34 +58,34 @@
   .row-between { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
   .remember { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #5A6B73; cursor: pointer; }
   .remember input[type="checkbox"] { width: 15px; height: 15px; accent-color: #1F8F63; cursor: pointer; }
-  .forgot { font-size: 13px; color: #1F8F63; font-weight: 600; text-decoration: none; }
+  .forgot { font-size: 13px; color: #1B8259; font-weight: 600; text-decoration: none; }
   .forgot:hover { text-decoration: underline; }
 
-  .btn-submit { width: 100%; padding: 16px; font-size: 16px; border-radius: 12px; background: #1F8F63; color: #fff; border: none; font-family: 'Poppins', sans-serif; font-weight: 700; cursor: pointer; transition: background .2s, transform .15s; margin-bottom: 8px; }
+  .btn-submit { width: 100%; padding: 16px; font-size: 16px; border-radius: 12px; background: #1B8259; color: #fff; border: none; font-family: 'Poppins', sans-serif; font-weight: 700; cursor: pointer; transition: background .2s, transform .15s; margin-bottom: 8px; }
   .btn-submit:hover { background: #166b4a; transform: translateY(-1px); }
 
   .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
   .divider-line { flex: 1; height: 1px; background: #E5E7E8; }
-  .divider-text { font-size: 12px; color: #9AABBA; white-space: nowrap; }
+  .divider-text { font-size: 12px; color: #66788A; white-space: nowrap; }
 
   .social-btn { width: 100%; padding: 13px; border-radius: 12px; border: 1.5px solid #E5E7E8; background: #fff; font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 14px; color: #0A2533; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: border-color .2s, background .2s; text-decoration: none; margin-bottom: 10px; }
   .social-btn:last-of-type { margin-bottom: 0; }
   .social-btn:hover { border-color: #1F8F63; background: #f9fffe; }
 
   .signup-row { text-align: center; font-size: 14px; color: #5A6B73; margin-top: 20px; }
-  .signup-row a { color: #1F8F63; font-weight: 700; text-decoration: none; }
+  .signup-row a { color: #1B8259; font-weight: 700; text-decoration: none; }
   .signup-row a:hover { text-decoration: underline; }
 
   #errorMsg { display: none; background: #fff5f5; border: 1px solid #fed7d7; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #c53030; margin-bottom: 16px; }
   #noticeMsg { display: none; background: #f0faf5; border: 1px solid #b7e2cd; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #166b4a; margin-bottom: 16px; }
   .btn-submit:disabled { opacity: .7; cursor: default; transform: none; }
 
-  footer { background: #1F8F63; padding: 22px 0; }
+  footer { background: #1B8259; padding: 22px 0; }
   .footer-bottom-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
-  .footer-copy { font-size: 12px; color: rgba(255,255,255,0.6); }
+  .footer-copy { font-size: 12px; color: #fff; }
   .footer-legal { display: flex; gap: 18px; }
-  .footer-legal a { font-size: 12px; color: rgba(255,255,255,0.6); text-decoration: none; }
-  .footer-legal a:hover { color: #fff; }
+  .footer-legal a { font-size: 12px; color: #fff; text-decoration: none; }
+  .footer-legal a:hover { text-decoration: underline; }
 
   @media (max-width: 900px) {
     .main { grid-template-columns: 1fr; }
@@ -104,7 +104,7 @@
 .mobile-nav-link.active{font-weight:800;}
 .mobile-menu-btns{display:flex;flex-direction:column;gap:12px;padding:32px 24px;}
 .mobile-btn-login{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:600;font-size:16px;color:#0A2533;background:#fff;border:1.5px solid #0A2533;border-radius:12px;text-decoration:none;}
-.mobile-btn-waitlist{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#FF6B35;border-radius:12px;text-decoration:none;}.mobile-btn-signup{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#1F8F63;border-radius:12px;text-decoration:none;}
+.mobile-btn-waitlist{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#FF6B35;border-radius:12px;text-decoration:none;}.mobile-btn-signup{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#1B8259;border-radius:12px;text-decoration:none;}
 @media(max-width:767px){
   .hamburger{display:flex;}
   .nav-links{display:none!important;}
@@ -149,7 +149,7 @@
   </div>
 </nav>
 
-<div class="mobile-menu" id="mobileMenu" aria-hidden="true">
+<div class="mobile-menu" id="mobileMenu" aria-hidden="true" inert>
   <div class="mobile-menu-header">
     <a href="index.html" class="nav-logo">
       <img src="uploads/pasted-1777438996972-0.png" alt="Forka" style="width:42px;height:42px;object-fit:contain;border-radius:10px;">
@@ -174,7 +174,7 @@
   </div>
 </div>
 
-<div class="main">
+<main class="main">
   <!-- LEFT -->
   <div class="left-panel">
     <svg class="left-veg" viewBox="0 0 600 800" xmlns="http://www.w3.org/2000/svg">
@@ -191,21 +191,21 @@
         <div class="feature-item">
           <div class="feature-icon">📋</div>
           <div>
-            <h4>Your Weekly Plan</h4>
+            <h3>Your Weekly Plan</h3>
             <p>Pick up right where you left off.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-icon">🛒</div>
           <div>
-            <h4>Grocery List Ready</h4>
+            <h3>Grocery List Ready</h3>
             <p>Auto-updated to match your latest plan.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-icon">⭐</div>
           <div>
-            <h4>Saved Favorites</h4>
+            <h3>Saved Favorites</h3>
             <p>All your saved recipes in one place.</p>
           </div>
         </div>
@@ -257,7 +257,7 @@
       <p class="signup-row">Don't have an account? <a href="signup.html">Start free trial</a></p>
     </div>
   </div>
-</div>
+</main>
 
 <footer>
   <div class="footer-bottom-inner">
@@ -271,8 +271,8 @@
   var btn=document.getElementById('hamburgerBtn');
   var menu=document.getElementById('mobileMenu');
   var close=document.getElementById('mobileClose');
-  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');}
-  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');}
+  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');menu.inert=false;}
+  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');menu.inert=true;}
   btn.addEventListener('click',function(){menu.classList.contains('open')?closeMenu():openMenu();});
   close.addEventListener('click',closeMenu);
 })();

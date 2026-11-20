@@ -60,7 +60,8 @@ export function AppFrame({ active, onSelect, showNav, showBrand, children, mainR
       <main ref={mainRef} className={cx('relative h-full overflow-y-auto', showNav && 'pb-(--tabbar-space)')}>
         {children}
       </main>
-      {showBrand && <Wordmark className="pointer-events-none fixed top-8 left-8 hidden xl:flex" />}
+      {/* The wordmark on wide screens, as the page's banner landmark. */}
+      {showBrand && <header className="pointer-events-none fixed top-8 left-8 hidden xl:flex"><Wordmark /></header>}
       {showNav && <BottomTabBar active={active} onSelect={onSelect} />}
       {overlay}
     </div>
