@@ -2,8 +2,9 @@ import type { HandLandmarker, HandLandmarkerOptions } from '@mediapipe/tasks-vis
 
 // On-device hand tracking for hands-free cooking: MediaPipe's Hand Landmarker running in
 // WebAssembly in the page. The model and the WebAssembly files are served by the app
-// itself (public/mediapipe), and the library is only downloaded when hands-free is turned
-// on. Frames go from the <video> element straight into the tracker in memory: nothing is
+// itself (public/mediapipe), and the library starts loading when cooking mode opens (not
+// on other screens), so it's ready when hands-free is turned on. Loading it never touches
+// the camera. Frames go from the <video> element straight into the tracker in memory: nothing is
 // drawn to a canvas we keep, recorded, stored or sent anywhere.
 
 const BASE = `${import.meta.env.BASE_URL}mediapipe`;

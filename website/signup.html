@@ -51,8 +51,8 @@
   .terms-row span { font-size: 13px; color: #5A6B73; line-height: 1.5; }
   .terms-row a { color: #1F8F63; text-decoration: none; font-weight: 600; }
   .terms-row a:hover { text-decoration: underline; }
-  .btn-submit { width: 100%; padding: 16px; font-size: 16px; border-radius: 12px; background: #FF6B35; color: #fff; border: none; font-family: 'Poppins', sans-serif; font-weight: 700; cursor: pointer; transition: background .2s, transform .15s; margin-bottom: 8px; }
-  .btn-submit:hover { background: #e85a24; transform: translateY(-1px); }
+  .btn-submit { width: 100%; padding: 16px; font-size: 16px; border-radius: 12px; background: #CC4A15; color: #fff; border: none; font-family: 'Poppins', sans-serif; font-weight: 700; cursor: pointer; transition: background .2s, transform .15s; margin-bottom: 8px; }
+  .btn-submit:hover { background: #B33F10; transform: translateY(-1px); }
   .no-card { font-size: 12px; color: #9AABBA; text-align: center; }
   .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
   .divider-line { flex: 1; height: 1px; background: #E5E7E8; }
@@ -99,7 +99,7 @@
 .mobile-nav-link.active{font-weight:800;}
 .mobile-menu-btns{display:flex;flex-direction:column;gap:12px;padding:32px 24px;}
 .mobile-btn-login{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:600;font-size:16px;color:#0A2533;background:#fff;border:1.5px solid #0A2533;border-radius:12px;text-decoration:none;}
-.mobile-btn-waitlist{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#FF6B35;border-radius:12px;text-decoration:none;}.mobile-btn-signup{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#1F8F63;border-radius:12px;text-decoration:none;}
+.mobile-btn-waitlist{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#CC4A15;border-radius:12px;text-decoration:none;}.mobile-btn-signup{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#1F8F63;border-radius:12px;text-decoration:none;}
 @media(max-width:767px){
   .hamburger{display:flex;}
   .nav-links{display:none!important;}
@@ -143,7 +143,7 @@
   </div>
 </nav>
 
-<div class="mobile-menu" id="mobileMenu" aria-hidden="true">
+<div class="mobile-menu" id="mobileMenu" aria-hidden="true" inert>
   <div class="mobile-menu-header">
     <a href="index.html" class="nav-logo">
       <img src="uploads/pasted-1777438996972-0.png" alt="Forka" style="width:42px;height:42px;object-fit:contain;border-radius:10px;">
@@ -260,8 +260,8 @@
   var btn=document.getElementById('hamburgerBtn');
   var menu=document.getElementById('mobileMenu');
   var close=document.getElementById('mobileClose');
-  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');}
-  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');}
+  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');menu.inert=false;}
+  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');menu.inert=true;}
   btn.addEventListener('click',function(){menu.classList.contains('open')?closeMenu():openMenu();});
   close.addEventListener('click',closeMenu);
 })();

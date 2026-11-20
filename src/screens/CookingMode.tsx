@@ -22,7 +22,7 @@ import { foodKey, loadPrep, prepAsRecipe, PREP_ID } from '../lib/prepStore';
 import { BASE_SERVINGS, servingsFor } from '../lib/nutrition';
 import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts';
 import { HiddenRecipe } from '../components/AllergyReminder';
-import { BottomSheet, Button, IconButton, Progress, Skeleton, ToggleChip, cx } from '../components/ds';
+import { BottomSheet, Button, IconButton, Progress, Skeleton, Spinner, ToggleChip, cx } from '../components/ds';
 
 // A cookbook propped on the counter: one step per screen in type you can read from a few
 // feet away, and big targets for next and back. Arrow keys and space move on desktop; the
@@ -111,11 +111,13 @@ function HandsFreePanel({ videoRef, status, handSeen, swipe, subscribeHand }: {
     const t = window.setTimeout(() => setAimed(true), AIM_MS);
     return () => window.clearTimeout(t);
   }, [status]);
-  const preview = status === 'on' && (!aimed || showCamera);
+  // While the hand model gets ready the camera is already on: show it, so the cook can aim.
+  const preview = status === 'loading' || (status === 'on' && (!aimed || showCamera));
 
   const text = swipe === 'next' ? 'Next step' : swipe === 'back' ? 'Back a step'
     : status === 'paused' ? 'Camera paused'
     // Until the tracker is actually running, it isn't watching yet.
+    : status === 'loading' ? 'Getting ready'
     : status !== 'on' ? 'Starting the camera'
     : preview && !showCamera ? 'Aim the camera at your hand'
     : handSeen ? 'Hand seen' : 'Wave to change steps';
@@ -131,6 +133,9 @@ function HandsFreePanel({ videoRef, status, handSeen, swipe, subscribeHand }: {
           className={cx('absolute inset-0 size-full -scale-x-100 object-cover transition-opacity duration-700 ease-out', preview ? 'opacity-100' : 'opacity-0')}
         />
         <HandDrawing subscribe={subscribeHand} overlay={preview} />
+        {(status === 'loading' || status === 'starting') && (
+          <span className="absolute inset-0 flex items-center justify-center bg-surface/40"><Spinner /></span>
+        )}
       </div>
       <div className="flex min-w-0 flex-col items-start gap-2">
         <p className="flex max-w-full items-center gap-2">
@@ -405,7 +410,8 @@ export function CookingMode({ id }: { id: number }) {
       <header className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-10">
         <div className="flex items-center gap-3">
           <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
-          <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</p>
+          {/* The page's heading: the recipe being cooked (same look as before). */}
+          <h1 className="min-w-0 flex-1 truncate text-body font-semibold text-ink-muted">{title}</h1>
           <ToggleChip size="lg" selected={handsFree} onToggle={toggleHandsFree}>Hands-free</ToggleChip>
         </div>
         {handsFree && (
