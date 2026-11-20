@@ -14,7 +14,7 @@ const PICTOGRAPHS = /[☀-➿\u{1F000}-\u{1FAFF}️‍]/gu;
 
 /** One string, ready for the PDF: accents composed, missing characters spelled out. */
 export function pdfText(s: string): string {
-  return s.normalize('NFC').replace(SPELL, ch => SPELLED[ch]).replace(PICTOGRAPHS, '').replace(/ {2,}/g, ' ');
+  return s.normalize('NFC').replace(SPELL, ch => SPELLED[ch]).replace(PICTOGRAPHS, '').replace(JOINERS, '').replace(/ {2,}/g, ' ');
 }
 
 /** Every string in a value (the recipe's print data), ready for the PDF. */
