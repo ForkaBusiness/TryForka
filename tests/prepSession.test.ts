@@ -1,7 +1,7 @@
 // Meal prep sessions: which meals can be prepped on a day, and the session as cooking steps.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultPicks, prepCandidates, prepSteps, sessionSummary, WEEK } from '../src/lib/prepSession.ts';
+import { defaultPicks, prepCandidates, prepServings, prepSteps, sessionSummary, WEEK } from '../src/lib/prepSession.ts';
 import { schedulePrep } from '../src/lib/prepSchedule.ts';
 
 const e = (id: number, title: string, extra = {}) => ({ id, title, image: '', ...extra });
@@ -75,4 +75,15 @@ test('a braise that keeps going after the cook is done is said apart, not counte
     { id: 'rice', title: 'Cook the rice', recipeId: 6, minutes: 20, handsOn: false, startMinutes: 2 },
   ]);
   assert.equal(sessionSummary(plan), 'About 32 minutes, all hands-on. After that, one thing keeps going on its own for about 88 minutes: braise the beef stew in the oven.');
+});
+
+test('prep amounts match the grocery list: a double batch twice, a school lunch for the children who take it', () => {
+  const plan = week() as Record<string, Record<string, Record<string, unknown> | null>>;
+  plan.tuesday.school_lunch = { ...plan.tuesday.school_lunch!, share: 0.5 };
+  const c = prepCandidates(plan as never, 'monday');
+  const by = (title: string) => c.find(x => x.title === title)!;
+  assert.equal(prepServings(by('Beef stew'), 4), 8);
+  assert.equal(prepServings(by('Turkey wraps'), 4), 2);
+  assert.equal(prepServings(by('Pasta bake'), 4), 4);
+  assert.equal(prepServings({ scale: 0.1 }, 4), 1, 'never less than one serving');
 });

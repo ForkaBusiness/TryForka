@@ -3,8 +3,8 @@ import { ChefHat, Clock } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { callFunction, DAY_LONG, SLOT_LABEL, todayKey } from '../lib/plan';
 import { schedulePrep, type PrepTask } from '../lib/prepSchedule';
-import { defaultPicks, kitchenMinutes, MAX_PREP_RECIPES, prepCandidates, prepSteps, sessionSummary, WEEK, type Day } from '../lib/prepSession';
-import { clearPrep, loadPrep, PREP_ID, savePrep, type SavedPrep } from '../lib/prepStore';
+import { defaultPicks, kitchenMinutes, prepServings, MAX_PREP_RECIPES, prepCandidates, prepSteps, sessionSummary, WEEK, type Day } from '../lib/prepSession';
+import { clearPrep, foodKey, loadPrep, PREP_ID, savePrep, type SavedPrep } from '../lib/prepStore';
 import { servingsFor, BASE_SERVINGS } from '../lib/nutrition';
 import { Button, Card, Checkbox, EmptyState, PageContainer, ToggleChip } from '../components/ds';
 
@@ -13,14 +13,15 @@ import { Button, Card, Checkbox, EmptyState, PageContainer, ToggleChip } from '.
 // packing. The session runs in cooking mode with timers, read aloud and hands-free.
 
 export function MealPrep() {
-  const { weekPlan, prefs, back, go, billing } = useApp();
+  const { weekPlan, prefs, back, go, billing, userId } = useApp();
+  const food = foodKey(prefs);
   const today = todayKey();
   const days = WEEK.slice(WEEK.indexOf(today as Day));
-  const [day, setDay] = useState<Day>(() => { const d = loadPrep()?.day; return d && days.includes(d) ? d : days[0]; });
+  const [day, setDay] = useState<Day>(() => { const d = loadPrep(userId, food)?.day; return d && days.includes(d) ? d : days[0]; });
   const candidates = useMemo(() => (weekPlan ? prepCandidates(weekPlan.plan as never, day) : []), [weekPlan, day]);
   const [picked, setPicked] = useState<number[] | null>(null);
   const picks = picked ?? defaultPicks(candidates);
-  const [saved, setSaved] = useState<SavedPrep | null>(() => loadPrep());
+  const [saved, setSaved] = useState<SavedPrep | null>(() => loadPrep(userId, food));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +34,13 @@ export function MealPrep() {
   const plan = async () => {
     setBusy(true); setError(null);
     try {
-      const recipes = picks.map(id => ({ id, servings: servingsFor(id, BASE_SERVINGS) }));
+      // A double batch is prepped as one; a school lunch only for the children who take it.
+      const recipes = candidates.filter(c => picks.includes(c.id)).map(c => ({ id: c.id, servings: prepServings(c, servingsFor(c.id, BASE_SERVINGS)) }));
       const out = await callFunction<{ tasks: PrepTask[]; skipped: string[] }>('meal-prep', { recipes, units: prefs.units });
       const schedule = schedulePrep(out.tasks);
       const session: SavedPrep = {
         at: Date.now(), day, picks, titles: candidates.filter(c => picks.includes(c.id)).map(c => c.title),
-        plan: schedule, steps: prepSteps(schedule), skipped: out.skipped,
+        plan: schedule, steps: prepSteps(schedule), skipped: out.skipped, userId, food,
       };
       savePrep(session);
       setSaved(session);

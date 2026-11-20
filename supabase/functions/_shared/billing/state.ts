@@ -37,6 +37,9 @@ export const FREE_ROW: PlanRow = {
 };
 
 /** After a payment fails, Pro stays this long while Stripe retries the card. */
+/** Statuses of a subscription that still counts (or may still be charged). */
+export const LIVE: ReadonlySet<string> = new Set(['trialing', 'active', 'past_due', 'unpaid', 'incomplete', 'paused']);
+
 export const GRACE_DAYS = 7;
 export const TRIAL_DAYS = 14;
 /** The trial counts as "ending" (and the reminder goes out) this close to its end. */

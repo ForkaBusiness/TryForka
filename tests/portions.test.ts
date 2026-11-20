@@ -157,12 +157,24 @@ test('dayPortions: portions stay between 0.5 and 2', () => {
   assert.equal(small.portion, 0.5, '420 kcal from a 1500 kcal dinner is 0.28, kept at 0.5');
 });
 
-test('dayPortions: a growing kid never gets less than a full portion', () => {
+test('dayPortions: a child never gets less than a full portion, whatever the goal', () => {
   const heavy = { slot: 'dinner' as const, kcal: 1200, protein: 40 };
-  const [growing, plainKid] = dayPortions([heavy], [kid('growing_kid'), { ...kid('more_protein'), id: 'k2' }]);
-  // 0.35 x 1600 = 560 kcal; 560 / 1200 = 0.47 would be 0.5, but growing kids stay at 1.
+  const [growing, proteinKid, noGoal] = dayPortions([heavy], [kid('growing_kid'), { ...kid('more_protein'), id: 'k2' }, { ...kid('none'), id: 'k3' }]);
+  // 0.35 x 1600 = 560 kcal; 560 / 1200 = 0.47 would be 0.5, but children stay at 1.
   assert.equal(growing.portion, 1);
-  assert.ok(plainKid.portion < 1, 'the floor is only for growing_kid');
+  assert.equal(proteinKid.portion, 1);
+  assert.equal(noGoal.portion, 1);
+});
+
+test('dayPortions: a protein goal only ever adds; only calorie goals make a plate smaller', () => {
+  // The review's case: 550 kcal and 40 g protein per serving.
+  const dinner = { slot: 'dinner' as const, kcal: 550, protein: 40 };
+  const adult = (goal: 'more_protein' | 'lighter' | 'protein' | 'calories', extra = {}) => ({ id: goal, name: goal, kind: 'adult' as const, goal, ...extra });
+  const [more, lighter, protein, cals] = dayPortions([dinner], [adult('more_protein'), adult('lighter'), adult('protein', { protein: 40 }), adult('calories', { calories: 1200 })]);
+  assert.ok(more.portion >= 1, `more protein: ${more.portion}`);
+  assert.ok(protein.portion >= 1, `a low protein target doesn't shrink the plate: ${protein.portion}`);
+  assert.ok(more.portion >= lighter.portion, 'more protein never gets less than lighter');
+  assert.equal(cals.portion, 0.75, 'a 1,200 kcal target: 420 / 550, rounded to 0.75');
 });
 
 test('dayPortions: a protein-only goal is sized by protein', () => {

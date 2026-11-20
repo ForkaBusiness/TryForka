@@ -323,11 +323,13 @@ function SignedIn({ session }: { session: Session }) {
 
   const planNewWeek = useCallback(async () => {
     if (!family) return null;
-    const week = await generateWeekPlan(family, planRef.current?.plan ?? null);
+    // The family's plan decides which meals get planned: read it first if it hasn't loaded.
+    const plan = planState === 'ready' ? family.plan : effectivePlan(await refreshPlan().catch(() => planRow), new Date());
+    const week = await generateWeekPlan({ ...family, plan }, planRef.current?.plan ?? null);
     await saveWeek(week.plan, true, { quiet: true });
     setPlanReview({ notice: week.notice, blocked: week.blocked });
     return week.notice;
-  }, [family, saveWeek]);
+  }, [family, saveWeek, planState, refreshPlan, planRow]);
 
   // A busy night says nothing about taste, so the swap is saved quietly. Undo puts the
   // dinner back, and that does say something: the faster dinner was turned down, so it

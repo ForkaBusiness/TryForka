@@ -60,6 +60,28 @@ Deno.serve(async (req: Request) => {
     },
     fetchSubscription: id => stripe<StripeSubscription>('GET', `/subscriptions/${id}`),
     cancelSubscription: async id => { await stripe('DELETE', `/subscriptions/${id}`, {}, `refund-cancel-${id}`); },
+    // Older API versions put the invoice on the charge; newer ones link them through invoice payments.
+    chargeSubscription: async charge => {
+      const sid = (inv: Record<string, unknown> | null | undefined) => {
+        if (!inv) return null;
+        const direct = inv.subscription;
+        if (typeof direct === 'string') return direct;
+        const parent = inv.parent as { subscription_details?: { subscription?: unknown } } | undefined;
+        const nested = parent?.subscription_details?.subscription;
+        return typeof nested === 'string' ? nested : null;
+      };
+      try {
+        if (typeof charge.invoice === 'string') return sid(await stripe<Record<string, unknown>>('GET', `/invoices/${charge.invoice}`));
+        if (typeof charge.payment_intent === 'string') {
+          const found = await stripe<{ data: Array<{ invoice?: unknown }> }>('GET', '/invoice_payments', { 'payment[type]': 'payment_intent', 'payment[payment_intent]': charge.payment_intent, limit: 1, 'expand[]': 'data.invoice' });
+          const inv = found.data[0]?.invoice;
+          return typeof inv === 'object' ? sid(inv as Record<string, unknown>) : typeof inv === 'string' ? sid(await stripe<Record<string, unknown>>('GET', `/invoices/${inv}`)) : null;
+        }
+      } catch (err) {
+        console.error('[stripe] could not link the refunded charge to a subscription:', err);
+      }
+      return null;
+    },
     sendTrialReminder: async (to, details) => {
       const testTo = stripeMode() === 'test' ? Deno.env.get('EMAIL_TEST_TO') : undefined;
       await sendEmail(testTo || to, trialReminderEmail(details, `${APP_URL}?billing=manage`));

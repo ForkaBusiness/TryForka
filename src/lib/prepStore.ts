@@ -10,12 +10,24 @@ export const PREP_ID = -1;
 const KEY = 'forka_prep_session';
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
-export interface SavedPrep { at: number; day: Day; picks: number[]; titles: string[]; plan: PrepPlan; steps: PrepStep[]; skipped: string[] }
+export interface SavedPrep {
+  at: number; day: Day; picks: number[]; titles: string[]; plan: PrepPlan; steps: PrepStep[]; skipped: string[];
+  /** Whose session it is, and the food settings it was made for (see foodKey). */
+  userId: string; food: string;
+}
 
-export function loadPrep(now = Date.now()): SavedPrep | null {
+/** The settings a session's steps were checked against: a change to any of them retires it. */
+export const foodKey = (prefs: { diet: string; allergies: readonly string[]; skip_ingredients: readonly string[] }) =>
+  JSON.stringify([prefs.diet, [...prefs.allergies].sort(), [...prefs.skip_ingredients].sort()]);
+
+/** This account's session, if it was made for the family's food settings as they are now. */
+export function loadPrep(userId: string, food: string, now = Date.now()): SavedPrep | null {
   try {
     const p = JSON.parse(localStorage.getItem(KEY) ?? 'null') as SavedPrep | null;
-    return p && Array.isArray(p.steps) && p.steps.length && now - p.at < KEEP_MS ? p : null;
+    if (!p || !Array.isArray(p.steps) || !p.steps.length || now - p.at >= KEEP_MS) return null;
+    // Another account on this device, or an allergy added since: plan it again.
+    if (p.userId !== userId || p.food !== food) { clearPrep(); return null; }
+    return p;
   } catch { return null; }
 }
 export function savePrep(p: SavedPrep): void {

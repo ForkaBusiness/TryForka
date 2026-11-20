@@ -18,7 +18,7 @@ import { IngredientsSheet, StepIngredients, StepsSheet, type CookIngredient } fr
 import { MissingSheet, VariationsSheet } from '../components/cooking/CookingHelp';
 import { stepIngredients } from '../lib/stepIngredients';
 import { clearSession, loadSession, saveSession } from '../lib/cookSession';
-import { loadPrep, prepAsRecipe, PREP_ID } from '../lib/prepStore';
+import { foodKey, loadPrep, prepAsRecipe, PREP_ID } from '../lib/prepStore';
 import { BASE_SERVINGS, servingsFor } from '../lib/nutrition';
 import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts';
 import { HiddenRecipe } from '../components/AllergyReminder';
@@ -202,7 +202,7 @@ export function CookingMode({ id }: { id: number }) {
 
   useEffect(() => {
     const load = isPrep
-      ? Promise.resolve((() => { const p = loadPrep(); return p ? { recipe: prepAsRecipe(p), blockedBy: null } : null; })())
+      ? Promise.resolve((() => { const p = loadPrep(userId, foodKey(prefs)); return p ? { recipe: prepAsRecipe(p), blockedBy: null } : null; })())
       : getRecipe(id, prefs);
     load.then(r => {
       setBlockedBy(r?.blockedBy ?? null);
@@ -219,7 +219,7 @@ export function CookingMode({ id }: { id: number }) {
       }
       setRecipe(loaded);
     }).catch(() => setRecipe(null));
-  }, [id, prefs, isPrep]);
+  }, [id, prefs, isPrep, userId]);
 
   const total = recipe?.steps.length ?? 0;
   const last = step >= total - 1;

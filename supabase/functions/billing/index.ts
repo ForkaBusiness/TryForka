@@ -1,5 +1,5 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
-import { effectivePlan, FREE_ROW, trialAllowed, TRIAL_DAYS, type Interval, type PlanRow } from '../_shared/billing/state.ts';
+import { effectivePlan, FREE_ROW, LIVE, trialAllowed, TRIAL_DAYS, type Interval, type PlanRow } from '../_shared/billing/state.ts';
 import { PRICE_LOOKUP, stripe } from '../_shared/billing/stripe.ts';
 
 // Starting and managing Forka Pro, for the signed-in user.
@@ -49,7 +49,7 @@ serve(async (body, req) => {
   if (body.mode !== 'checkout') throw new AppError('Unknown request.', 400);
   const interval: Interval = body.interval === 'year' ? 'year' : body.interval === 'month' ? 'month' : (() => { throw new AppError('Choose monthly or yearly.', 400); })();
   if (row.founding) throw new AppError("You're a founding family: Pro is yours for life.", 409);
-  if (effectivePlan(row, new Date()) === 'pro' && row.billing_status !== 'past_due') throw new AppError('You already have Pro. Manage it from Settings.', 409);
+  if (effectivePlan(row, new Date()) === 'pro') throw new AppError('You already have Pro. Manage it from Settings.', 409);
 
   // One Stripe customer per account, created once (the id is recorded; the plan isn't touched).
   let customer = row.stripe_customer_id;
@@ -65,12 +65,14 @@ serve(async (body, req) => {
   const price = prices.data[0]?.id;
   if (!price) throw new AppError('Pro is not set up yet.', 503);
 
-  // The trial: yearly, never used, and no earlier subscription on this customer in Stripe.
-  let trial = trialAllowed(row, interval);
-  if (trial) {
-    const earlier = await stripe<{ data: unknown[] }>('GET', '/subscriptions', { customer, status: 'all', limit: 1 });
-    trial = earlier.data.length === 0;
+  // One subscription per family: one that's still live (a payment being retried, say) is
+  // fixed in the portal, never replaced by a second one that would bill twice.
+  const existing = await stripe<{ data: Array<{ status: string }> }>('GET', '/subscriptions', { customer, status: 'all', limit: 20 });
+  if (existing.data.some(s => LIVE.has(s.status))) {
+    throw new AppError('Your subscription is still open. Update your payment method from Settings to keep Pro.', 409);
   }
+  // The trial: yearly, never used, and no earlier subscription on this customer in Stripe.
+  const trial = trialAllowed(row, interval) && existing.data.length === 0;
 
   const session = await stripe<{ url: string }>('POST', '/checkout/sessions', {
     mode: 'subscription',

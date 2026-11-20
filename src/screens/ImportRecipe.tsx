@@ -3,7 +3,7 @@ import { BookOpen, Camera, ClipboardPaste, Clock, FileText, ImagePlus, Link2, Pe
 import { useApp } from '../app/AppContext';
 import { findLink, importFromLink, importFromPhotos, importFromText, importPickedRecipe, MAX_IMPORT_PHOTOS, type ImportAnswer, type PhotoStep } from '../lib/imports';
 import { clearUnsaved, readUnsaved } from '../lib/householdRecipes';
-import { canImport } from '../lib/usage';
+import { canImport, canSaveRecipe } from '../lib/usage';
 import { Button, Card, IconButton, Input, PageContainer, Spinner, Textarea, cx } from '../components/ds';
 import type { DraftSource } from '../../supabase/functions/_shared/imports/draft.ts';
 
@@ -37,7 +37,7 @@ async function quietClipboardLink(): Promise<string | null> {
 }
 
 export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFiles, mode, shared }: { url?: string; text?: string; files?: File[]; mode?: 'link' | 'photos' | 'text'; shared?: boolean }) {
-  const { userId, back, replace, go } = useApp();
+  const { userId, back, replace, go, billing } = useApp();
   const [link, setLink] = useState(sharedUrl ?? '');
   const [text, setText] = useState(sharedText ?? '');
   const [textSource, setTextSource] = useState<DraftSource | null>(null);
@@ -96,9 +96,11 @@ export function ImportRecipe({ url: sharedUrl, text: sharedText, files: sharedFi
   /** Free's 20 imports: checked before anything is uploaded or read (the server checks too). */
   const LIMIT_MESSAGE = "You've used the 20 imports Free includes. Every recipe you imported stays yours, and you can still write one in by hand.";
   const importFits = async () => {
-    if (await canImport(userId)) return true;
-    setPhase({ name: 'limit', message: LIMIT_MESSAGE });
-    return false;
+    const [imports, room] = await Promise.all([canImport(userId), canSaveRecipe(userId, null)]);
+    if (!imports) { setPhase({ name: 'limit', message: LIMIT_MESSAGE }); return false; }
+    // An import is saved as a recipe: with no room to save it, don't use up an import.
+    if (!room) { billing.upgrade('saved_recipes'); return false; }
+    return true;
   };
 
   const runLink = async (raw: string, allowDuplicate = false) => {

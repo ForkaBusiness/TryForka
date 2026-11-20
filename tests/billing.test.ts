@@ -347,3 +347,42 @@ test('founding families: every account from before Pro, never the test account, 
   // Stripe never changes them, even a stray subscription or refund.
   assert.deepEqual(subscriptionPatch({ id: 'sub_x', status: 'canceled', customer: 'cus_x', cancel_at_period_end: false }, row, T0), {});
 });
+
+// ── One subscription at a time ─────────────────────────────────────────────
+
+test('an earlier subscription that ended never overwrites the current one', async () => {
+  const w = world({ plan: 'free', billing_status: 'ended', stripe_subscription_id: 'sub_1', trial_used: true });
+  w.setSub(w.sub('canceled'));
+  w.setSub({ ...w.sub('active'), id: 'sub_2' });
+  await processEvent(w.event('checkout.session.completed', { mode: 'subscription', subscription: 'sub_2', customer: 'cus_1', client_reference_id: 'user_1' }), w.deps);
+  assert.equal(w.state.row.plan, 'pro');
+  // A late event about the old, cancelled subscription: ignored.
+  await processEvent(w.event('customer.subscription.deleted', { id: 'sub_1', customer: 'cus_1' }), w.deps);
+  assert.equal(w.state.row.plan, 'pro');
+  assert.equal(w.state.row.billing_status, 'active');
+  assert.equal(w.state.row.stripe_subscription_id, 'sub_2');
+  // The current subscription's own end still applies.
+  w.setSub({ ...w.sub('canceled'), id: 'sub_2' });
+  await processEvent(w.event('customer.subscription.deleted', { id: 'sub_2', customer: 'cus_1' }), w.deps);
+  assert.equal(w.state.row.plan, 'free');
+});
+
+test('trial reminder: not sent when the trial was cancelled with a cancel date (newer API versions)', async () => {
+  const w = world();
+  w.setSub(w.sub('trialing', { trial_end: s(later(14)), cancel_at: s(later(14)) }));
+  w.state.now = later(11);
+  assert.equal((await processEvent(w.event('customer.subscription.trial_will_end', { id: 'sub_1' }), w.deps)).status, 'ignored');
+  assert.equal(w.state.emails.length, 0);
+});
+
+test('refund: a refunded charge from an earlier subscription leaves the current one alone', async () => {
+  const w = world({ plan: 'pro', billing_status: 'active', stripe_subscription_id: 'sub_2' });
+  w.setSub({ ...w.sub('active'), id: 'sub_2' });
+  w.deps.chargeSubscription = async charge => (charge.id === 'ch_old' ? 'sub_1' : 'sub_2');
+  await processEvent(w.event('charge.refunded', { id: 'ch_old', customer: 'cus_1', amount: 499, amount_refunded: 499 }), w.deps);
+  assert.equal(w.state.row.plan, 'pro');
+  assert.deepEqual(w.state.cancelled, []);
+  await processEvent(w.event('charge.refunded', { id: 'ch_new', customer: 'cus_1', amount: 3999, amount_refunded: 3999 }), w.deps);
+  assert.equal(w.state.row.plan, 'free');
+  assert.deepEqual(w.state.cancelled, ['sub_2']);
+});

@@ -37,12 +37,15 @@ export function Pro() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isPro = billing.plan === 'pro';
+  // Past the grace period with a payment still being retried: the card is fixed in the
+  // portal, never with a second subscription.
+  const owed = !isPro && billing.row?.billing_status === 'past_due';
 
   const go = async () => {
     setBusy(true);
     setError(null);
     try {
-      await (isPro ? openPortal() : startCheckout(interval));
+      await (isPro || owed ? openPortal() : startCheckout(interval));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't open checkout. Try again.");
       setBusy(false);
@@ -84,6 +87,13 @@ export function Pro() {
         <Card className="mt-6 p-5">
           <p className="text-heading font-semibold text-ink">Founding family</p>
           <p className="mt-1 text-body text-ink-muted">Pro is yours for life. Thank you for being here early.</p>
+        </Card>
+      ) : owed ? (
+        <Card className="mt-6 p-5">
+          <p className="text-heading font-semibold text-ink">Your last payment didn't go through</p>
+          <p className="mt-1 text-body text-ink-muted">Pro is paused until it does. Update your payment method and Pro comes back right away, with nothing to set up again.</p>
+          <Button size="lg" className="mt-4 w-full sm:w-auto" loading={busy} onClick={go}>Update payment method</Button>
+          {error && <p role="alert" className="mt-3 text-small text-terracotta-deep">{error}</p>}
         </Card>
       ) : isPro ? (
         <Card className="mt-6 p-5">

@@ -7,7 +7,7 @@
 // Order-proof: subscription events never trust the event's copy; the subscription is read
 // fresh from Stripe and the user's row is set from that.
 
-import { customerId, FREE_ROW, refundPatch, subscriptionPatch, type PlanRow, type StripeSubscription } from './state.ts';
+import { customerId, FREE_ROW, LIVE, refundPatch, subscriptionPatch, type PlanRow, type StripeSubscription } from './state.ts';
 
 export interface StripeEvent { id: string; type: string; created: number; data: { object: Record<string, unknown> } }
 
@@ -22,6 +22,8 @@ export interface WebhookDeps {
   updatePlan(userId: string, patch: Partial<PlanRow>): Promise<void>;
   fetchSubscription(id: string): Promise<StripeSubscription>;
   cancelSubscription(id: string): Promise<void>;
+  /** The subscription a charge paid for, when Stripe can say (via its invoice); null if unknown. */
+  chargeSubscription?(charge: Record<string, unknown>): Promise<string | null>;
   /** The "your trial ends on ..." email. */
   sendTrialReminder(to: string, details: { trialEnd: Date; amount: number; currency: string; interval: string; timeZone?: string | null }): Promise<void>;
   now(): Date;
@@ -50,6 +52,10 @@ async function applySubscription(deps: WebhookDeps, subId: string, hint: { custo
   if (!user) return `no user for ${customerId(sub.customer)}`;
   // A payment fails when a billing period starts: the grace period runs from there (the
   // failed invoice's own time when the event is an invoice), whenever the event arrives.
+  // An older subscription that has ended never overwrites the one the family has now.
+  if (user.row.stripe_subscription_id && user.row.stripe_subscription_id !== sub.id && !LIVE.has(sub.status)) {
+    return `${user.userId}: ignored ${sub.status} for an earlier subscription`;
+  }
   const periodStart = sub.items?.data?.[0]?.current_period_start ?? sub.current_period_start ?? null;
   const when = sub.status === 'past_due' && !invoiceTime && periodStart ? new Date(periodStart * 1000) : invoiceTime ?? at;
   const patch = subscriptionPatch(sub, user.row, when);
@@ -87,7 +93,8 @@ async function handle(event: StripeEvent, deps: WebhookDeps): Promise<WebhookRes
       if (!user || !sub.trial_end || sub.status !== 'trialing') return { status: 'ignored', detail: 'no trial to remind about' };
       const trialEnd = new Date(sub.trial_end * 1000).toISOString();
       if (user.row.trial_reminder_for === trialEnd) return { status: 'ignored', detail: 'reminder already sent' };
-      if (sub.cancel_at_period_end) return { status: 'ignored', detail: 'trial already cancelled, nothing will be charged' };
+      // Newer API versions record a cancellation as cancel_at rather than cancel_at_period_end.
+      if (sub.cancel_at_period_end || sub.cancel_at) return { status: 'ignored', detail: 'trial already cancelled, nothing will be charged' };
       const price = sub.items?.data?.[0]?.price;
       if (!user.email) return { status: 'ignored', detail: 'no email address' };
       await deps.sendTrialReminder(user.email, {
@@ -113,6 +120,11 @@ async function handle(event: StripeEvent, deps: WebhookDeps): Promise<WebhookRes
       const user = await deps.findUser({ customer: str(obj.customer) });
       if (!user) return { status: 'ignored', detail: 'no user' };
       if (user.row.founding) return { status: 'ignored', detail: 'founding family' };
+      // A refund for an earlier subscription's charge leaves the current one alone.
+      const paidFor = deps.chargeSubscription ? await deps.chargeSubscription(obj) : null;
+      if (paidFor && user.row.stripe_subscription_id && paidFor !== user.row.stripe_subscription_id) {
+        return { status: 'ignored', detail: `refund for an earlier subscription (${paidFor})` };
+      }
       if (user.row.stripe_subscription_id) {
         const sub = await deps.fetchSubscription(user.row.stripe_subscription_id);
         if (!['canceled', 'incomplete_expired'].includes(sub.status)) await deps.cancelSubscription(sub.id);

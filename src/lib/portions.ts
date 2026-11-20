@@ -173,7 +173,7 @@ function snapPortion(raw: number, min: number): number {
   return Math.min(LIMITS.maxPortion, Math.max(min, snapped));
 }
 
-/** One day's shared meals: each person's portion so the planned meals cover their target's share. Portion is the same for every meal of that day, rounded to the nearest portionStep, kept within [minPortion, maxPortion], and never below 1 for growing_kid. Calorie goals drive the portion; protein goals ('protein' and 'more_protein') drive it by protein. An invalid goal is treated as 'none'. With no planned meals, portion 1 and zero totals. */
+/** One day's shared meals: each person's portion so the planned meals cover their target's share. Portion is the same for every meal of that day, rounded to the nearest portionStep, kept within [minPortion, maxPortion], never below 1 for a child or a protein goal (only calorie goals reduce a plate). Calorie goals drive the portion; protein goals ('protein' and 'more_protein') drive it by protein. An invalid goal is treated as 'none'. With no planned meals, portion 1 and zero totals. */
 export function dayPortions(meals: PlannedMealNutrition[], people: PersonGoal[]): PersonPortion[] {
   let kcalPerServing = 0;
   let proteinPerServing = 0;
@@ -201,7 +201,9 @@ export function dayPortions(meals: PlannedMealNutrition[], people: PersonGoal[])
     else if (target.kcal !== null) driver = 'kcal';
     else if (target.protein !== null) driver = 'protein';
 
-    const floor = goal === 'growing_kid' ? Math.max(1, LIMITS.minPortion) : LIMITS.minPortion;
+    // Only a calorie goal ("calories", "lighter") may make a plate smaller. A child never
+    // gets less than a full portion, and a protein goal only ever adds.
+    const floor = person.kind === 'kid' || goal === 'growing_kid' || PROTEIN_LED_GOALS.includes(goal) ? 1 : LIMITS.minPortion;
     let portion = 1;
     if (hasMeals && driver === 'kcal' && kcalPerServing > 0) {
       portion = snapPortion((target.kcal as number) / kcalPerServing, floor);

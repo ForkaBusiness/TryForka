@@ -15,10 +15,14 @@ const PREPPABLE: ReadonlySet<Slot> = new Set(['breakfast', 'school_lunch', 'lunc
 export const MAX_PREP_RECIPES = 6;
 const DEFAULT_PICKS = 3;
 
-interface Entry { id: number; title: string; leftoverOf?: unknown }
+interface Entry { id: number; title: string; leftoverOf?: unknown; cookTimes?: number; share?: number }
 type Week = Record<Day, Partial<Record<Slot, Entry | null>>>;
 
-export interface PrepCandidate { id: number; title: string; day: Day; slot: Slot }
+export interface PrepCandidate {
+  id: number; title: string; day: Day; slot: Slot;
+  /** How much of the recipe to make: 2 for a double batch, a share for school lunches (as the grocery list buys). */
+  scale: number;
+}
 
 /**
  * The meals that can be prepped on `prepDay`: that day and the rest of the week, once each
@@ -31,10 +35,13 @@ export function prepCandidates(plan: Week, prepDay: Day): PrepCandidate[] {
     const e = plan[day]?.[slot];
     if (!e || e.leftoverOf || !PREPPABLE.has(slot) || seen.has(e.id)) continue;
     seen.add(e.id);
-    out.push({ id: e.id, title: e.title, day, slot });
+    out.push({ id: e.id, title: e.title, day, slot, scale: (e.cookTimes ?? 1) * (e.share ?? 1) });
   }
   return out;
 }
+
+/** Servings to prep for a recipe that serves `base` as written: at least one. */
+export const prepServings = (c: Pick<PrepCandidate, 'scale'>, base: number) => Math.max(1, Math.round(base * c.scale));
 
 /** What's ticked to start with: the first few lunches and dinners, then breakfasts. */
 export function defaultPicks(candidates: readonly PrepCandidate[]): number[] {
