@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, FileText, LogOut, Sparkle, Trash2 } from 'lucide-react';
-import { openPortal, planLine } from '../lib/billing';
+import { openPortal, planLine, requestRefund } from '../lib/billing';
 import { useApp } from '../app/AppContext';
 import { signOutToWebsite, supabase } from '../lib/supabase';
 import { saveProfile, type Preferences, type Profile } from '../lib/preferences';
@@ -31,6 +31,50 @@ function Avatar({ url, name }: { url?: string; name: string }) {
   return url
     ? <img src={url} alt="" className="size-14 rounded-full bg-line object-cover" />
     : <span aria-hidden className="flex size-14 items-center justify-center rounded-full bg-green-soft text-heading font-bold text-green">{initials}</span>;
+}
+
+/** A full refund of a payment from the last 14 days, no questions asked: one tap, then a confirm. */
+function RefundRow({ onDone }: { onDone: () => void }) {
+  const [step, setStep] = useState<'idle' | 'confirm' | 'busy'>('idle');
+  const [note, setNote] = useState<{ text: string; problem?: boolean } | null>(null);
+  const refund = async () => {
+    setStep('busy'); setNote(null);
+    try {
+      const r = await requestRefund();
+      if (r.status === 'refunded') {
+        const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: r.currency.toUpperCase() }).format(r.amount / 100);
+        setNote({ text: `Refunded ${amount}. It reaches your card in 5 to 10 days. Pro has ended, and everything you saved is still here.` });
+        // Stripe tells the app the plan has ended a moment later.
+        window.setTimeout(onDone, 4000);
+      } else {
+        setNote({ text: r.message });
+      }
+    } catch (err) {
+      setNote({ text: err instanceof Error ? err.message : "Couldn't request the refund. Try again in a minute.", problem: true });
+    } finally {
+      setStep('idle');
+    }
+  };
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      {step === 'confirm' ? (
+        <div>
+          <p className="text-body text-ink">Refund your payment from the last 14 days in full? Pro ends now, and everything you saved stays.</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Button variant="danger-ghost" onClick={() => void refund()}>Refund and end Pro</Button>
+            <Button variant="secondary" onClick={() => setStep('idle')}>Keep Pro</Button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" disabled={step === 'busy'} onClick={() => { setNote(null); setStep('confirm'); }}
+          className="min-h-11 cursor-pointer text-small font-semibold text-ink-muted underline underline-offset-2 hover:text-ink disabled:opacity-60">
+          {step === 'busy' ? 'Requesting your refund…' : 'Refund my last payment'}
+        </button>
+      )}
+      <p className="mt-1 text-small text-ink-muted">Full refund within 14 days of any payment, no questions asked.</p>
+      {note && <p role={note.problem ? 'alert' : 'status'} className={note.problem ? 'mt-2 text-small text-terracotta-deep' : 'mt-2 text-small text-ink'}>{note.text}</p>}
+    </div>
+  );
 }
 
 export function Settings() {
@@ -124,6 +168,7 @@ export function Settings() {
         </div>
         {known && ['trialing', 'active'].includes(billing.view.kind) && <p className="mt-3 text-small text-ink-muted">Change plan, update your card or cancel on Stripe's secure page.</p>}
         {portalError && <p role="alert" className="mt-3 text-small text-terracotta-deep">{portalError}</p>}
+        {known && ['active', 'cancelled', 'payment_failed'].includes(billing.view.kind) && <RefundRow onDone={() => void billing.refresh()} />}
       </Section>
       )}
 

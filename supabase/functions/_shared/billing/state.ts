@@ -30,6 +30,10 @@ export interface PlanRow {
   founding: boolean;
   /** The trial_end the "trial ends soon" email was sent for (sent once per trial). */
   trial_reminder_for: string | null;
+  /** The subscription the "welcome to Forka Pro" email was sent for (once per subscription). */
+  welcome_sent_for?: string | null;
+  /** The renewal date the yearly "your plan renews soon" email was sent for (once per renewal). */
+  renewal_reminder_for?: string | null;
 }
 
 export const FREE_ROW: PlanRow = {
@@ -68,7 +72,7 @@ export interface StripeSubscription {
 const iso = (seconds: number | null | undefined) => (seconds ? new Date(seconds * 1000).toISOString() : null);
 export const customerId = (c: StripeSubscription['customer']) => (typeof c === 'string' ? c : c.id);
 
-function periodEnd(sub: StripeSubscription): string | null {
+export function periodEnd(sub: StripeSubscription): string | null {
   return iso(sub.current_period_end ?? sub.items?.data?.[0]?.current_period_end ?? null);
 }
 
@@ -148,6 +152,21 @@ export type BillingView =
  * switch), everyone has every feature and nothing is limited, as before Pro existed.
  */
 export const appPlan = (row: PlanRow | null | undefined, now: Date): Plan => (row?.billing_on ? effectivePlan(row, now) : 'pro');
+
+/** A Stripe charge, the parts the refund rule reads. */
+export interface RefundableCharge { id: string; amount: number; amount_refunded: number; currency: string; created: number; status: string; paid?: boolean; refunded?: boolean }
+
+/**
+ * The payment a no-questions refund applies to: the most recent successful charge from the
+ * last `days` days that isn't already refunded in full. Null when there's none (no payment
+ * yet, a trial, or the last payment was longer ago).
+ */
+export function refundableCharge(charges: readonly RefundableCharge[], now: Date, days: number): RefundableCharge | null {
+  const since = now.getTime() / 1000 - days * 86_400;
+  return [...charges]
+    .filter(c => c.status === 'succeeded' && c.paid !== false && !c.refunded && c.amount_refunded < c.amount && c.created >= since)
+    .sort((a, b) => b.created - a.created)[0] ?? null;
+}
 
 export function billingView(row: PlanRow | null | undefined, now: Date): BillingView {
   if (!row) return { kind: 'free', lapsed: false };

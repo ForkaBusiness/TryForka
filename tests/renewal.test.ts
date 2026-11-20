@@ -12,5 +12,8 @@ test('before paying: price, that it renews until cancelled, how often, the first
   assert.match(trial, /cancel before December 4, 2026 and you pay nothing/);
   assert.match(renewalTerms('year', false, NOW), /\$39\.99 every year until you cancel/);
   assert.match(renewalTerms('month', false, NOW), /\$4\.99 every month until you cancel/);
-  for (const t of [trial, renewalTerms('month', false, NOW)]) assert.ok(!/\u2014/.test(t), 'no em dashes');
+  for (const t of [trial, renewalTerms('month', false, NOW), renewalTerms('year', false, NOW)]) {
+    assert.match(t, /Full refund within 14 days of any payment, no questions asked/);
+    assert.ok(!/\u2014/.test(t), 'no em dashes');
+  }
 });

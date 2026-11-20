@@ -11,7 +11,8 @@
 // Order-proof: subscription events never trust the event's copy; the subscription is read
 // fresh from Stripe and the user's row is set from that.
 
-import { customerId, FREE_ROW, LIVE, refundPatch, subscriptionPatch, type PlanRow, type StripeSubscription } from './state.ts';
+import { customerId, FREE_ROW, LIVE, periodEnd, refundPatch, subscriptionPatch, type PlanRow, type StripeSubscription } from './state.ts';
+import { RENEWAL_REMINDER_DAYS, type RenewalDetails, type WelcomeDetails } from './email.ts';
 
 export interface StripeEvent { id: string; type: string; created: number; data: { object: Record<string, unknown> } }
 
@@ -32,6 +33,17 @@ export interface WebhookDeps {
   cancelSubscription(id: string): Promise<void>;
   /** The subscription a charge paid for, when Stripe can say (via its invoice); null if unknown. */
   chargeSubscription?(charge: Record<string, unknown>): Promise<string | null>;
+  /** The "welcome to Forka Pro" email (renewal terms, how to cancel, the refund). */
+  sendWelcome?(to: string, details: WelcomeDetails): Promise<void>;
+  /** The yearly "your plan renews on ..." email. */
+  sendRenewalReminder?(to: string, details: RenewalDetails): Promise<void>;
+  /**
+   * Marks an email as sent for this value (a subscription, a renewal date) unless it already
+   * was: true when this call took it. Atomic, so events arriving together send it once.
+   */
+  claimEmail?(userId: string, column: 'welcome_sent_for' | 'renewal_reminder_for', value: string): Promise<boolean>;
+  /** Hands the mark back when sending failed, so a retry sends it. */
+  releaseEmail?(userId: string, column: 'welcome_sent_for' | 'renewal_reminder_for', previous: string | null): Promise<void>;
   /** The "your trial ends on ..." email. */
   sendTrialReminder(to: string, details: { trialEnd: Date; amount: number; currency: string; interval: string; timeZone?: string | null }): Promise<void>;
   now(): Date;
@@ -71,7 +83,32 @@ async function applySubscription(deps: WebhookDeps, subId: string, hint: { custo
   const when = sub.status === 'past_due' && !invoiceTime && periodStart ? new Date(periodStart * 1000) : invoiceTime ?? at;
   const patch = subscriptionPatch(sub, user.row, when);
   if (Object.keys(patch).length) await deps.updatePlan(user.userId, patch);
-  return `${user.userId}: ${sub.status}${sub.cancel_at_period_end ? ' (cancels at period end)' : ''}`;
+  // A new subscription (trial or paid): the welcome email, once.
+  let welcomed = '';
+  if ((sub.status === 'trialing' || sub.status === 'active') && !user.row.founding && user.email && deps.sendWelcome && deps.claimEmail) {
+    if (await deps.claimEmail(user.userId, 'welcome_sent_for', sub.id)) {
+      try {
+        await deps.sendWelcome(user.email, welcomeDetails(sub));
+        welcomed = ', welcome sent';
+      } catch (err) {
+        await deps.releaseEmail?.(user.userId, 'welcome_sent_for', user.row.welcome_sent_for ?? null).catch(() => {});
+        throw err;
+      }
+    }
+  }
+  return `${user.userId}: ${sub.status}${sub.cancel_at_period_end ? ' (cancels at period end)' : ''}${welcomed}`;
+}
+
+function priceOf(sub: StripeSubscription) {
+  const price = sub.items?.data?.[0]?.price;
+  return { amount: price?.unit_amount ?? 0, currency: price?.currency ?? 'usd', interval: price?.recurring?.interval ?? 'year' };
+}
+
+/** What the welcome email says, from the subscription as Stripe has it. */
+export function welcomeDetails(sub: StripeSubscription): WelcomeDetails {
+  const end = periodEnd(sub);
+  const trial = sub.status === 'trialing' && sub.trial_end ? new Date(sub.trial_end * 1000) : null;
+  return { ...priceOf(sub), trialEnd: trial, renewsOn: trial ? null : end ? new Date(end) : null, timeZone: sub.metadata?.time_zone ?? null };
 }
 
 async function handle(event: StripeEvent, deps: WebhookDeps): Promise<WebhookResult> {
@@ -187,7 +224,7 @@ export const REPLAY_DAYS = 3;
 /** Subscriptions checked at once. */
 const RECONCILE_CONCURRENCY = 8;
 
-export interface ReconcileReport { checked: number; fixed: number; eventsRedone: number; details: Array<{ userId?: string; event?: string; fields?: string[]; error?: string }> }
+export interface ReconcileReport { checked: number; fixed: number; eventsRedone: number; reminders?: number; details: Array<{ userId?: string; event?: string; fields?: string[]; error?: string }> }
 
 const sameValue = (a: unknown, b: unknown) => {
   if (a === b || (a == null && b == null)) return true;
@@ -220,7 +257,8 @@ export async function reconcile(deps: ReconcileDeps): Promise<ReconcileReport> {
   const check = async (userId: string, snapshot: PlanRow) => {
     try {
       // Read again just before checking: a webhook may have changed it since the list was read.
-      const fresh = (await deps.findUser({ userId }))?.row ?? snapshot;
+      const found = await deps.findUser({ userId });
+      const fresh = found?.row ?? snapshot;
       const subId = fresh.stripe_subscription_id;
       if (!subId || fresh.founding) return;
       report.checked++;
@@ -236,6 +274,23 @@ export async function reconcile(deps: ReconcileDeps): Promise<ReconcileReport> {
       };
       await applySubscription({ ...deps, updatePlan: writeIfChanged, findUser: async () => ({ userId, row: fresh, email: null }) }, subId, { customer: fresh.stripe_customer_id, userId }, deps.now());
       if (fields.length) { report.fixed++; report.details.push({ userId, fields }); }
+      // Yearly plans: the "your plan renews soon" email, RENEWAL_REMINDER_DAYS ahead, once per renewal.
+      if (fresh.billing_interval === 'year' && found?.email && deps.sendRenewalReminder && deps.claimEmail) {
+        const sub = await deps.fetchSubscription(subId);
+        const end = periodEnd(sub);
+        const daysLeft = end ? (Date.parse(end) - deps.now().getTime()) / 86_400_000 : -1;
+        if (sub.status === 'active' && !sub.cancel_at_period_end && !sub.cancel_at && end && daysLeft > 0 && daysLeft <= RENEWAL_REMINDER_DAYS
+          && await deps.claimEmail(userId, 'renewal_reminder_for', end)) {
+          try {
+            await deps.sendRenewalReminder(found.email, { ...priceOf(sub), renewsOn: new Date(end), timeZone: sub.metadata?.time_zone ?? null });
+            report.reminders = (report.reminders ?? 0) + 1;
+            report.details.push({ userId, event: `renewal reminder for ${end}` });
+          } catch (err) {
+            await deps.releaseEmail?.(userId, 'renewal_reminder_for', fresh.renewal_reminder_for ?? null).catch(() => {});
+            throw err;
+          }
+        }
+      }
     } catch (err) {
       report.details.push({ userId, error: err instanceof Error ? err.message : String(err) });
     }

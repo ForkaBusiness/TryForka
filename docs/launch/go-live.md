@@ -74,13 +74,14 @@ STRIPE_SECRET_KEY=sk_live_... node scripts/stripe-setup.mjs \
 supabase secrets set STRIPE_SECRET_KEY=sk_live_...
 supabase secrets set STRIPE_WEBHOOK_SECRET="$(cat .stripe-webhook-secret.local)"
 supabase secrets set EMAIL_FROM="Forka <hello@tryforka.com>"
+supabase secrets set EMAIL_REPLY_TO="support@tryforka.com"   # where replies to Forka's emails go: an inbox you read
 supabase secrets unset EMAIL_TEST_TO
 ```
 
 - `EMAIL_TEST_TO` only sends sandbox reminders to a test inbox. It's ignored with a live key, but removing it keeps things tidy.
 - Afterwards, delete the local file: `rm .stripe-webhook-secret.local`.
 
-**It worked when:** `supabase secrets list` shows `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `EMAIL_FROM` (it shows names, never values).
+**It worked when:** `supabase secrets list` shows `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EMAIL_FROM` and `EMAIL_REPLY_TO` (it shows names, never values).
 
 ### 7. Stripe's retry settings for failed payments (revenue recovery)
 
@@ -140,7 +141,7 @@ supabase db query --linked -f /tmp/billing-on.sql
 
 1. Sign in with your own account (not a founding one; create a new account if yours is founding). In Settings, tap **See Pro**, choose **Monthly**, and pay $4.99 with your real card.
 2. Check that the app says **You're on Pro**. In Stripe (live), the payment shows under **Payments**, and the receipt email arrives.
-3. In **Stripe > Payments**, open that payment and click **Refund** (full amount).
+3. In the app, go to **Settings > Plan > Refund my last payment** and confirm. This is the same 14-day, no-questions refund families get. Check that the refund appears in **Stripe > Payments**.
 4. Within a minute, the app's Settings shows **Free**. The subscription in Stripe shows **Canceled**.
 5. Optional: start the **yearly trial** with your card, check that Settings says **Pro trial**, then cancel from **Settings > Manage plan**. Nothing is charged.
 

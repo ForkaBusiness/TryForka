@@ -2,14 +2,18 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.103.3';
 import { FREE_ROW, type PlanRow, type StripeSubscription } from './state.ts';
 import { LOCK_MINUTES, REPLAY_DAYS, type ReconcileDeps, type StripeEvent } from './webhook.ts';
 import { stripe, stripeMode } from './stripe.ts';
-import { sendEmail, trialReminderEmail } from './email.ts';
+import { renewalReminderEmail, sendEmail, trialReminderEmail, welcomeEmail } from './email.ts';
 
 // The real dependencies of the webhook and the daily reconciliation: the database (service
 // role), Stripe, and email. The logic that uses them is in webhook.ts (tested with fakes).
 
-const COLUMNS = 'user_id, plan, billing_status, billing_interval, stripe_customer_id, stripe_subscription_id, current_period_end, trial_end, cancel_at_period_end, pro_until, trial_used, founding, trial_reminder_for';
+const COLUMNS = 'user_id, plan, billing_status, billing_interval, stripe_customer_id, stripe_subscription_id, current_period_end, trial_end, cancel_at_period_end, pro_until, trial_used, founding, trial_reminder_for, welcome_sent_for, renewal_reminder_for';
 
 export function billingDeps(admin: SupabaseClient, appUrl: string): ReconcileDeps {
+  // In the sandbox, service emails go to the test inbox (EMAIL_TEST_TO) instead of the customer.
+  const inbox = (to: string) => (stripeMode() === 'test' && Deno.env.get('EMAIL_TEST_TO')) || to;
+  const manageUrl = `${appUrl}?billing=manage`;
+  const termsUrl = new URL('/terms.html', appUrl).toString();
   const rowFor = async (userId: string): Promise<PlanRow> => {
     const { data } = await admin.from('user_plans').select(COLUMNS).eq('user_id', userId).maybeSingle();
     return { ...FREE_ROW, ...(data ?? {}) } as PlanRow;
@@ -82,6 +86,23 @@ export function billingDeps(admin: SupabaseClient, appUrl: string): ReconcileDep
         console.error('[stripe] could not link the refunded charge to a subscription:', err);
       }
       return null;
+    },
+    sendWelcome: async (to, details) => {
+      await sendEmail(inbox(to), welcomeEmail(details, manageUrl, termsUrl));
+      console.log('[stripe] welcome email sent');
+    },
+    sendRenewalReminder: async (to, details) => {
+      await sendEmail(inbox(to), renewalReminderEmail(details, manageUrl, termsUrl));
+      console.log('[reconcile] renewal reminder sent');
+    },
+    claimEmail: async (userId, column, value) => {
+      const { data, error } = await admin.from('user_plans').update({ [column]: value })
+        .eq('user_id', userId).or(`${column}.is.null,${column}.neq."${value}"`).select('user_id');
+      if (error) throw new Error(`email not claimed: ${error.message}`);
+      return (data ?? []).length === 1;
+    },
+    releaseEmail: async (userId, column, previous) => {
+      await admin.from('user_plans').update({ [column]: previous }).eq('user_id', userId);
     },
     sendTrialReminder: async (to, details) => {
       const testTo = stripeMode() === 'test' ? Deno.env.get('EMAIL_TEST_TO') : undefined;

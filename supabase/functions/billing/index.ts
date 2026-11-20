@@ -1,6 +1,7 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
-import { effectivePlan, FREE_ROW, LIVE, trialAllowed, TRIAL_DAYS, type Interval, type PlanRow } from '../_shared/billing/state.ts';
+import { effectivePlan, FREE_ROW, LIVE, refundableCharge, trialAllowed, type RefundableCharge, TRIAL_DAYS, type Interval, type PlanRow } from '../_shared/billing/state.ts';
 import { PRICE_LOOKUP, stripe } from '../_shared/billing/stripe.ts';
+import { REFUND_DAYS } from '../_shared/billing/email.ts';
 
 // Starting and managing Forka Pro, for the signed-in user.
 //   { mode: "checkout", interval: "month" | "year" } -> { url }   Stripe Checkout
@@ -27,7 +28,7 @@ function appUrl(req: Request): string {
 /** The auto-renewal terms, stated where the family agrees to pay. */
 function renewalNotice(interval: Interval, trial: boolean): string {
   const price = interval === 'year' ? '$39.99 a year' : '$4.99 a month';
-  const cancel = 'Cancel any time in Forka, under Settings > Manage plan.';
+  const cancel = 'Cancel any time in Forka, under Settings > Manage plan. Full refund within 14 days of any payment, no questions asked.';
   return trial
     ? `Free for 14 days, then ${price}, renewing automatically every year until you cancel. Cancel before the trial ends and you pay nothing. ${cancel}`
     : `${price}, renewing automatically every ${interval} until you cancel. ${cancel}`;
@@ -53,6 +54,30 @@ serve(async (body, req) => {
     const configuration = configs.data.find(c => c.metadata?.forka === 'pro')?.id;
     const session = await stripe<{ url: string }>('POST', '/billing_portal/sessions', { customer: row.stripe_customer_id, return_url: `${base}?billing=returned`, ...(configuration ? { configuration } : {}) });
     return { url: session.url };
+  }
+
+  // A full refund of a payment from the last 14 days, no questions asked. The webhook
+  // (charge.refunded) then ends Pro and cancels the subscription, as for any refund.
+  if (body.mode === 'refund') {
+    if (row.founding) return { status: 'none', message: "You're a founding family: nothing has been charged." };
+    if (!row.stripe_customer_id) return { status: 'none', message: "There's no payment to refund." };
+    const charges = await stripe<{ data: RefundableCharge[] }>('GET', '/charges', { customer: row.stripe_customer_id, limit: 20 });
+    const charge = refundableCharge(charges.data, new Date(), REFUND_DAYS);
+    if (!charge) {
+      const paid = charges.data.filter(c => c.status === 'succeeded');
+      const open = paid.some(c => !c.refunded && c.amount_refunded < c.amount);
+      return {
+        status: 'none',
+        message: open
+          ? `Your last payment was more than ${REFUND_DAYS} days ago, so it can't be refunded here. You can still cancel any time in Manage plan.`
+          : paid.length
+            ? 'Your payment has already been refunded. It reaches your card in 5 to 10 days.'
+            : "There's no payment to refund. A free trial isn't charged: cancel before it ends and you pay nothing.",
+      };
+    }
+    await stripe('POST', '/refunds', { charge: charge.id, reason: 'requested_by_customer', metadata: { user_id: user.id, forka: 'no_questions_14_days' } }, `refund-${charge.id}`);
+    console.log(`[billing] refund of ${charge.amount} ${charge.currency}`);
+    return { status: 'refunded', amount: charge.amount, currency: charge.currency };
   }
 
   if (body.mode !== 'checkout') throw new AppError('Unknown request.', 400);

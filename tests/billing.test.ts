@@ -7,7 +7,7 @@ import {
   type PlanRow, type StripeSubscription,
 } from '../supabase/functions/_shared/billing/state.ts';
 import { changedFields, LOCK_MINUTES, processEvent, reconcile, runEvent, type ReconcileDeps, type StripeEvent, type WebhookDeps } from '../supabase/functions/_shared/billing/webhook.ts';
-import { priceText, trialReminderEmail } from '../supabase/functions/_shared/billing/email.ts';
+import { priceText, renewalReminderEmail, RENEWAL_REMINDER_DAYS, REFUND_DAYS, trialReminderEmail, welcomeEmail } from '../supabase/functions/_shared/billing/email.ts';
 
 const SECRET = 'whsec_test_secret';
 const DAY = 86_400_000;
@@ -46,6 +46,8 @@ function world(row: Partial<PlanRow> = {}) {
     events: new Map<string, { status: 'received' | 'processing' | 'processed' | 'failed'; lockedAt: number; event: StripeEvent; error?: string }>(),
     subs: new Map<string, StripeSubscription>(),
     emails: [] as Array<{ to: string; trialEnd: Date; amount: number }>,
+    welcomes: [] as Array<Record<string, unknown>>,
+    renewals: [] as Array<Record<string, unknown>>,
     cancelled: [] as string[],
     now: T0,
     failNextUpdate: false,
@@ -76,6 +78,14 @@ function world(row: Partial<PlanRow> = {}) {
     fetchSubscription: async id => { const sub = state.subs.get(id); if (!sub) throw new Error(`no ${id}`); return sub; },
     cancelSubscription: async id => { state.cancelled.push(id); const sub = state.subs.get(id)!; state.subs.set(id, { ...sub, status: 'canceled' }); },
     sendTrialReminder: async (to, d) => { state.emails.push({ to, trialEnd: d.trialEnd, amount: d.amount }); },
+    sendWelcome: async (to, d) => { state.welcomes.push({ to, ...d }); },
+    sendRenewalReminder: async (to, d) => { state.renewals.push({ to, ...d }); },
+    claimEmail: async (_id, column, value) => {
+      if ((state.row as unknown as Record<string, unknown>)[column] === value) return false;
+      state.row = { ...state.row, [column]: value };
+      return true;
+    },
+    releaseEmail: async (_id, column, previous) => { state.row = { ...state.row, [column]: previous }; },
     now: () => state.now,
   };
   const sub = (status: StripeSubscription['status'], extra: Partial<StripeSubscription> = {}): StripeSubscription => ({
@@ -529,4 +539,116 @@ test('reconciliation: a resubscribe that lands while it runs is never overwritte
   const r2 = await reconcile(c.rdeps);
   assert.equal(c.state.row.plan, 'pro', 'nothing written');
   assert.equal(r2.fixed, 0);
+});
+
+
+// ── Refunds and the welcome and renewal emails ────────────────────────────
+
+test('refunds: the most recent payment from the last 14 days, not already refunded', async () => {
+  const { refundableCharge } = await import('../supabase/functions/_shared/billing/state.ts');
+  const now = new Date('2026-12-20T12:00:00Z');
+  const at = (daysAgo: number) => Math.floor(now.getTime() / 1000) - daysAgo * 86_400;
+  const c = (id: string, daysAgo: number, extra = {}) => ({ id, amount: 499, amount_refunded: 0, currency: 'usd', created: at(daysAgo), status: 'succeeded', paid: true, refunded: false, ...extra });
+  assert.equal(refundableCharge([c('old', 20), c('recent', 3)], now, REFUND_DAYS)?.id, 'recent');
+  assert.equal(refundableCharge([c('edge', 13.9)], now, REFUND_DAYS)?.id, 'edge');
+  assert.equal(refundableCharge([c('late', 14.1)], now, REFUND_DAYS), null, 'past 14 days');
+  assert.equal(refundableCharge([c('done', 2, { refunded: true, amount_refunded: 499 })], now, REFUND_DAYS), null, 'already refunded');
+  assert.equal(refundableCharge([c('failed', 1, { status: 'failed', paid: false })], now, REFUND_DAYS), null, 'a failed charge');
+  assert.equal(refundableCharge([], now, REFUND_DAYS), null, 'a trial: nothing charged');
+});
+
+test('welcome email: once for each new subscription, even when its events arrive together', async () => {
+  const w = world({ stripe_customer_id: 'cus_1' });
+  w.setSub(w.sub('trialing', { trial_end: s(later(14)), metadata: { user_id: 'user_1', time_zone: 'America/Chicago' } }));
+  await Promise.all([
+    processEvent(w.event('checkout.session.completed', { mode: 'subscription', subscription: 'sub_1', customer: 'cus_1', client_reference_id: 'user_1' }), w.deps),
+    processEvent(w.event('customer.subscription.created', { id: 'sub_1', customer: 'cus_1' }), w.deps),
+    processEvent(w.event('invoice.paid', { subscription: 'sub_1', customer: 'cus_1' }), w.deps),
+  ]);
+  assert.equal(w.state.welcomes.length, 1);
+  assert.equal(w.state.welcomes[0].to, 'qa@tryforka.com');
+  assert.equal((w.state.welcomes[0].trialEnd as Date).toISOString(), later(14).toISOString());
+  // A resubscription later is a new subscription: welcomed again.
+  w.setSub({ ...w.sub('active'), id: 'sub_2' });
+  await processEvent(w.event('customer.subscription.created', { id: 'sub_2', customer: 'cus_1' }), w.deps);
+  assert.equal(w.state.welcomes.length, 2);
+  // Founding families never get one.
+  const f = world({ founding: true, plan: 'pro', billing_status: 'founding' });
+  f.setSub(f.sub('active'));
+  await processEvent(f.event('customer.subscription.created', { id: 'sub_1', customer: 'cus_1' }), f.deps);
+  assert.equal(f.state.welcomes.length, 0);
+});
+
+test('welcome email: if sending fails, the event is retried and the email still goes out once', async () => {
+  const w = world();
+  w.setSub(w.sub('active'));
+  let fail = true;
+  const send = w.deps.sendWelcome!;
+  w.deps.sendWelcome = async (to, d) => { if (fail) { fail = false; throw new Error('resend down'); } await send(to, d); };
+  const e = w.event('customer.subscription.created', { id: 'sub_1', customer: 'cus_1' });
+  await assert.rejects(processEvent(e, w.deps), /resend down/);
+  assert.equal(w.state.row.welcome_sent_for ?? null, null, 'the mark was handed back');
+  await processEvent(e, w.deps);
+  assert.equal(w.state.welcomes.length, 1);
+});
+
+test('welcome email words: what was bought, renews until cancelled, how to cancel, the refund, the terms', () => {
+  const trial = welcomeEmail({ interval: 'year', amount: 3999, currency: 'usd', trialEnd: new Date('2026-12-04T16:00:00Z'), renewsOn: null, timeZone: 'America/New_York' }, 'https://tryforka.com/app/?billing=manage', 'https://tryforka.com/terms.html');
+  assert.equal(trial.subject, 'Welcome to Forka Pro: your free trial has started');
+  assert.match(trial.text, /free until Friday, December 4/);
+  assert.match(trial.text, /\$39\.99 is charged to the card you added on December 4, and every year after that, until you cancel/);
+  assert.match(trial.text, /renews automatically/);
+  assert.match(trial.text, /Cancel before December 4 and you pay nothing/);
+  assert.match(trial.text, /full refund of any payment within 14 days of it, no questions asked/);
+  assert.match(trial.text, /terms\.html/);
+  const paid = welcomeEmail({ interval: 'month', amount: 499, currency: 'usd', trialEnd: null, renewsOn: new Date('2027-01-20T16:00:00Z') }, 'm', 't');
+  assert.equal(paid.subject, 'Welcome to Forka Pro');
+  assert.match(paid.text, /You paid \$4\.99 today for your first month/);
+  assert.match(paid.text, /renews automatically every month at \$4\.99 a month, charged to the card you used, until you cancel\. Your next payment is on January 20/);
+  for (const e of [trial, paid]) {
+    assert.ok(!/\u2014/.test(e.text + e.html), 'no em dashes');
+    assert.ok(!/\bAI\b/.test(e.text), 'never "AI"');
+  }
+});
+
+function renewalWorld(daysLeft: number, extra: Partial<StripeSubscription> = {}, row: Partial<PlanRow> = {}) {
+  const w = world({ plan: 'pro', billing_status: 'active', billing_interval: 'year', stripe_subscription_id: 'sub_1', ...row });
+  w.setSub(w.sub('active', { items: { data: [{ current_period_end: s(later(daysLeft)), price: { recurring: { interval: 'year' }, unit_amount: 3999, currency: 'usd' } }] }, ...extra }));
+  w.state.row = { ...w.state.row, current_period_end: later(daysLeft).toISOString() };
+  const rdeps: ReconcileDeps = {
+    ...w.deps,
+    unfinishedEvents: async () => [],
+    subscribedRows: async () => [{ userId: 'user_1', row: w.state.row }],
+  };
+  return { ...w, rdeps };
+}
+
+test('yearly renewal reminder: once, ' + 35 + ' days ahead, only for yearly plans that will renew', async () => {
+  assert.equal(RENEWAL_REMINDER_DAYS, 35);
+  const due = renewalWorld(30);
+  await reconcile(due.rdeps);
+  assert.equal(due.state.renewals.length, 1);
+  assert.equal((due.state.renewals[0].renewsOn as Date).toISOString(), later(30).toISOString());
+  assert.equal(due.state.renewals[0].amount, 3999);
+  await reconcile(due.rdeps);
+  assert.equal(due.state.renewals.length, 1, 'once per renewal');
+  const early = renewalWorld(50);
+  await reconcile(early.rdeps);
+  assert.equal(early.state.renewals.length, 0, 'not yet');
+  const cancelling = renewalWorld(20, { cancel_at_period_end: true }, { cancel_at_period_end: true });
+  await reconcile(cancelling.rdeps);
+  assert.equal(cancelling.state.renewals.length, 0, 'not renewing: nothing to remind');
+  const monthly = renewalWorld(20, {}, { billing_interval: 'month' });
+  monthly.setSub(monthly.sub('active', { items: { data: [{ current_period_end: s(later(20)), price: { recurring: { interval: 'month' }, unit_amount: 499, currency: 'usd' } }] } }));
+  await reconcile(monthly.rdeps);
+  assert.equal(monthly.state.renewals.length, 0, 'monthly plans get no reminder');
+});
+
+test('renewal reminder words: the date, the price, renews automatically, how to cancel, the refund', () => {
+  const e = renewalReminderEmail({ renewsOn: new Date('2027-12-04T16:00:00Z'), amount: 3999, currency: 'usd', interval: 'year', timeZone: 'America/Chicago' }, 'https://tryforka.com/app/?billing=manage', 'https://tryforka.com/terms.html');
+  assert.equal(e.subject, 'Your Forka Pro plan renews on Saturday, December 4');
+  assert.match(e.text, /renews automatically on Saturday, December 4\. \$39\.99 will be charged/);
+  assert.match(e.text, /Cancel before December 4 and you won't be charged/);
+  assert.match(e.text, /within 14 days/);
+  assert.ok(!/\u2014/.test(e.text + e.html));
 });

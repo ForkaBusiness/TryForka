@@ -56,6 +56,13 @@ export async function openPortal(): Promise<void> {
   window.location.assign(url);
 }
 
+export type RefundResult = { status: 'refunded'; amount: number; currency: string } | { status: 'none'; message: string };
+
+/** A full refund of a payment from the last 14 days, no questions asked. Pro ends when Stripe confirms it. */
+export async function requestRefund(): Promise<RefundResult> {
+  return callFunction<RefundResult>('billing', { mode: 'refund' });
+}
+
 /** What Stripe's return to the app says: `?checkout=success`, `?checkout=cancelled`, `?billing=manage`, `?billing=returned`. Read once, then cleared from the address bar. */
 export type BillingReturn = 'checkout_success' | 'checkout_cancelled' | 'manage' | 'portal_returned' | null;
 export function readBillingReturn(): BillingReturn {

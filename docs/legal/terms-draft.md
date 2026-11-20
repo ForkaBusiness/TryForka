@@ -59,7 +59,7 @@ The monthly plan has no free trial.
 
 **Your subscription renews automatically** at the end of each billing period (each month, or each year) at the price then in effect, and your payment method is charged, until you cancel. You authorize Forka and its payment processor, Stripe, to charge your payment method for each renewal.
 
-For yearly subscriptions, we will remind you by email before each renewal. `[LAWYER REVIEW: some states require an annual reminder for yearly plans, or a notice a set number of days before renewal; confirm the timing, see the checklist below. This reminder is not built yet: the app currently emails only before a trial ends.]`
+For yearly subscriptions, we email you about 35 days before each renewal, with the date, the price and how to cancel. When you subscribe, we email you a confirmation with these terms.
 
 ### 8.5 Cancelling
 
@@ -79,13 +79,19 @@ If a renewal payment fails, we and Stripe will retry it for a period of time, an
 
 `[LAWYER REVIEW: confirm retry period wording matches the Stripe settings chosen at launch]`
 
-### 8.7 Refunds
+### 8.7 Refunds: 14 days, no questions asked
 
-**Payments are non-refundable**, except where required by law or as stated here. We may, at our discretion, refund a payment, for example a renewal charged by mistake that you report promptly.
+You can have a **full refund of any Forka Pro payment within 14 days of that payment, for any reason, no questions asked.** This covers your first payment and every renewal, monthly or yearly.
 
-When a payment is refunded in full, the subscription ends and the account moves to Free straight away. If you are in a jurisdiction that grants statutory withdrawal or refund rights, those rights apply.
+- **How:** in the app, go to **Settings > Plan > Refund my last payment**, or contact us through tryforka.com.
+- **What happens:** the refund goes back to the card you paid with, usually within 5 to 10 business days.
+- **Pro ends:** when a payment is refunded, your subscription ends and your account moves to Free straight away. Everything you saved stays.
+- **After 14 days:** payments are non-refundable, except where required by law. You can still cancel any time (8.5), and you won't be charged again.
+- **The free trial:** isn't charged, so there's nothing to refund. Cancel before it ends and you pay nothing.
 
-`[LAWYER REVIEW: refund policy is a business decision. Consider stating a window, e.g. "within 14 days of a renewal charge", to reduce card disputes. EU/UK consumers have a 14-day withdrawal right for digital services unless they expressly waive it when they start using the service; check whether Forka targets them.]`
+If you are in a jurisdiction that grants statutory withdrawal or refund rights, those rights apply in addition to this.
+
+`[LAWYER REVIEW: wording of the no-questions refund promise; EU/UK withdrawal rights are covered by the 14 days in practice, but confirm the required statutory wording if Forka targets those users]`
 
 ### 8.8 Price changes
 
@@ -142,9 +148,9 @@ United States rules on subscriptions that renew automatically, as they apply to 
 |---|---|---|
 | Before purchase, clear and conspicuous: the price, that it renews until cancelled, how often it renews, the length of any trial and when the first charge happens, and how to cancel. Close to where the customer agrees. | California Automatic Renewal Law (Bus. & Prof. Code §17600 and following; amended 2024, in force July 2025); ROSCA (federal); similar laws in many states (e.g. NY, IL, CO, VA) | **Met.** The Pro page states all of it right above the button (see `src/lib/renewal.ts`), with links to the Terms and Privacy Policy. Stripe's checkout page repeats the renewal terms above its Subscribe button. |
 | Affirmative consent to the automatic renewal before charging. | California ARL; ROSCA | **Met.** The customer presses Subscribe or Start trial on Stripe's page, under the renewal notice. `[LAWYER REVIEW: whether a separate checkbox is needed; California's amendments ask for consent to the renewal terms separate from other terms.]` |
-| After purchase, an acknowledgment the customer can keep: renewal terms, cancellation policy, how to cancel. For trials, how to cancel before being charged. | California ARL | **Partly met.** Stripe's receipt email (turn on in go-live step 7) confirms the charge, and the app shows the terms on return. **Gap:** a confirmation email with the renewal terms and the cancel link is not built. Recommended before launch: a short "Welcome to Forka Pro" email sent by the webhook on checkout, with those details. |
+| After purchase, an acknowledgment the customer can keep: renewal terms, cancellation policy, how to cancel. For trials, how to cancel before being charged. | California ARL | **Met.** A "Welcome to Forka Pro" email goes out once for each new subscription. It covers what was bought, the price, that it renews automatically until cancelled and how often, the first charge date for a trial, how to cancel online, the 14-day refund and a link to the Terms. Stripe's receipt email (go-live step 7) confirms each charge. |
 | Cancel online, as easily as signing up, without a call or a retention flow that blocks it. | California ARL ("click to cancel"); FTC Negative Option Rule (its click-to-cancel provisions were vacated by a federal court in July 2025, but ROSCA still requires simple cancellation) | **Met.** Settings > Manage plan opens Stripe's portal, where Cancel is one step. Stripe's cancellation survey is turned off. |
 | Reminder before a free trial converts (California: for trials longer than 31 days, 3 to 21 days before). | California ARL; other states | **Met** (beyond what's required for a 14-day trial). An email goes out 3 days before the trial ends, with the date, the price and a link to cancel. |
 | Notice of a price change before it applies (California: 7 to 30 days). | California ARL | **Process needed.** No price change is planned. If prices change, email every subscriber at least 30 days ahead (Terms 8.8). |
-| Annual reminder for yearly plans (some states, e.g. California for subscriptions with an annual term, New York, Illinois for terms of 12 months or more). | California ARL (2025); NY GBL §527-a; Illinois Automatic Contract Renewal Act (815 ILCS 601) | **Gap.** Only the trial reminder is built. Recommended before the first yearly renewal (a year after launch): an email 15 to 45 days before each yearly renewal, with the date, the price and the cancel link. `[LAWYER REVIEW: exact window per state]` |
+| Annual reminder for yearly plans (some states, e.g. California for subscriptions with an annual term, New York, Illinois for terms of 12 months or more). | California ARL (2025); NY GBL §527-a; Illinois Automatic Contract Renewal Act (815 ILCS 601) | **Met.** The daily billing job emails each yearly subscriber 35 days before every renewal: the date, the price, that it renews automatically, how to cancel, and the 14-day refund. 35 days sits inside both California's 15 to 45 days and Illinois's 30 to 60. `[LAWYER REVIEW: confirm the window for every state Forka sells in]` |
 | Records of the consent and the terms shown. | Good practice; California ARL | Stripe records each checkout session with its custom text and the customer's acceptance. |
