@@ -13,6 +13,12 @@ export interface FamilyMember {
   dislikes: string[];
   allergies: string[];
   position: number;
+  /** Pro: a packed school lunch on weekdays (children). */
+  school_lunch?: boolean;
+  /** Pro: an optional goal (portions.ts). Children only ever have general goals. */
+  goal?: 'none' | 'calories' | 'protein' | 'more_protein' | 'lighter' | 'growing_kid';
+  goal_calories?: number | null;
+  goal_protein?: number | null;
 }
 
 /** Every allergy in the house: the household's plus each person's. */

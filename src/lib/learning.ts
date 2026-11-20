@@ -1,4 +1,5 @@
-import { lookupCards, planningPool, recipeIngredients, type RecipeCard } from './catalog';
+import { lookupCards, planningPool, planningPoolWith, recipeIngredients, type RecipeCard } from './catalog';
+import { slotOnDay } from './meals';
 import type { Preferences } from './preferences';
 import type { FamilyMember } from './family';
 import { CHECK_INGREDIENTS } from './familyPrefs';
@@ -7,7 +8,7 @@ import { fetchGroceryList, listMatchesPlan, rebuildGroceryList } from './groceri
 import { isStaple, itemKey, protectedByList, withoutRecipes } from './groceryMerge';
 import { busyNightNote, fasterOptions, pickBusyNight } from './busyNight';
 import { buildTaste, changeNote, openDays, planWeek, relaxedNotice, scoreRecipe, updatePlan, type Taste } from './planner';
-import { DAYS, DAY_LONG, enforcePlan, entryFromCard, planEntries, planNotice, plannedSlots, slotKey, todayKey, withSlot, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './plan';
+import { DAYS, DAY_LONG, enforcePlan, entryFromCard, planEntries, planNotice, plannedSlots, schoolLunchShareFor, slotKey, todayKey, withSlot, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './plan';
 
 // Where the planner meets the household's data: reads the recipes the family may eat and
 // everything they've told us, then asks the planner (planner.ts) for a new week or for
@@ -21,6 +22,8 @@ export interface Family {
   favorites: number[];
   /** Ingredients to use up this week: meals that use them are favored. */
   onHand: string[];
+  /** Free plans dinners; Pro plans every meal the household switched on. */
+  plan: 'free' | 'pro';
 }
 
 const NO_RECIPES = `No recipes match your settings. Check your allergies and skipped ingredients in Settings. ${CHECK_INGREDIENTS}`;
@@ -37,17 +40,19 @@ async function familyTaste(family: Family, pool: RecipeCard[]): Promise<Taste> {
 
 /** A new week from what the family eats, checked by the filter. Locked days stay as they are. */
 export async function generateWeekPlan(family: Family, current: WeekPlan | null): Promise<PlanReview & { plan: WeekPlan }> {
-  const pool = await planningPool(family.prefs);
+  const slots = plannedSlots(family.prefs, family.plan, family.members);
+  // Snacks and school lunches also come from the catalog's sides and sweets.
+  const pool = slots.some(s => s === 'snack' || s === 'school_lunch') ? await planningPoolWith(family.prefs, ['side', 'dessert']) : await planningPool(family.prefs);
   if (!pool.some(r => r.meal_role === 'main')) throw new Error(NO_RECIPES);
   const taste = await familyTaste(family, pool);
-  const slots = plannedSlots(family.prefs);
-  const lastWeek = new Set(current ? planEntries(current).filter(e => e.slot !== 'breakfast').map(e => e.entry.id) : []);
+  const lastWeek = new Set(current ? planEntries(current).filter(e => e.slot === 'lunch' || e.slot === 'dinner').map(e => e.entry.id) : []);
   const { plan, relaxed } = planWeek({
     candidates: pool, taste, food: family.prefs, slots, maxWeeknightMinutes: family.prefs.max_weeknight_minutes,
-    lastWeek, keep: current, seed: Date.now() >>> 0,
+    lastWeek, keep: current, seed: Date.now() >>> 0, schoolLunchShare: schoolLunchShareFor(family.members),
   });
   const checked = await enforcePlan(plan, family.prefs);
-  const blocked = DAYS.flatMap(d => slots.filter(s => !checked.plan[d][s]).map(s => slotKey(d, s)));
+  // School lunches are weekdays only: an empty weekend school lunch isn't a gap.
+  const blocked = DAYS.flatMap(d => slots.filter(s => !checked.plan[d][s] && slotOnDay(s, d)).map(s => slotKey(d, s)));
   return {
     plan: checked.plan,
     notice: [relaxedNotice(relaxed, family.prefs.max_weeknight_minutes), planNotice(checked.replaced, blocked.length)].filter(Boolean).join(' ') || null,

@@ -297,8 +297,8 @@ function SignedIn({ session }: { session: Session }) {
   }, [userId]);
 
   const family: Family | null = useMemo(
-    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand) } : null),
-    [userId, shownPrefs, members, favorites, onHand],
+    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand), plan: effectivePlan(planRow, new Date()) } : null),
+    [userId, shownPrefs, members, favorites, onHand, planRow],
   );
 
   const planNewWeek = useCallback(async () => {
@@ -401,7 +401,7 @@ function SignedIn({ session }: { session: Session }) {
     );
   }
   if (!prefs.onboarded_at) {
-    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
+    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} pro={effectivePlan(planRow, new Date()) === 'pro'} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
   }
 
   let content: React.ReactNode;

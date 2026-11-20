@@ -11,13 +11,14 @@ import { REPLACEMENT_TRIES } from './recipeFilter';
 // the household's own words.
 
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
-export const SLOTS = ['breakfast', 'lunch', 'dinner'] as const;
+/** Every meal a week can hold, in the order a day runs (planner.ts PLAN_SLOTS). Free plans dinner; Pro the rest. */
+export const SLOTS = ['breakfast', 'school_lunch', 'lunch', 'snack', 'dinner'] as const;
 export type Day = typeof DAYS[number];
 export type Slot = typeof SLOTS[number];
 
 export const DAY_SHORT: Record<Day, string> = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun' };
 export const DAY_LONG: Record<Day, string> = { monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday' };
-export const SLOT_LABEL: Record<Slot, string> = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner' };
+export const SLOT_LABEL: Record<Slot, string> = { breakfast: 'Breakfast', school_lunch: 'School lunch', lunch: 'Lunch', snack: 'Snack', dinner: 'Dinner' };
 
 export interface PlanEntry {
   id: number;
@@ -27,6 +28,12 @@ export interface PlanEntry {
   locked?: boolean;
   /** The household put this meal here by hand, so the daily update leaves it alone. */
   chosen?: boolean;
+  /** Share of the recipe the grocery list buys for: a school lunch for 2 children is 0.5 (default 1). */
+  share?: number;
+  /** Cook once, eat twice: cooked as a double batch (the list buys twice). */
+  cookTimes?: number;
+  /** The leftovers of a double batch cooked earlier: nothing to buy. */
+  leftoverOf?: { day: Day; slot: Slot; id: number };
 }
 export type WeekPlan = Record<Day, Record<Slot, PlanEntry | null>>;
 
@@ -39,7 +46,7 @@ export interface SavedWeekPlan {
 }
 
 export function emptyPlan(): WeekPlan {
-  return Object.fromEntries(DAYS.map(d => [d, { breakfast: null, lunch: null, dinner: null }])) as WeekPlan;
+  return Object.fromEntries(DAYS.map(d => [d, Object.fromEntries(SLOTS.map(s => [s, null]))])) as WeekPlan;
 }
 
 /** Fills in any days/slots missing from an older saved plan. */
@@ -137,14 +144,15 @@ export async function enforcePlan(plan: WeekPlan, prefs: Preferences): Promise<{
   if (!failed.length) return { plan, changed: false, replaced: 0, blocked: [] };
   const options = (role: 'breakfast' | 'main') => (failed.some(f => (f.slot === 'breakfast') === (role === 'breakfast'))
     ? similarRecipes(null, role, [], prefs, REPLACEMENT_TRIES * 2) : Promise.resolve([]));
-  const [mains, breakfasts] = await Promise.all([options('main'), options('breakfast')]);
-  return repairPlan(plan, cards, { mains, breakfasts }, prefs);
+  const needsSnacks = failed.some(f => f.slot === 'snack' || f.slot === 'school_lunch');
+  const [mains, breakfasts, sides, desserts] = await Promise.all([options('main'), options('breakfast'),
+    needsSnacks ? similarRecipes(null, 'side', [], prefs, REPLACEMENT_TRIES * 2) : Promise.resolve([]),
+    needsSnacks ? similarRecipes(null, 'dessert', [], prefs, REPLACEMENT_TRIES * 2) : Promise.resolve([])]);
+  return repairPlan(plan, cards, { mains, breakfasts, snacks: [...sides, ...desserts] }, prefs);
 }
 
-export const plannedSlots = (prefs: Preferences): Slot[] => {
-  const slots = SLOTS.filter(s => (s === 'breakfast' ? prefs.plan_breakfast : s === 'lunch' ? prefs.plan_lunch : prefs.plan_dinner));
-  return slots.length ? slots : ['dinner'];
-};
+// plannedSlots and schoolLunchShareFor live in meals.ts (pure, tested); re-exported here.
+export { plannedSlots, schoolLunchShareFor } from './meals';
 
 // ── Suggestions Edge Function ──────────────────────────────────────────────
 

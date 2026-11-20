@@ -57,8 +57,10 @@ function PeoplePicker({ value, onChange }: { value: Person[]; onChange: (p: Pers
   );
 }
 
-export function Onboarding({ userId, initial, askFamily, onDone, onSignOut }: {
+export function Onboarding({ userId, initial, askFamily, pro = false, onDone, onSignOut }: {
   userId: string;
+  /** Pro chooses every meal here; Free plans dinner and is asked only about cook time. */
+  pro?: boolean;
   initial: Preferences | null;
   /** False when the family can't be saved yet: the last step is left out. */
   askFamily: boolean;
@@ -71,7 +73,8 @@ export function Onboarding({ userId, initial, askFamily, onDone, onSignOut }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const update = (p: Partial<Preferences>) => setPrefs(prev => ({ ...prev, ...p }));
-  const steps = askFamily ? STEPS : STEPS.slice(0, FAMILY_STEP);
+  const allSteps = pro ? STEPS : STEPS.map((s, i) => (i === 3 ? { title: 'How long can weeknight dinners take?', intro: 'We plan your dinners to fit. You can change this any time in Settings.' } : s));
+  const steps = askFamily ? allSteps : allSteps.slice(0, FAMILY_STEP);
 
   const next = async () => {
     setError(null);
@@ -81,7 +84,9 @@ export function Onboarding({ userId, initial, askFamily, onDone, onSignOut }: {
       const fields: Partial<Preferences> = step === 0 ? { diet: prefs.diet }
         : step === 1 ? { allergies: prefs.allergies }
         : step === 2 ? { skip_ingredients: prefs.skip_ingredients, avoid_ingredients: prefs.avoid_ingredients }
-        : step === 3 ? { plan_breakfast: prefs.plan_breakfast, plan_lunch: prefs.plan_lunch, plan_dinner: prefs.plan_dinner, max_weeknight_minutes: prefs.max_weeknight_minutes }
+        : step === 3 ? (pro
+          ? { plan_breakfast: prefs.plan_breakfast, plan_lunch: prefs.plan_lunch, plan_snacks: !!prefs.plan_snacks, plan_dinner: prefs.plan_dinner, max_weeknight_minutes: prefs.max_weeknight_minutes }
+          : { plan_dinner: true, max_weeknight_minutes: prefs.max_weeknight_minutes })
         : {};
       const onboarded_at = last ? new Date().toISOString() : prefs.onboarded_at;
       await savePreferences(userId, { ...fields, ...(last ? { onboarded_at } : {}) });
@@ -114,7 +119,7 @@ export function Onboarding({ userId, initial, askFamily, onDone, onSignOut }: {
           {step === 0 && <DietPicker value={prefs.diet} onChange={diet => update({ diet })} />}
           {step === 1 && <AllergyPicker value={prefs.allergies} onChange={allergies => update({ allergies })} />}
           {step === 2 && <SkipList never={prefs.skip_ingredients} avoid={prefs.avoid_ingredients} onChange={(skip_ingredients, avoid_ingredients) => update({ skip_ingredients, avoid_ingredients })} />}
-          {step === 3 && <PlanningPicker value={prefs} onChange={update} />}
+          {step === 3 && <PlanningPicker value={prefs} onChange={update} pro={pro} />}
           {step === FAMILY_STEP && <PeoplePicker value={people} onChange={setPeople} />}
           {error && <p role="alert" className="mt-6 text-small text-terracotta-deep">{error}</p>}
         </div>

@@ -24,7 +24,14 @@ export interface MergeIngredient {
   unit: string;
 }
 
-export interface MergeRecipe { id: number; title: string; ingredients: MergeIngredient[] }
+export interface MergeRecipe {
+  id: number; title: string; ingredients: MergeIngredient[];
+  /**
+   * How much of the recipe this meal buys for (default 1): a school lunch for 2 children is
+   * 0.5, a double batch for leftovers 2. Measures with no amount are listed whatever it is.
+   */
+  multiplier?: number;
+}
 
 /** One summed amount: a family ("mass", "volume", "count:clove") and its base-unit total. */
 export interface AmountLine { family: string; value: number }
@@ -32,7 +39,7 @@ export interface AmountLine { family: string; value: number }
 export interface NoteLine { text: string; recipe: string }
 
 /** Bumped when the way lists are built changes, so saved lists rebuild themselves. */
-export const LIST_VERSION = 6;
+export const LIST_VERSION = 7;
 
 /** What one planned meal needs of an item. `family` is null when its measure has no amount. */
 export interface ItemPart { recipe: number; title: string; family: string | null; value: number; note: string }
@@ -144,6 +151,8 @@ function summed(parts: readonly ItemPart[]): Pick<GroceryItem, 'amounts' | 'note
 export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Aisle | undefined): GroceryItem[] {
   const byKey = new Map<string, { name: string; aisle: Aisle; parts: ItemPart[] }>();
   for (const recipe of recipes) {
+    const times = recipe.multiplier ?? 1;
+    if (!(times > 0)) continue;
     for (const ing of recipe.ingredients) {
       const key = itemKey(ing.name_us || ing.name);
       if (!key || SKIP.has(key)) continue;
@@ -162,7 +171,7 @@ export function combine(recipes: MergeRecipe[], aisleOf: (rawName: string) => Ai
           entry.parts.push({ recipe: recipe.id, title: recipe.title, family: null, value: 0, note: ing.measure_raw.trim() });
           continue;
         }
-        const { family, value } = toBase(qty, unit);
+        const { family, value } = toBase(qty * times, unit);
         entry.parts.push({ recipe: recipe.id, title: recipe.title, family, value, note: '' });
       } else {
         entry.parts.push({ recipe: recipe.id, title: recipe.title, family: null, value: 0, note: ing.measure_raw.trim() });
@@ -256,3 +265,7 @@ function mondayOf(iso: string): string {
 export function sameShop(previousPlanCreatedAt: string | null, planCreatedAt: string): boolean {
   return !previousPlanCreatedAt || mondayOf(previousPlanCreatedAt) === mondayOf(planCreatedAt);
 }
+
+/** How much of a planned meal's recipe to buy: its share (school lunches), twice for a double batch, nothing for leftovers. */
+export const entryMultiplier = (e: { share?: number; cookTimes?: number; leftoverOf?: unknown }) =>
+  e.leftoverOf ? 0 : (e.share ?? 1) * (e.cookTimes ?? 1);

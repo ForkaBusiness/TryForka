@@ -152,7 +152,7 @@ export function Settings() {
       </Section>
 
       <Section id="planning" title="Planning" intro="Used when we plan your week.">
-        <PlanningPicker value={prefs} onChange={savePrefs} />
+        <PlanningPicker value={prefs} onChange={savePrefs} pro={billing.plan === 'pro' || billing.status !== 'ready'} onPro={() => billing.upgrade('meals')} />
       </Section>
 
       <Section id="units" title="Units">

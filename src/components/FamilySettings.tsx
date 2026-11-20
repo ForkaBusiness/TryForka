@@ -3,10 +3,10 @@ import { Plus } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { memberSummary, type FamilyMember, type MemberDraft, type MemberKind } from '../lib/family';
 import { dislikeOptions, exactOption, type IngredientOption } from '../lib/ingredientSearch';
-import { AllergyPicker } from './PrefControls';
+import { AllergyPicker, ProOption } from './PrefControls';
 import { useIngredientIndex } from '../lib/useIngredientIndex';
 import { IngredientInput } from './IngredientInput';
-import { BottomSheet, Button, Input, Segmented } from './ds';
+import { BottomSheet, Button, Checkbox, Input, Segmented } from './ds';
 
 // The people at the table, in Settings: a row per person, and a sheet to add or edit one.
 // A person's allergies hide recipes for the whole household, like the household's own.
@@ -34,7 +34,8 @@ function TasteInput({ label, placeholder, value, onChange, options }: {
 }
 
 function MemberSheet({ member, onClose }: { member: FamilyMember | 'new' | null; onClose: () => void }) {
-  const { saveFamilyMember, removeFamilyMember } = useApp();
+  const { saveFamilyMember, removeFamilyMember, billing } = useApp();
+  const pro = billing.plan === 'pro';
   const [draft, setDraft] = useState<MemberDraft>(BLANK);
   const [busy, setBusy] = useState<'save' | 'remove' | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -81,6 +82,11 @@ function MemberSheet({ member, onClose }: { member: FamilyMember | 'new' | null;
       <div className="grid gap-6 pt-1">
         <Input label="Name" autoComplete="off" maxLength={40} placeholder="Mia" value={draft.name} onChange={e => set({ name: e.target.value })} data-autofocus={existing ? undefined : true} />
         <Segmented label="Adult or kid" options={KINDS} value={draft.kind} onChange={kind => set({ kind })} className="w-full" />
+        {draft.kind === 'kid' && (
+          pro
+            ? <Checkbox checked={!!draft.school_lunch} onChange={school_lunch => set({ school_lunch })} label="Packed school lunch on weekdays" />
+            : <ProOption label="Packed school lunch on weekdays" onPro={() => { onClose(); billing.upgrade('meals'); }} />
+        )}
         <div>
           <p className="mb-3 text-small text-ink-muted">Recipes with these are never shown or planned, for the whole household.</p>
           <AllergyPicker value={draft.allergies} onChange={allergies => set({ allergies })} />

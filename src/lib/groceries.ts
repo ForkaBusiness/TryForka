@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { ingredientAisles, recipeIngredients } from './catalog';
 import { planEntries, type SavedWeekPlan } from './plan';
-import { AISLES, combine, sameShop, LIST_VERSION, type Aisle, type GroceryItem, type MergeIngredient } from './groceryMerge';
+import { AISLES, combine, entryMultiplier, sameShop, LIST_VERSION, type Aisle, type GroceryItem, type MergeIngredient } from './groceryMerge';
 
 // The household's grocery list (one row per user in grocery_lists), built from the
 // saved week plan. Editing the plan rebuilds the list and keeps ticks for items that
@@ -65,15 +65,17 @@ export async function fetchGroceryList(userId: string): Promise<SavedGroceryList
   };
 }
 
-/** Combines the ingredients of every planned meal (a recipe planned twice counts twice). */
+export { entryMultiplier };
+
+/** Combines the ingredients of every planned meal (a recipe planned twice counts twice; see entryMultiplier). */
 export async function buildItems(saved: SavedWeekPlan): Promise<GroceryItem[]> {
-  const entries = planEntries(saved.plan);
+  const entries = planEntries(saved.plan).filter(e => entryMultiplier(e.entry) > 0);
   const ids = [...new Set(entries.map(e => e.entry.id))];
   if (!ids.length) return [];
   const byId = new Map((await recipeIngredients(ids)).map(r => [r.id, r]));
   const recipes = entries.flatMap(({ entry }) => {
     const r = byId.get(entry.id);
-    return r ? [{ id: entry.id, title: r.display_name || r.name, ingredients: r.ingredients }] : [];
+    return r ? [{ id: entry.id, title: r.display_name || r.name, ingredients: r.ingredients, multiplier: entryMultiplier(entry) }] : [];
   });
   const aisles = await ingredientAisles(recipes.flatMap(r => r.ingredients.map(i => i.name)));
   return combine(recipes, name => {

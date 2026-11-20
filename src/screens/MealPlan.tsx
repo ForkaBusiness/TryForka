@@ -6,8 +6,13 @@ import {
 import { useApp } from '../app/AppContext';
 import { minutesLabel, photo, recipeTitle, safeCardMap, type RecipeCard } from '../lib/catalog';
 import type { Preferences } from '../lib/preferences';
-import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, planEntries, slotKey, SLOT_LABEL, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
+import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, plannedSlots as planSlots, planEntries, slotKey, SLOT_LABEL, SLOTS, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
+
+/** The meals around dinner, in the order a day runs. */
+const OTHER_SLOTS = SLOTS.filter((s): s is Exclude<Slot, 'dinner'> => s !== 'dinner');
 import { CheckIn } from '../components/CheckIn';
+import { slotOnDay } from '../lib/meals';
+import { MealsCheckIn } from '../components/MealsCheckIn';
 import { activeOnHand } from '../lib/onHand';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { ImportRows } from '../components/ImportEntry';
@@ -44,7 +49,7 @@ function useCards(entries: PlanEntry[], prefs: Preferences): Map<number, RecipeC
  */
 function shownPlan(plan: WeekPlan, cards: Map<number, RecipeCard>): WeekPlan {
   const out = emptyPlan();
-  for (const d of DAYS) for (const s of ['breakfast', 'lunch', 'dinner'] as const) {
+  for (const d of DAYS) for (const s of SLOTS) {
     const entry = plan[d][s];
     out[d][s] = entry && cards.has(entry.id) ? entry : null;
   }
@@ -161,7 +166,8 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
   const ahead = DAYS.indexOf(day) >= DAYS.indexOf(today);
   // While a faster dinner is being looked for, the other actions wait: they'd change the plan under it.
   const unless = <T,>(fn: T) => (busy ? undefined : fn);
-  const otherSlots = (['breakfast', 'lunch'] as const).filter(s => plan[day][s] || plannedSlots.includes(s));
+  // School lunches are weekdays only.
+  const otherSlots = OTHER_SLOTS.filter(s => plan[day][s] || (plannedSlots.includes(s) && slotOnDay(s, day)));
   const green = 'text-green';
 
   return (
@@ -239,7 +245,7 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions, onHand } = useApp();
+  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions, onHand, billing, members } = useApp();
   const usingUp = activeOnHand(onHand);
   const today = todayKey();
   const [sheetDay, setSheetDay] = useState<Day | null>(null);
@@ -303,7 +309,8 @@ export function MealPlan() {
   const plan = shownPlan(weekPlan?.plan ?? emptyPlan(), cards);
   const hasMeals = planEntries(plan).length > 0;
   const isBlocked = (d: Day, s: Slot) => planReview.blocked.includes(slotKey(d, s));
-  const plannedSlots: Slot[] = (['breakfast', 'lunch'] as const).filter(s => (s === 'breakfast' ? prefs.plan_breakfast : prefs.plan_lunch));
+  // The meals around dinner this household plans (Pro); whatever a week already holds still shows.
+  const plannedSlots: Slot[] = planSlots(prefs, billing.plan, members).filter(s => s !== 'dinner');
   const open = (id: number) => { setSheetDay(null); go({ name: 'recipe', id }); };
   const dinner = plan[today].dinner;
   const dinnerCard = dinner ? cards.get(dinner.id) : undefined;
@@ -383,7 +390,7 @@ export function MealPlan() {
 
   const row = (d: Day, past?: boolean) => {
     const entry = plan[d].dinner;
-    const others = (['breakfast', 'lunch'] as const).map(s => plan[d][s]).filter((e): e is PlanEntry => !!e).map(o => (cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title));
+    const others = OTHER_SLOTS.map(s => plan[d][s]).filter((e): e is PlanEntry => !!e).map(o => (cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title));
     return <DayRow key={d} day={d} entry={entry} card={entry ? cards.get(entry.id) : undefined} others={others} blocked={isBlocked(d, 'dinner')} past={past} onSelect={() => openSheet(d)} />;
   };
   const week = (days: Day[], label: string, id: string, past?: boolean) => days.length > 0 && (
@@ -395,7 +402,8 @@ export function MealPlan() {
 
   const headline = !hasMeals ? 'This week' : dinner ? "Tonight's sorted." : 'Nothing planned tonight.';
   const intro = !hasMeals ? undefined : [DAY_LONG[today], dinner ? minutesLabel(dinnerCard?.total_minutes).toLowerCase() : ''].filter(Boolean).join(', ');
-  const otherToday = plannedSlots.filter(s => hasMeals || plan[today][s]);
+  // Meals already planned always show (nothing is taken away); open slots only for meals planned now.
+  const otherToday = OTHER_SLOTS.filter(s => plan[today][s] || (hasMeals && plannedSlots.includes(s) && slotOnDay(s, today)));
 
   return (
     <PageContainer wide title={headline} intro={intro}>
@@ -405,6 +413,7 @@ export function MealPlan() {
           {info && <p role="status" className="mb-4 text-small text-ink-muted">{info}</p>}
           {notice}
           {hasMeals && <CheckIn />}
+          {hasMeals && <MealsCheckIn />}
 
           {hasMeals ? (
             <Tonight

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, CalendarPlus } from 'lucide-react';
 import { useApp, type SuggestionsTarget } from '../app/AppContext';
 import { safeCards, similarRecipes, type RecipeCard } from '../lib/catalog';
+import { isSchoolLunch, isSnack } from '../lib/meals';
 import {
-  DAY_LONG, emptyPlan, entryFromCard, findInPlan, getSuggestions, nextOpenSlot, planEntries, withSlot,
+  DAY_LONG, emptyPlan, entryFromCard, findInPlan, getSuggestions, nextOpenSlot, planEntries, SLOT_LABEL, withSlot,
   type SuggestionPick,
 } from '../lib/plan';
 import { AllergyReminder } from '../components/AllergyReminder';
@@ -39,7 +40,12 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
     const exclude = planEntries(plan).map(e => e.entry.id);
     (async () => {
       const base = current ? (await safeCards([current.id], prefs))[0] ?? null : null;
-      const similar = await similarRecipes(base, target.slot === 'breakfast' ? 'breakfast' : 'main', exclude, prefs);
+      // Same kind of meal: snacks from sides and sweets, school lunches only if they pack and suit kids.
+      const similar = target.slot === 'snack'
+        ? [...await similarRecipes(base, 'side', exclude, prefs, 24), ...await similarRecipes(base, 'dessert', exclude, prefs, 24)].filter(isSnack).slice(0, 8)
+        : target.slot === 'school_lunch'
+          ? [...await similarRecipes(base, 'main', exclude, prefs, 120), ...await similarRecipes(base, 'side', exclude, prefs, 60)].filter(isSchoolLunch).slice(0, 8)
+          : await similarRecipes(base, target.slot === 'breakfast' ? 'breakfast' : 'main', exclude, prefs);
       // The current recipe leads, so it shows as selected.
       setIdeas([...(base ? [base] : []), ...similar]);
     })().catch(() => setIdeas([]));
@@ -51,7 +57,9 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
     setLoading(true); setMessage(null);
     try {
       const exclude = weekPlan ? planEntries(weekPlan.plan).map(e => e.entry.id) : [];
-      const result = await getSuggestions(q, prefs, { slot: target?.slot, exclude: target ? exclude : [] });
+      // The suggestions function knows breakfast, lunch and dinner; a school lunch asks as a lunch.
+      const slot = target?.slot === 'school_lunch' ? 'lunch' : target?.slot === 'snack' ? undefined : target?.slot;
+      const result = await getSuggestions(q, prefs, { slot, exclude: target ? exclude : [] });
       setPicks(result.picks);
       setNote(result.note);
     } catch (err) {
@@ -88,8 +96,9 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
       if (target) {
         const before = weekPlan?.plan ?? emptyPlan();
         // A locked day stays locked when the household itself picks something else for it.
-        const locked = before[target.day][target.slot]?.locked;
-        const plan = withSlot(before, target.day, target.slot, locked ? { ...entryFromCard(r), locked } : entryFromCard(r));
+        const was = before[target.day][target.slot];
+        // A school lunch keeps how many children it's packed for.
+        const plan = withSlot(before, target.day, target.slot, { ...entryFromCard(r), ...(was?.locked ? { locked: true } : {}), ...(was?.share ? { share: was.share } : {}) });
         await saveWeek(plan, !weekPlan);
         onClose();
         return;
@@ -106,7 +115,7 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
         return;
       }
       await saveWeek(withSlot(plan, spot.day, spot.slot, entryFromCard(r)), !weekPlan);
-      setMessage({ tone: 'ok', text: `Added to ${DAY_LONG[spot.day]} ${spot.slot}.` });
+      setMessage({ tone: 'ok', text: `Added to ${DAY_LONG[spot.day]} ${SLOT_LABEL[spot.slot].toLowerCase()}.` });
     } catch {
       setMessage({ tone: 'error', text: "Couldn't update your week. Check your connection and try again." });
     }
@@ -117,7 +126,7 @@ export function SuggestionsPanel({ open, target, onClose }: { open: boolean; tar
 
   // An open day has nothing to swap: the sheet is for picking.
   const filled = !!target && !!weekPlan?.plan[target.day][target.slot];
-  const title = target ? `${filled ? 'Swap' : 'Pick'} ${DAY_LONG[target.day]} ${target.slot}` : 'Suggestions';
+  const title = target ? `${filled ? 'Swap' : 'Pick'} ${DAY_LONG[target.day]} ${SLOT_LABEL[target.slot].toLowerCase()}` : 'Suggestions';
   const selectedId = target && weekPlan ? weekPlan.plan[target.day][target.slot]?.id : null;
   const carousel = (recipes: RecipeCard[], caption?: (r: RecipeCard) => string | undefined) => (
     <RecipeCarousel key={recipes.map(r => r.id).join()} recipes={recipes} selectedId={selectedId} onSelect={r => void choose(r)}

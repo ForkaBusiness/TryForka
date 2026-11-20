@@ -111,9 +111,11 @@ export async function safeCardMap(ids: readonly number[], prefs: FoodPrefs): Pro
 
 /** Every main and breakfast the family may eat: what the planner chooses from. */
 export const planningPool = (prefs: FoodPrefs): Promise<RecipeCard[]> => gate.pool(['main', 'breakfast'], prefs);
+/** The planning pool plus other roles (sides and sweets, for Pro's snacks and school lunches). */
+export const planningPoolWith = (prefs: FoodPrefs, extra: Array<'side' | 'dessert'>): Promise<RecipeCard[]> => gate.pool(['main', 'breakfast', ...extra], prefs);
 
 /** Safe alternatives for a slot: same role, same category or cuisine first, "avoid" items last. */
-export async function similarRecipes(base: RecipeCard | null, role: 'breakfast' | 'main', exclude: number[], prefs: FoodPrefs, count = 8): Promise<RecipeCard[]> {
+export async function similarRecipes(base: RecipeCard | null, role: 'breakfast' | 'main' | 'side' | 'dessert', exclude: number[], prefs: FoodPrefs, count = 8): Promise<RecipeCard[]> {
   const skip = new Set(exclude);
   const check = recipeChecker(prefs);
   const pool = (await gate.pool([role], prefs)).filter(r => !skip.has(r.id));
