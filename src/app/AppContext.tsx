@@ -26,6 +26,7 @@ export type Screen =
   | { name: 'pantry' }
   /** Forka Pro: what it adds, and the plans. */
   | { name: 'pro' }
+  | { name: 'prep' }
   /** Write a recipe, edit the household's recipe `id`, or check an import (`draft`) before saving it. */
   | { name: 'editor'; id?: number; draft?: ImportDraft; duplicate?: { id: number; title: string } | null; note?: string | null }
   /** Import from a link, text or photos. Opened with something already shared or chosen, it starts right away. */

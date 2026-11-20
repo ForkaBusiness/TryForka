@@ -17,6 +17,7 @@ import { TimerTray } from './components/Timers';
 import { Button, PageContainer, Skeleton } from './components/ds';
 import { Terms } from './screens/Terms';
 import { Onboarding } from './screens/Onboarding';
+import { MealPrep } from './screens/MealPrep';
 import { MealPlan } from './screens/MealPlan';
 import { BrowseRecipes } from './screens/BrowseRecipes';
 import { RecipeDetail } from './screens/RecipeDetail';
@@ -419,6 +420,7 @@ function SignedIn({ session }: { session: Session }) {
     case 'collections': content = <Collections id={screen.id} />; break;
     case 'pantry': content = <CookWithWhatYouHave />; break;
     case 'pro': content = <Pro />; break;
+    case 'prep': content = <MealPrep />; break;
     case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate ?? undefined} note={screen.note} />; break;
     case 'import': content = <ImportRecipe key={`import:${stack.length}`} {...screen} />; break;
   }

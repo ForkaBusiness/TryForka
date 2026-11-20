@@ -18,6 +18,7 @@ import { IngredientsSheet, StepIngredients, StepsSheet, type CookIngredient } fr
 import { MissingSheet, VariationsSheet } from '../components/cooking/CookingHelp';
 import { stepIngredients } from '../lib/stepIngredients';
 import { clearSession, loadSession, saveSession } from '../lib/cookSession';
+import { loadPrep, prepAsRecipe, PREP_ID } from '../lib/prepStore';
 import { BASE_SERVINGS, servingsFor } from '../lib/nutrition';
 import { formatMeasure } from '../../supabase/functions/_shared/catalog/units.ts';
 import { HiddenRecipe } from '../components/AllergyReminder';
@@ -196,8 +197,14 @@ export function CookingMode({ id }: { id: number }) {
   const [resumedAt, setResumedAt] = useState<number | null>(null);
   const restored = useRef(false);
 
+  // The meal-prep session runs here too: its steps, timers, read aloud and hands-free.
+  const isPrep = id === PREP_ID;
+
   useEffect(() => {
-    getRecipe(id, prefs).then(r => {
+    const load = isPrep
+      ? Promise.resolve((() => { const p = loadPrep(); return p ? { recipe: prepAsRecipe(p), blockedBy: null } : null; })())
+      : getRecipe(id, prefs);
+    load.then(r => {
       setBlockedBy(r?.blockedBy ?? null);
       const loaded = r?.recipe ?? null;
       // Back to the step (and ticks) from earlier in this cooking session, once per visit.
@@ -212,7 +219,7 @@ export function CookingMode({ id }: { id: number }) {
       }
       setRecipe(loaded);
     }).catch(() => setRecipe(null));
-  }, [id, prefs]);
+  }, [id, prefs, isPrep]);
 
   const total = recipe?.steps.length ?? 0;
   const last = step >= total - 1;
@@ -274,7 +281,8 @@ export function CookingMode({ id }: { id: number }) {
     setSaving(true);
     setError(null);
     try {
-      await markCooked(userId, id);
+      // A prep session isn't a meal eaten: nothing is marked cooked.
+      if (!isPrep) await markCooked(userId, id);
       clearSession(safeStorage(), id);
       setFinished(true);
     } catch {
@@ -283,7 +291,7 @@ export function CookingMode({ id }: { id: number }) {
       finishing.current = false;
       setSaving(false);
     }
-  }, [userId, id]);
+  }, [userId, id, isPrep]);
 
   const next = useCallback(() => { if (last) void finish(); else setStep(s => Math.min(total - 1, s + 1)); }, [last, finish, total]);
   const prev = useCallback(() => setStep(s => Math.max(0, s - 1)), []);
@@ -356,14 +364,27 @@ export function CookingMode({ id }: { id: number }) {
     return (
       <div className="mx-auto w-full max-w-column px-gutter pt-(--screen-top) md:pt-12">
         <IconButton icon={X} label="Close cooking mode" variant="outlined" onClick={back} />
-        <h1 className="display mt-6 text-title text-ink">{recipe ? 'No steps to cook from' : "Couldn't load this recipe"}</h1>
-        <p className="mt-2 text-body text-ink-muted">{recipe ? 'This recipe has no written steps.' : 'Check your connection, then try again.'}</p>
+        <h1 className="display mt-6 text-title text-ink">{isPrep ? 'No prep session to run' : recipe ? 'No steps to cook from' : "Couldn't load this recipe"}</h1>
+        <p className="mt-2 text-body text-ink-muted">{isPrep ? 'Plan one from Meal prep on your meal plan.' : recipe ? 'This recipe has no written steps.' : 'Check your connection, then try again.'}</p>
       </div>
     );
   }
 
   const title = recipeTitle(recipe);
   const current = recipe.steps[step];
+
+  if (finished && isPrep) {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-column flex-col justify-center px-gutter py-10">
+        <p className="label">Meal prep</p>
+        <h1 className="display mt-2 text-display text-ink">Prep is done. Nice work.</h1>
+        <p className="mt-3 text-body text-ink-muted">Each step said how to keep what you made. The meals you prepped are ready for the week.</p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Button size="lg" onClick={back}>Back to meal prep</Button>
+        </div>
+      </div>
+    );
+  }
 
   if (finished) {
     return (
@@ -407,10 +428,10 @@ export function CookingMode({ id }: { id: number }) {
           <Progress value={(step + 1) / total} label={`Step ${step + 1} of ${total}`} />
         </div>
         <div className="mt-4 flex gap-2">
-          <ToolButton icon={ListChecks} label="Ingredients" detail={`${ingredients.filter(i => checked.has(i.index)).length}/${ingredients.length}`} onClick={() => setSheet('ingredients')} />
+          {!isPrep && <ToolButton icon={ListChecks} label="Ingredients" detail={`${ingredients.filter(i => checked.has(i.index)).length}/${ingredients.length}`} onClick={() => setSheet('ingredients')} />}
           <ToolButton icon={Type} label="Text size" onClick={() => setSheet('text')} />
           {speech.available && <ToolButton icon={Volume2} label="Read aloud" pressed={reading} onClick={toggleReading} />}
-          <ToolButton icon={Shuffle} label="Make it different" onClick={() => (billing.plan === 'pro' ? setSheet('variations') : billing.upgrade('variations'))} />
+          {!isPrep && <ToolButton icon={Shuffle} label="Make it different" onClick={() => (billing.plan === 'pro' ? setSheet('variations') : billing.upgrade('variations'))} />}
         </div>
         {reading && (
           <ReadAloudBar
