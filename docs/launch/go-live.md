@@ -74,12 +74,14 @@ STRIPE_SECRET_KEY=sk_live_... node scripts/stripe-setup.mjs \
 supabase secrets set STRIPE_SECRET_KEY=sk_live_...
 supabase secrets set STRIPE_WEBHOOK_SECRET="$(cat .stripe-webhook-secret.local)"
 supabase secrets set EMAIL_FROM="Forka <hello@tryforka.com>"
-supabase secrets set EMAIL_REPLY_TO="support@tryforka.com"   # where replies to Forka's emails go: an inbox you read
+supabase secrets set EMAIL_REPLY_TO="support@tryforka.com"   # where replies to Forka's emails go (see the note below)
 supabase secrets unset EMAIL_TEST_TO
 ```
 
 - `EMAIL_TEST_TO` only sends sandbox reminders to a test inbox. It's ignored with a live key, but removing it keeps things tidy.
 - Afterwards, delete the local file: `rm .stripe-webhook-secret.local`.
+
+**Note on replies:** `EMAIL_REPLY_TO` is currently set to `ForkaBusiness@gmail.com` (the business inbox), so replies to the welcome, trial and renewal emails reach you today. Once a `support@tryforka.com` mailbox exists, receiving mail through the tryforka.com domain, switch to it with the command above, then send yourself a test reply. Don't switch before the mailbox exists, or replies will bounce.
 
 **It worked when:** `supabase secrets list` shows `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EMAIL_FROM` and `EMAIL_REPLY_TO` (it shows names, never values).
 
