@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../app/AppContext';
 import { effectivePlan, type BillingReturn, type PlanRow } from '../lib/billing';
-import { BottomSheet, Button, Spinner } from './ds';
+import { CalendarDays, Target } from 'lucide-react';
+import { BottomSheet, Button, ListGroup, ListRow, Spinner } from './ds';
 
 // Back from Stripe Checkout. Pro turns on when Stripe tells our webhook, usually within a
 // few seconds: until then the sheet says so ("checkout pending"), then shows the trial or
@@ -66,5 +67,27 @@ export function CheckoutSheet({ ret, onClose, children }: { ret: BillingReturn; 
         </div>
       )}
     </BottomSheet>
+  );
+}
+
+/** The first session of a trial: two things worth doing now, each one tap. */
+export function TrialStart({ onLunches, onGoals }: { onLunches: () => Promise<void>; onGoals: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const lunches = async () => {
+    setBusy(true); setError(null);
+    try { await onLunches(); } catch { setError("Couldn't plan lunches right now. You can turn them on any time in Settings, under Planning."); setBusy(false); }
+  };
+  return (
+    <div className="mt-6">
+      <p className="label mb-2 px-1">Two good places to start</p>
+      <ListGroup>
+        <ListRow leading={<CalendarDays size={22} strokeWidth={1.75} className="text-green" />} title={busy ? "Planning this week's lunches…" : "Plan this week's lunches"}
+          subtitle="Added around the dinners you already have, on the same grocery list" chevron onClick={busy ? undefined : () => void lunches()} />
+        <ListRow leading={<Target size={22} strokeWidth={1.75} className="text-green" />} title="Set a goal for someone"
+          subtitle="Like more protein or lighter. Meals stay shared; portions change" chevron onClick={busy ? undefined : onGoals} />
+      </ListGroup>
+      {error && <p role="alert" className="mt-3 text-small text-terracotta-deep">{error}</p>}
+    </div>
   );
 }

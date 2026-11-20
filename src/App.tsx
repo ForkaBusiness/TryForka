@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSITE_LOGIN, WEBSITE_RESET_PASSWORD } from './lib/supabase';
 import { useMediaQuery } from './lib/useMediaQuery';
 import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, foodSettings, savePreferences, type FoodSettings, type Preferences, type Profile } from './lib/preferences';
-import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
+import { DAYS, enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type Day, type PlanEntry, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
 import { fetchMembers, removeMember, saveMember, withFamilyAllergies, type FamilyMember, type MemberDraft } from './lib/family';
 import { busyNightSwap, generateWeekPlan, updateAfterCheckin, type Family } from './lib/learning';
 import { markChosen, planEdits } from './lib/planner';
@@ -39,7 +39,7 @@ import { billingView, effectivePlan, loadPlanRow, openPortal, readBillingReturn,
 import { FREE_ROW } from '../supabase/functions/_shared/billing/state.ts';
 import { UpgradeSheet } from './components/UpgradeSheet';
 import { canSaveRecipe } from './lib/usage';
-import { CheckoutSheet } from './components/CheckoutSheet';
+import { CheckoutSheet, TrialStart } from './components/CheckoutSheet';
 import { Pro } from './screens/Pro';
 import type { UpgradeReason } from './app/AppContext';
 
@@ -302,6 +302,25 @@ function SignedIn({ session }: { session: Session }) {
     [userId, shownPrefs, members, favorites, onHand, planRow],
   );
 
+  /**
+   * The trial's first offer: lunches for this week, added around what's already planned.
+   * Every meal already in the week stays where it is; only the lunches are new.
+   */
+  const planLunches = useCallback(async () => {
+    if (!family) throw new Error("Couldn't plan lunches yet. Try again in a moment.");
+    await updatePrefs({ plan_lunch: true });
+    const current = planRef.current?.plan ?? null;
+    // Held in place while the planner fills the lunches around them.
+    const held = current ? (Object.fromEntries(DAYS.map(d => [d, Object.fromEntries(Object.entries(current[d]).map(([s, e]) => [s, e ? { ...e, locked: true } : e]))])) as unknown as WeekPlan) : null;
+    const week = await generateWeekPlan({ ...family, prefs: { ...family.prefs, plan_lunch: true }, plan: 'pro' }, held);
+    const plan = Object.fromEntries(DAYS.map(d => [d, Object.fromEntries((Object.entries(week.plan[d]) as Array<[string, PlanEntry | null]>).map(([s, e]) => {
+      const was = current?.[d]?.[s as keyof WeekPlan[Day]] as PlanEntry | null | undefined;
+      return [s, e && was && was.id === e.id ? { ...e, locked: was.locked } : e];
+    }))])) as unknown as WeekPlan;
+    await saveWeek(plan, !current, { quiet: true });
+    setPlanReview({ notice: week.notice, blocked: week.blocked });
+  }, [family, updatePrefs, saveWeek]);
+
   const planNewWeek = useCallback(async () => {
     if (!family) return null;
     const week = await generateWeekPlan(family, planRef.current?.plan ?? null);
@@ -442,7 +461,14 @@ function SignedIn({ session }: { session: Session }) {
             <PhotoSearch open={photoOpen} onClose={() => setPhotoOpen(false)} />
             <TimerTray />
             <UpgradeSheet reason={billing.plan === 'pro' || planState !== 'ready' ? null : upgradeReason} onClose={() => setUpgradeReason(null)} onSeePro={() => { setUpgradeReason(null); go({ name: 'pro' }); }} />
-            <CheckoutSheet ret={billingReturn} onClose={() => setBillingReturn(null)} />
+            <CheckoutSheet ret={billingReturn} onClose={() => setBillingReturn(null)}>
+              {(row, close) => row.billing_status === 'trialing' && (
+                <TrialStart
+                  onLunches={async () => { await planLunches(); close(); go({ name: 'mealplan' }); }}
+                  onGoals={() => { close(); go({ name: 'settings' }); window.setTimeout(() => document.getElementById('family')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300); }}
+                />
+              )}
+            </CheckoutSheet>
           </>}
         >
           {content}

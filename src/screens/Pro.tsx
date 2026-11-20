@@ -26,7 +26,7 @@ const FEATURES = [
     icon: ChefHat,
     title: 'An hour of prep, a calmer week',
     body: 'Turn the week\'s plan into one prep session that fits about an hour, in the right order, with timers, read aloud and storage notes. Cook once, eat twice, and the list buys enough.',
-    example: 'The rice simmers while you chop peppers, and Monday\'s chili doubles as Wednesday\'s lunch.',
+    example: 'Sunday afternoon: the rice simmers while you chop peppers for two dinners, and Monday\'s chili is a double batch that comes back for Tuesday\'s lunch.',
   },
 ] as const;
 
@@ -51,7 +51,7 @@ export function Pro() {
 
   const line = planLine(billing.view);
   return (
-    <PageContainer title="Forka Pro" onBack={back}>
+    <PageContainer onBack={back}>
       <section className="pb-2">
         <p className="label">Forka Pro</p>
         <h1 className="display mt-2 text-display text-ink">Free plans your family's dinners. Pro plans your family's whole week.</h1>
