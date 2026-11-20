@@ -47,6 +47,9 @@ serve(async (body, req) => {
   }
 
   if (body.mode !== 'checkout') throw new AppError('Unknown request.', 400);
+  // The billing switch: no checkout before launch (the account's billing preview aside).
+  const { data: billingOn, error: switchError } = await db.rpc('billing_on');
+  if (switchError || billingOn !== true) throw new AppError("Forka Pro isn't available yet.", 403);
   const interval: Interval = body.interval === 'year' ? 'year' : body.interval === 'month' ? 'month' : (() => { throw new AppError('Choose monthly or yearly.', 400); })();
   if (row.founding) throw new AppError("You're a founding family: Pro is yours for life.", 409);
   if (effectivePlan(row, new Date()) === 'pro') throw new AppError('You already have Pro. Manage it from Settings.', 409);

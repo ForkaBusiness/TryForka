@@ -7,8 +7,8 @@ import { BottomSheet, Button } from './ds';
 
 const COPY: Record<UpgradeReason, { title: string; body: string }> = {
   saved_recipes: {
-    title: "You've saved 20 recipes",
-    body: 'Free keeps 20 saved recipes, and everything you have saved stays here and works as before. To save a new one, unsave one, or go Pro and save as many as you like.',
+    title: "You have 20 recipes of your own",
+    body: 'Free keeps 20 recipes you typed in or imported, and every one stays here and works as before. Hearting and collecting recipes from Forka is never limited. To add a new one of your own, remove one, or go Pro for as many as you like.',
   },
   smart_imports: {
     title: "You've used your 20 imports",

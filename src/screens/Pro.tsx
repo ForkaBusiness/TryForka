@@ -79,7 +79,11 @@ export function Pro() {
       </ul>
       <p className="mt-4 px-1 text-small text-ink-muted">Also: unlimited saved recipes, imports and lists, and as many "Make it different" ideas and ingredient answers as you need.</p>
 
-      {billing.status !== 'ready' ? (
+      {billing.status === 'ready' && !billing.enabled ? (
+        <Card className="mt-6 p-5">
+          <p className="text-body text-ink">Every feature is included for now. Nothing to choose or pay.</p>
+        </Card>
+      ) : billing.status !== 'ready' ? (
         <Card className="mt-6 p-5" role="status">
           <p className="text-body text-ink">{billing.status === 'loading' ? 'Checking your plan.' : "Couldn't load your plan. Check your connection, then reload."}</p>
         </Card>

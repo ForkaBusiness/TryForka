@@ -21,6 +21,8 @@ export interface PlanRow {
   current_period_end: string | null;
   trial_end: string | null;
   cancel_at_period_end: boolean;
+  /** App only: whether billing applies to this account (the billing switch). Not a column. */
+  billing_on?: boolean;
   /** Past due: Pro until here, then Free. */
   pro_until: string | null;
   /** One trial per account, ever. */
@@ -140,6 +142,12 @@ export type BillingView =
   | { kind: 'active'; renewsAt: string | null; interval: Interval | null }
   | { kind: 'cancelled'; endsAt: string | null; interval: Interval | null }
   | { kind: 'payment_failed'; graceUntil: string; interval: Interval | null };
+
+/**
+ * The plan the app gives the family: while billing is off (before launch, the billing
+ * switch), everyone has every feature and nothing is limited, as before Pro existed.
+ */
+export const appPlan = (row: PlanRow | null | undefined, now: Date): Plan => (row?.billing_on ? effectivePlan(row, now) : 'pro');
 
 export function billingView(row: PlanRow | null | undefined, now: Date): BillingView {
   if (!row) return { kind: 'free', lapsed: false };

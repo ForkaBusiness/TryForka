@@ -105,6 +105,8 @@ export function Settings() {
 
   return (
     <PageContainer title="Settings" actions={<SaveStatus state={state} />}>
+      {/* Before launch (the billing switch off) there's no plan to show. */}
+      {billing.enabled && (
       <Section id="plan" title="Plan">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -123,6 +125,7 @@ export function Settings() {
         {known && ['trialing', 'active'].includes(billing.view.kind) && <p className="mt-3 text-small text-ink-muted">Change plan, update your card or cancel on Stripe's secure page.</p>}
         {portalError && <p role="alert" className="mt-3 text-small text-terracotta-deep">{portalError}</p>}
       </Section>
+      )}
 
       <Section id="household" title="Household">
         <div className="grid gap-5">
@@ -166,7 +169,7 @@ export function Settings() {
         <div className="grid gap-5">
           <div className="flex items-center gap-4">
             <Avatar url={avatar} name={draft.full_name || email} />
-            {founding && <Tag tone="green" icon={Sparkle}>Founding family</Tag>}
+            {founding && billing.enabled && <Tag tone="green" icon={Sparkle}>Founding family</Tag>}
             <input ref={fileInput} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden
               onChange={e => { const f = e.target.files?.[0]; if (f) void uploadPhoto(f); e.target.value = ''; }} />
             <Button variant="secondary" size="sm" icon={Camera} loading={uploading} onClick={() => fileInput.current?.click()}>

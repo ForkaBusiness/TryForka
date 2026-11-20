@@ -35,10 +35,9 @@ import { CookWithWhatYouHave } from './screens/CookWithWhatYouHave';
 import { RecipeEditor } from './screens/RecipeEditor';
 import { ImportRecipe } from './screens/ImportRecipe';
 import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
-import { billingView, effectivePlan, loadPlanRow, openPortal, readBillingReturn, type BillingReturn, type PlanRow } from './lib/billing';
+import { appPlan, billingView, effectivePlan, loadPlanRow, openPortal, readBillingReturn, type BillingReturn, type PlanRow } from './lib/billing';
 import { FREE_ROW } from '../supabase/functions/_shared/billing/state.ts';
 import { UpgradeSheet } from './components/UpgradeSheet';
-import { canSaveRecipe } from './lib/usage';
 import { CheckoutSheet, TrialStart } from './components/CheckoutSheet';
 import { Pro } from './screens/Pro';
 import type { UpgradeReason } from './app/AppContext';
@@ -157,7 +156,7 @@ function SignedIn({ session }: { session: Session }) {
   const refreshPlan = useCallback(async () => { const r = await loadPlanRow(userId); setPlanRow(r); setPlanState('ready'); return r; }, [userId]);
   const billing = useMemo(() => {
     const now = new Date();
-    return { row: planRow, plan: effectivePlan(planRow, now), view: billingView(planRow, now), status: planState, refresh: refreshPlan, upgrade: (reason: UpgradeReason) => setUpgradeReason(reason) };
+    return { row: planRow, plan: appPlan(planRow, now), enabled: !!planRow?.billing_on, view: billingView(planRow, now), status: planState, refresh: refreshPlan, upgrade: (reason: UpgradeReason) => setUpgradeReason(reason) };
   }, [planRow, planState, refreshPlan]);
 
   // Each screen opens at the top.
@@ -298,7 +297,7 @@ function SignedIn({ session }: { session: Session }) {
   }, [userId]);
 
   const family: Family | null = useMemo(
-    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand), plan: effectivePlan(planRow, new Date()) } : null),
+    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand), plan: appPlan(planRow, new Date()) } : null),
     [userId, shownPrefs, members, favorites, onHand, planRow],
   );
 
@@ -324,7 +323,7 @@ function SignedIn({ session }: { session: Session }) {
   const planNewWeek = useCallback(async () => {
     if (!family) return null;
     // The family's plan decides which meals get planned: read it first if it hasn't loaded.
-    const plan = planState === 'ready' ? family.plan : effectivePlan(await refreshPlan().catch(() => planRow), new Date());
+    const plan = planState === 'ready' ? family.plan : appPlan(await refreshPlan().catch(() => planRow), new Date());
     const week = await generateWeekPlan({ ...family, plan }, planRef.current?.plan ?? null);
     await saveWeek(week.plan, true, { quiet: true });
     setPlanReview({ notice: week.notice, blocked: week.blocked });
@@ -391,8 +390,7 @@ function SignedIn({ session }: { session: Session }) {
 
   const toggleFavorite = useCallback(async (entry: FavoriteEntry) => {
     const has = favorites.has(entry.id);
-    // Free keeps 20 saved recipes: unhearting always works; hearting a new one past the limit opens the upgrade sheet.
-    if (!has && !(await canSaveRecipe(userId, entry.id))) { setUpgradeReason('saved_recipes'); return; }
+    // Hearting a catalog recipe is never limited (Free's limit is on recipes of your own).
     setFavorites(prev => { const next = new Map(prev); if (has) next.delete(entry.id); else next.set(entry.id, entry); return next; });
     const { error } = has
       ? await supabase.from('favorites').delete().eq('user_id', userId).eq('recipe_id', entry.id)
@@ -423,7 +421,7 @@ function SignedIn({ session }: { session: Session }) {
     );
   }
   if (!prefs.onboarded_at) {
-    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} pro={effectivePlan(planRow, new Date()) === 'pro'} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
+    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} pro={appPlan(planRow, new Date()) === 'pro'} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
   }
 
   let content: React.ReactNode;
@@ -462,7 +460,7 @@ function SignedIn({ session }: { session: Session }) {
             <SuggestionsPanel open={suggestions.open} target={suggestions.target} onClose={() => setSuggestions(s => ({ ...s, open: false }))} />
             <PhotoSearch open={photoOpen} onClose={() => setPhotoOpen(false)} />
             <TimerTray />
-            <UpgradeSheet reason={billing.plan === 'pro' || planState !== 'ready' ? null : upgradeReason} onClose={() => setUpgradeReason(null)} onSeePro={() => { setUpgradeReason(null); go({ name: 'pro' }); }} />
+            <UpgradeSheet reason={!billing.enabled || billing.plan === 'pro' || planState !== 'ready' ? null : upgradeReason} onClose={() => setUpgradeReason(null)} onSeePro={() => { setUpgradeReason(null); go({ name: 'pro' }); }} />
             <CheckoutSheet ret={billingReturn} onClose={() => setBillingReturn(null)}>
               {(row, close) => row.billing_status === 'trialing' && (
                 <TrialStart

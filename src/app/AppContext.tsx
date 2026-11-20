@@ -40,6 +40,8 @@ export interface FavoriteEntry { id: number; title: string; image: string }
 export interface BillingState {
   row: PlanRow;
   plan: Plan;
+  /** The billing switch: false before launch. Then every checkout, trial and upgrade surface is hidden and nobody is limited. */
+  enabled: boolean;
   view: BillingView;
   /** 'loading' until the plan has been read; 'failed' if it couldn't be (nothing claims Free then). */
   status: 'loading' | 'ready' | 'failed';

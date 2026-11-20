@@ -1,5 +1,4 @@
 import { AppError, claimRequest, serve, serviceClient, userClient } from '../_shared/http.ts';
-import { callerPlan } from '../_shared/billing/plan.ts';
 import { FREE_LIMITS } from '../_shared/billing/limits.ts';
 import { canonicalUrl, type DraftSource, type SocialPlatform } from '../_shared/imports/draft.ts';
 import { draftFromModel, draftUsable, flaggedFields } from '../_shared/imports/modelDraft.ts';
@@ -135,13 +134,6 @@ serve(async (body, req) => {
     return { status: 'duplicate', duplicate: saved };
   }
 
-  // ── Free's limit: 20 smart imports. Everything imported stays; Pro imports without a limit. ──
-  const { plan, smartImports } = await callerPlan(db);
-  if (plan === 'free' && smartImports >= FREE_LIMITS.smart_imports) {
-    await log({ source_kind: logKind, outcome: 'capped', error_code: 'free_limit', site: host(url) });
-    return { status: 'limit', message: `You've used the ${FREE_LIMITS.smart_imports} imports Free includes. Every recipe you imported stays yours, and you can still write one in by hand.` };
-  }
-
   // ── Today's cap ──
   try {
     await claimRequest(db, RATE_LIMIT);
@@ -159,6 +151,20 @@ serve(async (body, req) => {
     throw err;
   }
 
+  // ── Free's limit: 20 smart imports, reserved in the database before the model runs, so
+  // two at once can't both take the last one. Pro, founding families, and everyone while
+  // billing is off, are never limited (claim_smart_import decides). A reservation that
+  // doesn't become an import is handed back below.
+  const { data: claimed, error: claimError } = await db.rpc('claim_smart_import');
+  if (claimError) console.error('[import] import not reserved:', claimError.message);
+  if (!claimError && claimed === false) {
+    await log({ source_kind: logKind, outcome: 'capped', error_code: 'free_limit', site: host(url) });
+    return { status: 'limit', message: `You've used the ${FREE_LIMITS.smart_imports} imports Free includes. Every recipe you imported stays yours, and you can still write one in by hand.` };
+  }
+  const reserved = !claimError && claimed === true;
+  let counted = false;
+  try {
+    return await (async () => {
   // ── Import ──
   let result: ImportResult;
   let model: string | null = null;
@@ -209,8 +215,12 @@ serve(async (body, req) => {
     // The page the link led to may be one the household already saved under its own address.
     const duplicate = result.draft.source.url !== url && body.allowDuplicate !== true ? await findSaved(result.draft.source.url) : null;
     if (countsAsImport(result.status)) {
-      const { error } = await db.rpc('record_usage', { p_kind: 'smart_imports' });
-      if (error) console.error('[import] usage not counted:', error.message);
+      counted = true;
+      // Already counted by the reservation; without one (the database was unreachable for it), count it now.
+      if (!reserved) {
+        const { error } = await db.rpc('record_usage', { p_kind: 'smart_imports' });
+        if (error) console.error('[import] usage not counted:', error.message);
+      }
     }
     await log({
       source_kind: logKind, outcome: result.status === 'ok' ? 'success' : 'partial', method: result.method, site: result.site ?? host(url), platform,
@@ -224,4 +234,11 @@ serve(async (body, req) => {
   }
   await log({ source_kind: logKind, outcome: 'failed', error_code: 'code' in result ? result.code : 'failed', site: result.site ?? host(url), platform });
   return { status: 'failed', message: result.message };
+    })();
+  } finally {
+    if (reserved && !counted) {
+      const { error } = await serviceClient().rpc('release_smart_import', { p_user: user.id });
+      if (error) console.error('[import] reservation not handed back:', error.message);
+    }
+  }
 });

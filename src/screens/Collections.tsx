@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { useApp } from '../app/AppContext';
-import { canSaveRecipe } from '../lib/usage';
 import { supabase } from '../lib/supabase';
 import { recipeTitle, safeCardMap } from '../lib/catalog';
 import { Button, Card, Checkbox, Input, ListSkeleton, PageContainer } from '../components/ds';
@@ -51,12 +50,7 @@ export function Collections({ id }: { id: number }) {
     try {
       const add = [...selected].filter(c => !initial.has(c));
       const remove = [...initial].filter(c => !selected.has(c));
-      // Free keeps 20 saved recipes; one already saved (hearted or in another collection) doesn't count again.
-      if (add.length && !initial.size && !(await canSaveRecipe(userId, id))) {
-        setSaving(false);
-        billing.upgrade('saved_recipes');
-        return;
-      }
+      // Collections of catalog recipes are never limited (Free's limit is on recipes of your own).
       if (add.length) {
         const { error: err } = await supabase.from('collection_recipes').insert(add.map(collection_id => ({ collection_id, recipe_id: id, recipe_title: title })));
         if (err) throw err;

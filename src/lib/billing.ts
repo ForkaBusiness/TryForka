@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { callFunction } from './plan';
-import { billingView, effectivePlan, FREE_ROW, type BillingView, type Interval, type Plan, type PlanRow } from '../../supabase/functions/_shared/billing/state.ts';
+import { appPlan, billingView, effectivePlan, FREE_ROW, type BillingView, type Interval, type Plan, type PlanRow } from '../../supabase/functions/_shared/billing/state.ts';
 
 // Forka Pro in the app: reading the plan (user_plans, read-only here), and opening Stripe's
 // Checkout and Customer Portal through the billing function. The app never grants Pro: it
@@ -17,14 +17,21 @@ const COLUMNS = 'plan, billing_status, billing_interval, stripe_customer_id, str
 
 /** The household's plan row; Free when there's none (or the database doesn't have billing yet). */
 export async function fetchPlanRow(userId: string): Promise<PlanRow> {
-  const { data, error } = await supabase.from('user_plans').select(COLUMNS).eq('user_id', userId).maybeSingle();
+  const [{ data, error }, on] = await Promise.all([
+    supabase.from('user_plans').select(COLUMNS).eq('user_id', userId).maybeSingle(),
+    supabase.rpc('billing_on'),
+  ]);
+  // The billing switch: unreadable (an older database) counts as off, so nobody is limited.
+  const billing_on = !on.error && on.data === true;
   if (error) {
     // A database without the billing columns yet: everyone is Free, as before.
-    if (error.code === '42703' || error.code === 'PGRST204') return FREE_ROW;
+    if (error.code === '42703' || error.code === 'PGRST204') return { ...FREE_ROW, billing_on };
     throw new Error(error.message);
   }
-  return { ...FREE_ROW, ...(data ?? {}) } as PlanRow;
+  return { ...FREE_ROW, ...(data ?? {}), billing_on } as PlanRow;
 }
+
+export { appPlan };
 
 /** Reads the plan, trying again a few times (a connection blip or a token refresh can fail the first read). */
 export async function loadPlanRow(userId: string, tries = 3): Promise<PlanRow> {

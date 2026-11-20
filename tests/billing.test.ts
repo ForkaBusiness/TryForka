@@ -394,3 +394,13 @@ test('past the grace period with the card still being retried: Free, and the way
   assert.deepEqual(billingView(row, now), { kind: 'free', lapsed: true, owed: true });
   assert.deepEqual(billingView({ ...row, billing_status: 'ended' }, now), { kind: 'free', lapsed: true, owed: false });
 });
+
+test('billing switch: off, everyone has everything; on, the plan as Stripe left it', async () => {
+  const { appPlan } = await import('../supabase/functions/_shared/billing/state.ts');
+  const free = { ...FREE_ROW } as PlanRow;
+  assert.equal(appPlan(free, T0), 'pro', 'switch off (or unknown): no paywall');
+  assert.equal(appPlan(null, T0), 'pro');
+  assert.equal(appPlan({ ...free, billing_on: true }, T0), 'free');
+  assert.equal(appPlan({ ...free, billing_on: true, founding: true }, T0), 'pro');
+  assert.equal(appPlan({ ...free, billing_on: true, plan: 'pro', billing_status: 'active' }, T0), 'pro');
+});
