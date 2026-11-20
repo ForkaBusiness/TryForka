@@ -1,4 +1,5 @@
 import { pdfName, type PrintData } from './printData';
+import { pdfData } from './pdfText';
 import { signedPhotoUrl, isPhotoRef } from './recipePhotos';
 
 // A recipe as a PDF file in the Glazed Pantry look: cream page, serif title, green
@@ -6,9 +7,11 @@ import { signedPhotoUrl, isPhotoRef } from './recipePhotos';
 // file, starting on its own page; a long one carries on to a second. Built on the device
 // (jsPDF, loaded only when someone downloads), so nothing is sent anywhere.
 //
-// The app's own fonts ship only as WOFF2, which jsPDF can't embed, so the PDF uses the
-// standard PDF serif (Times) for the title and sans (Helvetica) for the text. The printed
-// page (Print) uses the app's fonts.
+// The PDF uses the app's own fonts, like the printed page: Fraunces for the title, Figtree
+// for the text. jsPDF can't embed the app's variable WOFF2 files, so public/fonts/pdf holds
+// static TTF copies made from those same files at the app's settings, cut down to the
+// characters recipes use (scripts/make-pdf-fonts.py). If they can't be loaded, the PDF falls
+// back to the standard PDF fonts (Times and Helvetica) rather than failing.
 
 const INK: [number, number, number] = [42, 37, 32];
 const MUTED: [number, number, number] = [111, 102, 92];
@@ -41,9 +44,41 @@ async function photoData(src: string, w: number, h: number): Promise<string | nu
   }
 }
 
-export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4'): Promise<void> {
+const FONT_BASE = `${import.meta.env.BASE_URL}fonts/pdf/`;
+
+/** A font file as base64, for jsPDF's virtual file system. */
+async function fontBase64(file: string): Promise<string> {
+  const res = await fetch(`${FONT_BASE}${file}`);
+  if (!res.ok) throw new Error(`font ${file}: ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/** Embeds the app's fonts; returns the families to use (the standard ones if they can't load). */
+async function appFonts(doc: import('jspdf').jsPDF): Promise<{ serif: string; sans: string }> {
+  try {
+    const [display, regular, semibold] = await Promise.all(['Fraunces-Display.ttf', 'Figtree-Regular.ttf', 'Figtree-SemiBold.ttf'].map(fontBase64));
+    doc.addFileToVFS('Fraunces-Display.ttf', display);
+    doc.addFont('Fraunces-Display.ttf', 'Fraunces', 'bold');
+    doc.addFileToVFS('Figtree-Regular.ttf', regular);
+    doc.addFont('Figtree-Regular.ttf', 'Figtree', 'normal');
+    doc.addFileToVFS('Figtree-SemiBold.ttf', semibold);
+    doc.addFont('Figtree-SemiBold.ttf', 'Figtree', 'bold');
+    return { serif: 'Fraunces', sans: 'Figtree' };
+  } catch (err) {
+    console.warn('[pdf] the app fonts could not be loaded, using standard fonts:', err);
+    return { serif: 'times', sans: 'helvetica' };
+  }
+}
+
+export async function downloadRecipePdf(original: PrintData, paper: 'letter' | 'a4'): Promise<void> {
+  // Written with the characters the embedded fonts have (℉ as °F, and so on).
+  const data = pdfData(original);
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'pt', format: paper });
+  const { serif, sans } = await appFonts(doc);
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
   const M = 48;
@@ -54,7 +89,7 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
   const ensure = (needed: number) => { if (y + needed > H - M - 24) { doc.addPage(); page(); y = M; } };
 
   // Title and facts
-  doc.setFont('times', 'bold');
+  doc.setFont(serif, 'bold');
   doc.setFontSize(28);
   doc.setTextColor(...INK);
   const title = doc.splitTextToSize(data.title, W - 2 * M) as string[];
@@ -64,7 +99,7 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
   doc.setLineWidth(1.5);
   doc.line(M, y, M + 64, y);
   y += 20;
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(sans, 'normal');
   doc.setFontSize(12);
   doc.setTextColor(...MUTED);
   doc.text(data.facts.join('   ·   '), M, y);
@@ -84,7 +119,7 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
   const rightW = W - M - rightX;
   const top = y;
   const heading = (text: string, x: number, at: number) => {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+    doc.setFont(sans, 'bold'); doc.setFontSize(10); doc.setTextColor(...MUTED);
     doc.text(text.toUpperCase(), x, at, { charSpace: 1.2 });
   };
 
@@ -96,19 +131,19 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
     const amount = ing.amount ? `${ing.amount}  ` : '';
     const lines = doc.splitTextToSize(`${amount}${ing.name}`, leftW) as string[];
     if (ly + lines.length * 16 > H - M - 24) { doc.addPage(); page(); ly = M + 20; heading('Ingredients, continued', M, M); }
-    doc.setFont('helvetica', 'bold'); doc.setTextColor(...INK);
+    doc.setFont(sans, 'bold'); doc.setTextColor(...INK);
     // Amount in bold, the name regular: drawn as two runs on the first line.
     const first = lines[0];
     if (amount && first.startsWith(amount.trim())) {
       doc.text(amount.trim(), M, ly);
       const width = doc.getTextWidth(amount.trim()) + 4; // measured in bold, where it was drawn
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(sans, 'normal');
       doc.text(first.slice(amount.trim().length).trimStart(), M + width, ly);
     } else {
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(sans, 'normal');
       doc.text(first, M, ly);
     }
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(sans, 'normal');
     lines.slice(1).forEach((l, i) => doc.text(l, M, ly + (i + 1) * 16));
     ly += lines.length * 16 + 6;
   }
@@ -120,7 +155,7 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
     const lines = doc.splitTextToSize(data.notes, leftW) as string[];
     if (ly + 34 + lines.length * 15 < H - M - 24) {
       heading('Notes', M, ly + 14);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...INK);
+      doc.setFont(sans, 'normal'); doc.setFontSize(11); doc.setTextColor(...INK);
       doc.text(lines, M, ly + 34, { lineHeightFactor: 1.35 });
       ly += 34 + lines.length * 15;
       notesDone = true;
@@ -142,9 +177,9 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
     }
     doc.setFillColor(227, 235, 220);
     doc.circle(rightX + 9, ry - 4, 9, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...GREEN);
+    doc.setFont(sans, 'bold'); doc.setFontSize(10); doc.setTextColor(...GREEN);
     doc.text(String(i + 1), rightX + 9, ry - 0.5, { align: 'center' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5); doc.setTextColor(...INK);
+    doc.setFont(sans, 'normal'); doc.setFontSize(11.5); doc.setTextColor(...INK);
     doc.text(lines, rightX + 26, ry, { lineHeightFactor: 1.35 });
     ry += lines.length * 15.5 + 9;
   });
@@ -157,7 +192,7 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
     const lines = doc.splitTextToSize(data.notes, W - 2 * M) as string[];
     ensure(30 + lines.length * 16);
     heading('Notes', M, y);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(...INK);
+    doc.setFont(sans, 'normal'); doc.setFontSize(12); doc.setTextColor(...INK);
     doc.text(lines, M, y + 20);
     y += 20 + lines.length * 16 + 10;
   }
@@ -165,7 +200,7 @@ export async function downloadRecipePdf(data: PrintData, paper: 'letter' | 'a4')
     doc.setPage(p);
     doc.setDrawColor(...LINE); doc.setLineWidth(0.75);
     doc.line(M, H - M - 8, W - M, H - M - 8);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+    doc.setFont(sans, 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
     const credit = data.creditUrl ? `${data.credit}  ·  ${data.creditUrl.replace(/^https?:\/\/(www\.)?/, '')}` : data.credit;
     doc.text(doc.splitTextToSize(credit, W - 2 * M - 80)[0], M, H - M + 8);
     if (data.creditUrl) doc.link(M, H - M - 2, W - 2 * M - 80, 14, { url: data.creditUrl });
