@@ -175,7 +175,17 @@ export interface ReconcileDeps extends WebhookDeps {
   unfinishedEvents(minutes: number): Promise<StripeEvent[]>;
   /** Every plan row with a Stripe subscription (founding families excluded). */
   subscribedRows(): Promise<Array<{ userId: string; row: PlanRow }>>;
+  /**
+   * Writes the patch only if the row still has this subscription: a webhook that changed it
+   * since the reconciliation read it (a resubscribe, say) wins. False when it didn't write.
+   */
+  updatePlanIf?(userId: string, patch: Partial<PlanRow>, subscriptionId: string): Promise<boolean>;
 }
+
+/** Events older than this are left for a person to look at, not replayed (Stripe stops retrying after about 3 days too). */
+export const REPLAY_DAYS = 3;
+/** Subscriptions checked at once. */
+const RECONCILE_CONCURRENCY = 8;
 
 export interface ReconcileReport { checked: number; fixed: number; eventsRedone: number; details: Array<{ userId?: string; event?: string; fields?: string[]; error?: string }> }
 
@@ -207,21 +217,32 @@ export async function reconcile(deps: ReconcileDeps): Promise<ReconcileReport> {
       report.details.push({ event: event.id, error: err instanceof Error ? err.message : String(err) });
     }
   }
-  for (const { userId, row } of await deps.subscribedRows()) {
-    if (!row.stripe_subscription_id || row.founding) continue;
-    report.checked++;
+  const check = async (userId: string, snapshot: PlanRow) => {
     try {
+      // Read again just before checking: a webhook may have changed it since the list was read.
+      const fresh = (await deps.findUser({ userId }))?.row ?? snapshot;
+      const subId = fresh.stripe_subscription_id;
+      if (!subId || fresh.founding) return;
+      report.checked++;
       let fields: string[] = [];
-      // Writes only what differs; the same rules as the webhook (grace kept, older subscriptions ignored).
+      // Writes only what differs, and only if the subscription is still the one checked; the
+      // same rules as the webhook (grace kept, older subscriptions ignored).
       const writeIfChanged: WebhookDeps['updatePlan'] = async (id, patch) => {
-        fields = changedFields(row, patch);
-        if (fields.length) await deps.updatePlan(id, Object.fromEntries(fields.map(f => [f, (patch as Record<string, unknown>)[f]])) as Partial<PlanRow>);
+        fields = changedFields(fresh, patch);
+        if (!fields.length) return;
+        const diff = Object.fromEntries(fields.map(f => [f, (patch as Record<string, unknown>)[f]])) as Partial<PlanRow>;
+        if (deps.updatePlanIf) { if (!(await deps.updatePlanIf(id, diff, subId))) fields = []; }
+        else await deps.updatePlan(id, diff);
       };
-      await applySubscription({ ...deps, updatePlan: writeIfChanged, findUser: async () => ({ userId, row, email: null }) }, row.stripe_subscription_id, { customer: row.stripe_customer_id, userId }, deps.now());
+      await applySubscription({ ...deps, updatePlan: writeIfChanged, findUser: async () => ({ userId, row: fresh, email: null }) }, subId, { customer: fresh.stripe_customer_id, userId }, deps.now());
       if (fields.length) { report.fixed++; report.details.push({ userId, fields }); }
     } catch (err) {
       report.details.push({ userId, error: err instanceof Error ? err.message : String(err) });
     }
+  };
+  const rows = (await deps.subscribedRows()).filter(r => r.row.stripe_subscription_id && !r.row.founding);
+  for (let i = 0; i < rows.length; i += RECONCILE_CONCURRENCY) {
+    await Promise.all(rows.slice(i, i + RECONCILE_CONCURRENCY).map(r => check(r.userId, r.row)));
   }
   return report;
 }

@@ -24,6 +24,15 @@ function appUrl(req: Request): string {
   return ours ? `${origin}/app/` : DEFAULT_APP;
 }
 
+/** The auto-renewal terms, stated where the family agrees to pay. */
+function renewalNotice(interval: Interval, trial: boolean): string {
+  const price = interval === 'year' ? '$39.99 a year' : '$4.99 a month';
+  const cancel = 'Cancel any time in Forka, under Settings > Manage plan.';
+  return trial
+    ? `Free for 14 days, then ${price}, renewing automatically every year until you cancel. Cancel before the trial ends and you pay nothing. ${cancel}`
+    : `${price}, renewing automatically every ${interval} until you cancel. ${cancel}`;
+}
+
 serve(async (body, req) => {
   const db = userClient(req);
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -91,6 +100,8 @@ serve(async (body, req) => {
       ...(trial ? { trial_period_days: TRIAL_DAYS, trial_settings: { end_behavior: { missing_payment_method: 'cancel' } } } : {}),
     },
     metadata: { user_id: user.id },
+    // Shown above Stripe's pay button: the renewal terms and how to cancel, right where the family agrees.
+    custom_text: { submit: { message: renewalNotice(interval, trial) } },
     success_url: `${base}?checkout=success`,
     cancel_url: `${base}?checkout=cancelled`,
   });

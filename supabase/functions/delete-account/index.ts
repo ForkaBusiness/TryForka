@@ -1,5 +1,5 @@
 import { AppError, serve, serviceClient } from '../_shared/http.ts';
-import { stripe } from '../_shared/billing/stripe.ts';
+import { stripe, StripeError } from '../_shared/billing/stripe.ts';
 
 // Deletes the signed-in user. Every user table references auth.users with
 // ON DELETE CASCADE, so removing the auth user removes their rows too (their own recipes
@@ -38,9 +38,14 @@ serve(async (body, req) => {
       // Deleting the customer cancels its subscriptions at once, with no further invoices.
       await stripe('DELETE', `/customers/${plan.stripe_customer_id}`);
     } catch (err) {
-      console.error('[delete-account] Stripe customer not removed for', userId, err);
-      throw new AppError("Couldn't cancel your Pro plan. Try again in a minute.", 502);
+      // Already gone (an earlier attempt that stopped later on, or removed in Stripe): nothing left to cancel.
+      if (!(err instanceof StripeError && err.missing)) {
+        console.error('[delete-account] Stripe customer not removed for', userId, err);
+        throw new AppError("Couldn't cancel your Pro plan. Try again in a minute.", 502);
+      }
     }
+    // Forget it now, so a retry after a later step fails doesn't ask Stripe again.
+    await admin.from('user_plans').update({ stripe_customer_id: null, stripe_subscription_id: null }).eq('user_id', userId);
   }
 
   const { data: files } = await admin.storage.from('avatars').list(userId);

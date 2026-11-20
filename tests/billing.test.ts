@@ -509,3 +509,24 @@ test('reconciliation: dates written differently but meaning the same moment are 
   assert.deepEqual(changedFields(row, { current_period_end: '2026-12-05T06:20:23.000Z' }), ['current_period_end']);
   void runEvent;
 });
+
+test('reconciliation: a resubscribe that lands while it runs is never overwritten', async () => {
+  // The list was read with the old subscription; a webhook then switched the row to a new one.
+  const w = reconcileWorld({ plan: 'pro', billing_status: 'active', stripe_subscription_id: 'sub_1' });
+  w.setSub(w.sub('canceled'));
+  w.setSub({ ...w.sub('active'), id: 'sub_2' });
+  const listed = { ...w.state.row };
+  w.rdeps.subscribedRows = async () => [{ userId: 'user_1', row: listed }];
+  w.state.row = { ...w.state.row, stripe_subscription_id: 'sub_2' };
+  const report = await reconcile(w.rdeps);
+  assert.equal(w.state.row.plan, 'pro');
+  assert.equal(w.state.row.stripe_subscription_id, 'sub_2');
+  assert.ok(!report.details.some(d => d.fields?.includes('plan') || d.fields?.includes('stripe_subscription_id')), 'checked against the new subscription, never switched back');
+  // And a write is only made while the row still has the subscription it checked.
+  const c = reconcileWorld({ plan: 'pro', billing_status: 'active', stripe_subscription_id: 'sub_1' });
+  c.setSub(c.sub('canceled'));
+  c.rdeps.updatePlanIf = async () => false; // changed under it
+  const r2 = await reconcile(c.rdeps);
+  assert.equal(c.state.row.plan, 'pro', 'nothing written');
+  assert.equal(r2.fixed, 0);
+});

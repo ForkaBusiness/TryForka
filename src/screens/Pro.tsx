@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CalendarDays, ChefHat, Target } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { openPortal, planLine, PRICES, startCheckout, type Interval } from '../lib/billing';
+import { renewalTerms } from '../lib/renewal';
 import { trialAllowed } from '../../supabase/functions/_shared/billing/state.ts';
 import { Button, Card, PageContainer, cx } from '../components/ds';
 
@@ -125,10 +126,11 @@ export function Pro() {
             {interval === 'year' && trial ? 'Start 14 days free' : 'Continue to payment'}
           </Button>
           {error && <p role="alert" className="mt-3 text-small text-terracotta-deep">{error}</p>}
-          <p className="mt-3 text-small text-ink-muted">
-            {interval === 'year' && trial
-              ? "Card needed, not charged for 14 days. We'll email you 3 days before the trial ends. Cancel any time in Settings, in one tap."
-              : 'Cancel any time in Settings, in one tap. You keep Pro until the end of what you paid for.'}
+          {/* What auto-renewal laws ask to be clear before purchase: the price, that it renews until
+              cancelled and how often, when the first charge is, and how to cancel. */}
+          <p className="mt-3 text-small text-ink-muted">{renewalTerms(interval, trial)}</p>
+          <p className="mt-2 text-small text-ink-muted">
+            By continuing you agree to the <a className="font-semibold text-green underline underline-offset-2" href="/terms.html" target="_blank" rel="noopener">Terms</a> and <a className="font-semibold text-green underline underline-offset-2" href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
           </p>
         </section>
       )}

@@ -37,11 +37,20 @@ export async function stripe<T>(method: 'GET' | 'POST' | 'DELETE', path: string,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = (json as { error?: { message?: string; type?: string } }).error;
+    const err = (json as { error?: { message?: string; type?: string; code?: string } }).error;
     console.error('[stripe]', method, path, res.status, err?.type, err?.message);
-    throw new AppError("Payments aren't reachable right now. Try again in a minute.", 502);
+    throw new StripeError(res.status, err?.code ?? null);
   }
   return json as T;
+}
+
+/** A Stripe API error: shown to the family as "not reachable", with Stripe's status and code for callers that need them. */
+export class StripeError extends AppError {
+  constructor(readonly stripeStatus: number, readonly code: string | null) {
+    super("Payments aren't reachable right now. Try again in a minute.", 502);
+  }
+  /** The object is already gone (deleted earlier, or in the dashboard). */
+  get missing() { return this.stripeStatus === 404 || this.code === 'resource_missing'; }
 }
 
 /** Live or sandbox, from the key itself. */

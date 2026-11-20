@@ -1,6 +1,6 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.103.3';
 import { FREE_ROW, type PlanRow, type StripeSubscription } from './state.ts';
-import { LOCK_MINUTES, type ReconcileDeps, type StripeEvent } from './webhook.ts';
+import { LOCK_MINUTES, REPLAY_DAYS, type ReconcileDeps, type StripeEvent } from './webhook.ts';
 import { stripe, stripeMode } from './stripe.ts';
 import { sendEmail, trialReminderEmail } from './email.ts';
 
@@ -21,7 +21,7 @@ export function billingDeps(admin: SupabaseClient, appUrl: string): ReconcileDep
       if (error.code !== '23505') throw new Error(`event not stored: ${error.message}`);
       const { data } = await admin.from('stripe_events').select('status').eq('id', event.id).maybeSingle();
       // Stored before this change without a payload: keep it now, so it can be redone.
-      await admin.from('stripe_events').update({ payload: event }).eq('id', event.id).is('payload', null);
+      if (data?.status !== 'processed') await admin.from('stripe_events').update({ payload: event }).eq('id', event.id).is('payload', null);
       return data?.status === 'processed' ? 'done' : 'unfinished';
     },
     lock: async id => {
@@ -36,7 +36,8 @@ export function billingDeps(admin: SupabaseClient, appUrl: string): ReconcileDep
       return (data ?? []).length === 1;
     },
     finish: async id => {
-      const { error } = await admin.from('stripe_events').update({ status: 'processed', processed_at: new Date().toISOString(), last_error: null }).eq('id', id);
+      // Processed: the payload (which can hold a name, email or address) is no longer needed.
+      const { error } = await admin.from('stripe_events').update({ status: 'processed', processed_at: new Date().toISOString(), last_error: null, payload: null }).eq('id', id);
       if (error) throw new Error(`event not marked processed: ${error.message}`);
     },
     fail: async (id, message) => {
@@ -89,9 +90,11 @@ export function billingDeps(admin: SupabaseClient, appUrl: string): ReconcileDep
     },
     unfinishedEvents: async minutes => {
       const before = new Date(Date.now() - minutes * 60_000).toISOString();
+      // Older than REPLAY_DAYS: left as they are (failed, with the error) for a person to look at.
+      const since = new Date(Date.now() - REPLAY_DAYS * 86_400_000).toISOString();
       const { data, error } = await admin.from('stripe_events').select('payload')
         .neq('status', 'processed').not('payload', 'is', null)
-        .or(`locked_at.is.null,locked_at.lt.${before}`).lt('received_at', before)
+        .or(`locked_at.is.null,locked_at.lt.${before}`).lt('received_at', before).gt('received_at', since)
         .order('received_at').limit(200);
       if (error) throw new Error(`unfinished events not read: ${error.message}`);
       return (data ?? []).map(r => r.payload as StripeEvent);
@@ -100,6 +103,12 @@ export function billingDeps(admin: SupabaseClient, appUrl: string): ReconcileDep
       const { data, error } = await admin.from('user_plans').select(COLUMNS).not('stripe_subscription_id', 'is', null).eq('founding', false);
       if (error) throw new Error(`plans not read: ${error.message}`);
       return (data ?? []).map(r => ({ userId: r.user_id as string, row: { ...FREE_ROW, ...r } as PlanRow }));
+    },
+    updatePlanIf: async (userId, patch, subscriptionId) => {
+      const { data, error } = await admin.from('user_plans').update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('user_id', userId).eq('stripe_subscription_id', subscriptionId).select('user_id');
+      if (error) throw new Error(`plan update failed: ${error.message}`);
+      return (data ?? []).length === 1;
     },
     now: () => new Date(),
     log: m => console.log(m),
