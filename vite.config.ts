@@ -3,6 +3,7 @@ import path from 'path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { connectSrc } from './vite.csp';
 
 // The app lives at tryforka.com/app/, on the same origin as the website, so the Supabase
 // session the website's login page creates is the one the app reads.
@@ -45,16 +46,9 @@ function serveWebsite(): Plugin {
   };
 }
 
-/**
- * Production builds only: a Content Security Policy that lets the app connect to its own
- * origin and to the Supabase project, and nowhere else. The browser blocks any other
- * fetch, XHR, WebSocket or beacon, which is how a library would phone home, so "nothing
- * is sent" holds for hands-free cooking even if an update tried to. It does not restrict
- * images, fonts, scripts or navigation.
- */
-function connectOnlyToOurselves(supabaseUrl: string | undefined): Plugin {
-  const supabase = supabaseUrl ? new URL(supabaseUrl).origin : 'https://*.supabase.co';
-  const csp = `connect-src 'self' ${supabase} blob: data:`;
+/** Production builds only: the Content Security Policy from vite.csp.ts, as a meta tag. */
+function connectOnlyToOurselves(supabaseUrl: string | undefined, sentryDsn: string | undefined): Plugin {
+  const csp = connectSrc(supabaseUrl, sentryDsn);
   return {
     name: 'forka-connect-src',
     apply: 'build',
@@ -63,14 +57,17 @@ function connectOnlyToOurselves(supabaseUrl: string | undefined): Plugin {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
-  base: '/app/',
-  // Built into dist/app/ so the files sit at /app/ on the app's Vercel deployment too.
-  build: { outDir: 'dist/app' },
-  plugins: [react(), tailwindcss(), serveWebsite(), connectOnlyToOurselves(loadEnv(mode, process.cwd(), 'VITE_').VITE_SUPABASE_URL)],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  return {
+    base: '/app/',
+    // Built into dist/app/ so the files sit at /app/ on the app's Vercel deployment too.
+    build: { outDir: 'dist/app' },
+    plugins: [react(), tailwindcss(), serveWebsite(), connectOnlyToOurselves(env.VITE_SUPABASE_URL, env.VITE_SENTRY_DSN)],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
     },
-  },
-}));
+  };
+});

@@ -1,4 +1,5 @@
 import { serviceClient } from '../_shared/http.ts';
+import { reportError } from '../_shared/monitoring.ts';
 import { reconcile } from '../_shared/billing/webhook.ts';
 import { billingDeps } from '../_shared/billing/deps.ts';
 
@@ -30,11 +31,12 @@ Deno.serve(async (req: Request) => {
   try {
     const report = await reconcile(billingDeps(admin, APP_URL));
     const { error } = await admin.from('billing_reconciliations').insert({ checked: report.checked, fixed: report.fixed, events_redone: report.eventsRedone, details: report.details });
-    if (error) console.error('[reconcile] run not recorded:', error.message);
+    if (error) { console.error('[reconcile] run not recorded:', error.message); await reportError('billing-reconcile', new Error(`run not recorded: ${error.message}`)); }
     console.log(`[reconcile] checked ${report.checked}, fixed ${report.fixed}, events redone ${report.eventsRedone}`);
     return reply(200, report);
   } catch (err) {
     console.error('[reconcile] failed:', err instanceof Error ? err.message : err);
+    await reportError('billing-reconcile', err);
     return reply(500, { error: 'Reconciliation failed' });
   }
 });

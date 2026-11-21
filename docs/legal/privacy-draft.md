@@ -59,6 +59,7 @@ The current policy names services Forka does not use. Leaving them in overstates
   This is used to fix imports that fail and to prevent abuse.
 - **Usage counters:** how many smart imports you have used, and short-lived records of requests to features with daily limits (kept about one day), to apply fair-use limits.
 - **Technical data:** when you use the Service, our hosting providers process your IP address, browser and device type in their logs, for security and reliability. `[CONFIRM: retention of Supabase and Vercel logs on the plans in use]`
+- **Error reports:** when something in the app or on our servers fails, a report of the error is sent to Sentry: what went wrong, where, and the browser and device type. Reports leave out your name, email, IP address and anything you typed or saved. `[CONFIRM: Sentry's retention period on the plan in use]`
 
 ### 2.3 Payments (Forka Pro)
 
@@ -130,6 +131,7 @@ We share information only with service providers that process it on our behalf, 
 | **Anthropic** (United States) | Language-model processing for reading imported recipes (links, text, posts, photos), answering cooking questions, identifying a dish from a photo, suggesting recipes and planning meal-prep sessions | The recipe content, photos or question involved, and the household food settings needed to keep answers safe (allergies, diet). Not your name or email. |
 | **Stripe** (United States) | Payments and subscriptions | See section 2.3 |
 | **Resend** (United States) | Sending service emails (for example the reminder before a trial ends) | Your email address and the email's content |
+| **Sentry** (Functional Software, Inc., United States) | Error reports, so we can find and fix what breaks | What went wrong and where: the error, the screen or server function, browser and device type, and the app's address without its query string. Not your name, email, IP address, recipes, family details or anything you typed. |
 | **USDA FoodData Central** (U.S. government) | Nutrition data for ingredients | Ingredient names only, never anything about you |
 | **TheMealDB** | The recipe catalog | Nothing about you (we copy the catalog to our own database) |
 | **Google** (if you sign in with Google) | Sign-in | Your sign-in event |
