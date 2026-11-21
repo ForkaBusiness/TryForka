@@ -44,7 +44,17 @@ export function createHistorySync(history: HistoryLike, onBack: (depth: number) 
   let depth = 1;
   // popstates the app caused itself, to be ignored when they arrive.
   let pending = 0;
-  history.replaceState(withDepth(history.state, 1), '');
+  const start = depthOf(history.state);
+  if (start !== null && start > 1) {
+    // A reload (or signing in again) on a deeper screen: the app starts over at its first
+    // screen, so step the history back to that screen's entry. The entries left after it are
+    // only reachable by Forward, which is undone below; otherwise the first Back would land on
+    // one of them and seem to do nothing.
+    pending++;
+    history.go(1 - start);
+  } else {
+    history.replaceState(withDepth(history.state, 1), '');
+  }
 
   return {
     sync(stackLength) {

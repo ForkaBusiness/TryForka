@@ -128,6 +128,30 @@ test('several screens opened at once (a share into the app) each get an entry', 
   assert.deepEqual(stack, ['mealplan', 'browse']);
 });
 
+test('after a reload three screens deep, the first Back leaves the app (no dead press)', () => {
+  // Before the reload: the site, then the app's entries 1, 2, 3, showing the third.
+  const h = new FakeHistory([{ page: 'site' }, withDepth(null, 1), withDepth(null, 2), withDepth(null, 3)]);
+  const a = app(h);
+  h.flush();
+  assert.deepEqual(a.stack, ['mealplan']);
+  assert.equal(depthOf(h.state), 1);
+  h.back();
+  assert.deepEqual(h.state, { page: 'site' });
+});
+
+test('after a reload, opening a screen and pressing Back works as usual', () => {
+  const h = new FakeHistory([{ page: 'site' }, withDepth(null, 1), withDepth(null, 2)]);
+  const a = app(h);
+  h.flush();
+  a.open('recipe');
+  assert.equal(h.entries.length, 3);
+  h.back();
+  assert.deepEqual(a.stack, ['mealplan']);
+  // Forward onto the closed recipe is undone.
+  h.forward();
+  assert.equal(depthOf(h.state), 1);
+});
+
 test('the first entry keeps what was already in its state', () => {
   const h = new FakeHistory([{ page: 'site' }, { kept: true }]);
   createHistorySync(h, () => {});
