@@ -2,419 +2,80 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>About — Forka</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
-  body { font-family: 'DM Sans', sans-serif; color: #0A2533; overflow-x: hidden; }
-
-  /* NAV */
-  nav { background: #fff; height: 72px; display: flex; align-items: center; box-shadow: 0 1px 0 rgba(0,0,0,0.07); position: sticky; top: 0; z-index: 100; }
-  .nav-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; width: 100%; display: flex; align-items: center; justify-content: space-between; }
-  .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-  .logo-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .nav-links { display: flex; align-items: center; gap: 32px; list-style: none; }
-  .nav-links a { text-decoration: none; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500; color: #5A6B73; transition: color .2s; }
-  .nav-links a.active, .nav-links a:hover { color: #0A2533; font-weight: 700; }
-  .nav-actions { display: flex; align-items: center; gap: 12px; }
-  .nav-search { background: none; border: none; cursor: pointer; padding: 6px; color: #5A6B73; display: flex; align-items: center; }
-  .btn { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 14px; padding: 10px 22px; border-radius: 8px; border: none; cursor: pointer; transition: all .2s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
-  .btn-outline { background: #fff; border: 1.5px solid #0A2533; color: #0A2533; }
-  .btn-outline:hover { background: #f5f7f8; }
-  .btn-green { background: #1F8F63; color: #fff; }
-  .btn-green:hover { background: #166b4a; }
-  .btn-orange { background: #CC4A15; color: #fff; }
-  .btn-orange:hover { background: #B33F10; transform: translateY(-1px); }
-  .btn-white-outline { background: transparent; border: 2px solid rgba(255,255,255,0.7); color: #fff; padding: 12px 28px; }
-  .btn-white-outline:hover { background: rgba(255,255,255,0.15); }
-
-  /* UTILS */
-  .eyebrow { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 13px; color: #1F8F63; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px; }
-  .green { color: #1F8F63; }
-  .section-underline { width: 80px; height: 3px; background: #1F8F63; border-radius: 2px; margin: 0 auto 32px; }
-
-  /* HERO */
-  .hero { background: #F5F7F8; padding: 100px 0 0; }
-  .hero-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; text-align: center; }
-  .hero h1 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 52px; line-height: 1.1; color: #0A2533; margin-bottom: 20px; }
-  .hero-sub { font-size: 17px; color: #5A6B73; max-width: 600px; margin: 0 auto 48px; line-height: 1.7; }
-  .hero-img { width: 100%; max-width: 1100px; margin: 0 auto; border-radius: 16px; overflow: hidden; display: block; }
-  .hero-img img { width: 100%; height: 480px; object-fit: cover; display: block; }
-
-  /* MISSION */
-  .mission { background: #fff; padding: 96px 0; }
-  .mission-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
-  .mission h2 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 36px; line-height: 1.2; color: #0A2533; margin-bottom: 20px; }
-  .mission p { font-size: 15px; color: #5A6B73; line-height: 1.75; margin-bottom: 36px; }
-  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .stat-box { background: #F5F7F8; border-radius: 14px; padding: 20px 22px; }
-  .stat-num { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 28px; color: #1F8F63; }
-  .stat-label { font-size: 13px; color: #5A6B73; margin-top: 2px; }
-  .mission-photo { position: relative; display: flex; align-items: center; justify-content: center; }
-  .photo-ring { width: 360px; height: 360px; border-radius: 50%; border: 3px dashed #1F8F63; padding: 12px; flex-shrink: 0; }
-  .photo-ring img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
-
-  /* STORY */
-  .story { background: #F5F7F8; padding: 96px 0; }
-  .story-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; text-align: center; }
-  .story h2 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 36px; color: #0A2533; margin-bottom: 12px; }
-  .timeline { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; text-align: left; }
-  .timeline-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
-  .timeline-year { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 13px; color: #1F8F63; letter-spacing: 1px; margin-bottom: 8px; }
-  .timeline-card h3 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 18px; color: #0A2533; margin-bottom: 10px; }
-  .timeline-card p { font-size: 15px; color: #5A6B73; line-height: 1.7; }
-
-  /* VALUES */
-  .values { background: #fff; padding: 96px 0; }
-  .values-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; text-align: center; }
-  .values h2 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 36px; color: #0A2533; margin-bottom: 12px; }
-  .values-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .value-card { background: #fff; border-radius: 16px; padding: 28px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); text-align: center; }
-  .value-icon { font-size: 36px; margin-bottom: 14px; }
-  .value-card h3 { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 17px; color: #0A2533; margin-bottom: 10px; }
-  .value-card p { font-size: 14px; color: #5A6B73; line-height: 1.65; }
-
-  /* CTA BANNER */
-  .cta-banner { background: #1F8F63; position: relative; overflow: hidden; padding: 80px 24px; text-align: center; }
-  .cta-banner h2 { font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 36px; color: #fff; margin-bottom: 14px; }
-  .cta-banner p { font-size: 16px; color: rgba(255,255,255,0.85); margin-bottom: 32px; }
-  .cta-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-  .cta-veg { position: absolute; inset: 0; opacity: 0.1; pointer-events: none; }
-
-  /* FOOTER */
-  footer { background: #1F8F63; position: relative; overflow: hidden; padding: 64px 0 0; }
-  .footer-veg-bg { position: absolute; inset: 0; opacity: 0.08; pointer-events: none; }
-  .footer-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: 1.6fr 1fr 1fr 1.4fr; gap: 48px; position: relative; z-index: 1; }
-  .footer-logo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-  .footer-logo-icon { width: 36px; height: 36px; background: rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-  .footer-brand-name { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 18px; color: #fff; }
-  .footer-brand-desc { font-size: 13px; color: rgba(255,255,255,0.75); line-height: 1.65; margin-bottom: 20px; }
-  .social-icons { display: flex; gap: 10px; }
-  .social-icon { width: 34px; height: 34px; border: 1.5px solid rgba(255,255,255,0.4); border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; transition: background .2s; text-decoration: none; }
-  .social-icon:hover { background: rgba(255,255,255,0.15); }
-  .social-icon svg { width: 16px; height: 16px; fill: #fff; }
-  .footer-col-title { font-family: 'Poppins', sans-serif; font-weight: 700; font-size: 14px; color: #fff; margin-bottom: 16px; }
-  .footer-links { list-style: none; display: flex; flex-direction: column; gap: 10px; }
-  .footer-links a { font-size: 13px; color: rgba(255,255,255,0.75); text-decoration: none; transition: color .2s; }
-  .footer-links a:hover { color: #fff; }
-  .footer-contact-item { font-size: 13px; color: rgba(255,255,255,0.75); margin-bottom: 8px; line-height: 1.5; }
-  .footer-bottom { border-top: 1px solid rgba(255,255,255,0.15); margin-top: 48px; padding: 18px 0; position: relative; z-index: 1; }
-  .footer-bottom-inner { max-width: 1180px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
-  .footer-copy { font-size: 12px; color: rgba(255,255,255,0.65); }
-  .footer-legal { display: flex; gap: 20px; }
-  .footer-legal a { font-size: 12px; color: rgba(255,255,255,0.65); text-decoration: none; }
-  .footer-legal a:hover { color: #fff; }
-
-  @media (max-width: 768px) {
-    .hero h1 { font-size: 36px; }
-    .mission-inner { grid-template-columns: 1fr; gap: 48px; }
-    .values-grid { grid-template-columns: 1fr; }
-    .photo-ring { width: 260px; height: 260px; }
-    .footer-inner { grid-template-columns: 1fr; }
-    .nav-links { display: none; }
-  }
-
-/* === HAMBURGER + MOBILE OVERLAY === */
-.hamburger{display:none;background:none;border:none;cursor:pointer;padding:8px;flex-direction:column;justify-content:center;align-items:center;gap:5px;width:44px;height:44px;flex-shrink:0;}
-.ham-bar{display:block;width:24px;height:2px;background:#0A2533;border-radius:2px;transition:transform .25s ease,opacity .25s ease;transform-origin:center;}
-.mobile-menu{position:fixed;inset:0;background:#fff;z-index:9999;transform:translateX(100%);transition:transform .25s ease-out;display:flex;flex-direction:column;overflow-y:auto;}
-.mobile-menu.open{transform:translateX(0);}
-.mobile-menu-header{display:flex;align-items:center;justify-content:space-between;padding:15px 24px;height:72px;border-bottom:1px solid #f0f0f0;flex-shrink:0;}
-.mobile-close{background:none;border:none;cursor:pointer;padding:8px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;}
-.mobile-nav{display:flex;flex-direction:column;align-items:center;padding:32px 24px 0;gap:8px;height:auto!important;position:static!important;box-shadow:none!important;background:transparent!important;z-index:auto!important;}
-.mobile-nav-link{font-family:'Poppins',sans-serif;font-weight:600;font-size:24px;color:#0A2533;text-decoration:none;padding:16px 0;width:100%;text-align:center;}
-.mobile-nav-link.active{font-weight:800;}
-.mobile-menu-btns{display:flex;flex-direction:column;gap:12px;padding:32px 24px;}
-.mobile-btn-login{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:600;font-size:16px;color:#0A2533;background:#fff;border:1.5px solid #0A2533;border-radius:12px;text-decoration:none;}
-.mobile-btn-waitlist{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#CC4A15;border-radius:12px;text-decoration:none;}.mobile-btn-signup{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#1F8F63;border-radius:12px;text-decoration:none;}
-@media(max-width:767px){
-  .hamburger{display:flex;}
-  .nav-links{display:none!important;}
-  .nav-search{display:none!important;}
-  .nav-actions .btn{display:none!important;}
-  body.menu-open{overflow:hidden;}
-  body.menu-open .ham-bar:nth-child(1){transform:translateY(7px) rotate(45deg);}
-  body.menu-open .ham-bar:nth-child(2){opacity:0;}
-  body.menu-open .ham-bar:nth-child(3){transform:translateY(-7px) rotate(-45deg);}
-  /* Hero */
-  .hero{padding:60px 20px 0;}
-  .hero h1{font-size:36px;}
-  .hero-sub{font-size:15px;}
-  .hero-img img{height:240px;}
-  /* Mission */
-  .mission{padding:56px 0;}
-  .mission-inner{grid-template-columns:1fr!important;gap:40px;padding-left:20px;padding-right:20px;}
-  .mission h2{font-size:28px;}
-  .stats-grid{grid-template-columns:1fr 1fr;}
-  .photo-ring{width:260px;height:260px;}
-  /* Story */
-  .story{padding:56px 0;}
-  .story-inner{padding-left:20px;padding-right:20px;}
-  .story h2{font-size:28px;}
-  .timeline{max-width:100%;}
-  /* Values */
-  .values{padding:56px 0;}
-  .values-inner{padding-left:20px;padding-right:20px;}
-  .values h2{font-size:28px;}
-  .values-grid{grid-template-columns:1fr!important;}
-  /* CTA */
-  .cta-banner h2{font-size:28px;}
-  .cta-btns{flex-direction:column;align-items:stretch;padding:0 20px;}
-  .cta-btns .btn{width:100%;justify-content:center;}
-  /* Footer */
-  .footer-inner{grid-template-columns:1fr!important;gap:32px;padding-left:20px;padding-right:20px;}
-  .footer-bottom-inner{flex-direction:column;text-align:center;gap:12px;padding-left:20px;padding-right:20px;}
-}
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forka: our story</title>
+<meta name="description" content="Forka was born out of one simple frustration: figuring out what's for dinner shouldn't be the hardest part of your day.">
+<link rel="icon" type="image/png" href="/app/icon-192.png">
+<link rel="apple-touch-icon" href="/app/icon-192.png">
+<link rel="preload" href="fonts/fraunces-latin-opsz.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/figtree-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/site.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
-<!-- NAV -->
-<nav>
-  <div class="nav-inner">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon" style="background:transparent;">
-        <img src="uploads/pasted-1777438996972-0.png" alt="Forka logo" style="width:100%;height:100%;object-fit:contain;border-radius:10px;">
-      </div>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="about.html" class="active">About</a></li>
-      <li><a href="features.html">Features</a></li>
-      <li><a href="blog.html">Blog</a></li>
-      <li><a href="pricing.html">Pricing</a></li>
-    </ul>
-    <div class="nav-actions">
-      <button class="nav-search" aria-label="Search">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-      </button>
-      <a href="login.html" class="btn btn-outline">Log in</a>
-      <!-- WAITLIST START: to remove, change href back to "signup.html", class back to "btn btn-green", text back to "Try Forka" --><a href="waitlist.html" class="btn btn-orange">Join Waitlist</a><!-- WAITLIST END -->
-      <button class="hamburger" id="hamburgerBtn" aria-label="Open menu" aria-expanded="false">
-        <span class="ham-bar"></span>
-        <span class="ham-bar"></span>
-        <span class="ham-bar"></span>
-      </button>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Forka home"><img src="/app/forka-logo.png" alt="" width="36" height="36">Forka</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="features.html">Features</a>
+      <a href="pricing.html" data-when-billing="on" hidden>Pricing</a>
+      <a href="faq.html">FAQ</a>
+      <a href="about.html" aria-current="page">About</a>
+    </nav>
+    <div class="header-actions">
+      <a class="login" href="login.html">Log in</a>
+      <a class="btn btn-primary btn-small" href="signup.html">Get started free</a>
     </div>
   </div>
-</nav>
+</header>
 
-<div class="mobile-menu" id="mobileMenu" aria-hidden="true" inert>
-  <div class="mobile-menu-header">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon" style="background:transparent;">
-        <img src="uploads/pasted-1777438996972-0.png" alt="Forka" style="width:100%;height:100%;object-fit:contain;border-radius:10px;">
-      </div>
-    </a>
-    <button class="mobile-close" id="mobileClose" aria-label="Close menu">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0A2533" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-  <nav class="mobile-nav">
-    <a href="index.html" class="mobile-nav-link">Home</a>
-    <a href="about.html" class="mobile-nav-link active">About</a>
-    <a href="features.html" class="mobile-nav-link">Features</a>
-    <a href="blog.html" class="mobile-nav-link">Blog</a>
-    <a href="pricing.html" class="mobile-nav-link">Pricing</a>
-  </nav>
-  <div class="mobile-menu-btns">
-    <a href="login.html" class="mobile-btn-login">Log in</a>
-    <a href="signup.html" class="mobile-btn-signup">Try Forka</a>
-    <!-- WAITLIST START: remove this link when waitlist page is removed -->
-    <a href="waitlist.html" class="mobile-btn-waitlist">Join Waitlist</a>
-    <!-- WAITLIST END -->
-  </div>
-</div>
+<main id="main">
+  <section aria-labelledby="title">
+    <div class="wrap" style="max-width:780px">
+      <p class="label">Our story</p>
+      <h1 id="title" style="margin-top:14px">Real food. Real families. Real simple.</h1>
+      <p class="lede" style="margin-top:20px">Forka was born out of one simple frustration: figuring out what's for dinner shouldn't be the hardest part of your day.</p>
+      <p style="margin-top:20px">We built Forka because we lived it. Juggling sports, school and packed family schedules, we watched the same question come up every single night: what's for dinner? So we built the planner we wanted: one that knows who's at the table, keeps everyone's allergies out of the plan, writes the grocery list, and stays calm and clear right up to the last step of cooking.</p>
+      <p style="margin-top:16px">Forka is built by a small team, including two co-founders, with one aim: to take the stress out of the week's meals.</p>
+    </div>
+  </section>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="hero-inner">
-    <p class="eyebrow" style="text-align:center;">OUR STORY</p>
-    <h1>Real food. Real families. <span class="green">Real simple.</span></h1>
-    <p class="hero-sub">Forka was born out of one simple frustration: figuring out what's for dinner shouldn't be the hardest part of your day.</p>
-    <div class="hero-img">
-      <img src="https://images.unsplash.com/photo-1606787620607-7ccc2a775faa?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Family at dinner table">
+  <section class="band" aria-labelledby="believe-title">
+    <div class="wrap">
+      <h2 id="believe-title" class="section-head">What we believe</h2>
+      <div class="cards">
+        <div class="card"><h3>Eat better, stress less</h3><p>Healthy meals shouldn't need a degree in nutrition. Forka makes good everyday choices the easy ones.</p></div>
+        <div class="card"><h3>Time is precious</h3><p>Every minute we save you is a minute back with the people you love.</p></div>
+        <div class="card"><h3>Built with real families</h3><p>Every feature is shaped by the families who use Forka, and by what they tell us after dinner.</p></div>
+      </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<!-- MISSION -->
-<section class="mission">
-  <div class="mission-inner">
-    <div>
-      <p class="eyebrow">OUR MISSION</p>
-      <h2>Cooking should bring families <span class="green">together</span>, not stress them apart.</h2>
-      <p>Forka exists because we believe every family deserves to eat well without spending hours planning, shopping, and stressing. We a sous chef that handles the boring stuff so you can focus on what matters – actually enjoying time at the table.</p>
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-num">248+</div>
-          <div class="stat-label">Families served</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num">50,000+</div>
-          <div class="stat-label">Recipes available</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num">1-Tap</div>
-          <div class="stat-label">Smart shopping</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num">100%</div>
-          <div class="stat-label">Personalized</div>
-        </div>
-      </div>
+  <section class="cta-end" aria-labelledby="end-title">
+    <div class="wrap">
+      <h2 id="end-title">Make this week easier.</h2>
+      <div class="hero-actions" style="margin-top:24px"><a class="btn btn-primary" href="signup.html">Get started free</a></div>
     </div>
-    <div class="mission-photo">
-      <div class="photo-ring">
-        <img src="https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=600&h=600&fit=crop" alt="Cooking with family">
-      </div>
-    </div>
-  </div>
-</section>
+  </section>
+</main>
 
-<!-- STORY -->
-<section class="story">
-  <div class="story-inner">
-    <h2>How Forka Started</h2>
-    <div class="section-underline"></div>
-    <div class="timeline">
-      <div class="timeline-card">
-        <div class="timeline-year">2024 – THE IDEA</div>
-        <h3>A packed schedule, a stressed family, and a real problem.</h3>
-        <p>We built Forka because we lived it. Juggling sports, school, and packed family schedules, we watched the same stressful question come up every single night: "what's for dinner?" We weren't alone — 53% of consumers say it's a major daily pain point. So we got to work building the solution.</p>
-      </div>
-      <div class="timeline-card">
-        <div class="timeline-year">EARLY 2025 – BUILT FORKA</div>
-        <h3>The engine that changed everything.</h3>
-        <p>Forka's first engine launched, capable of building personalized weekly meal plans in under 20 seconds. Early testers called it "the only meal planner that actually gets my family."</p>
-      </div>
-      <div class="timeline-card">
-        <div class="timeline-year">TODAY – HELPING FAMILIES</div>
-        <h3>From one family's problem to every family's solution.</h3>
-        <p>Forka is built by a team of 5, including two co-founders, on a shared mission to take the stress out of weekly meal planning. We're the one-stop shop for planning, shopping, and cooking smarter, every single week. And we're just getting started.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- VALUES -->
-<section class="values">
-  <div class="values-inner">
-    <h2>What We Believe</h2>
-    <div class="section-underline"></div>
-    <div class="values-grid">
-      <div class="value-card">
-        <div class="value-icon">🥗</div>
-        <h3>Eat Better, Stress Less</h3>
-        <p>Healthy meals shouldn't require a PhD in nutrition. We make smart eating effortless.</p>
-      </div>
-      <div class="value-card">
-        <div class="value-icon">⚡</div>
-        <h3>Time is Sacred</h3>
-        <p>Every minute we save you is a minute back with the people you love.</p>
-      </div>
-      <div class="value-card">
-        <div class="value-icon">🤝</div>
-        <h3>Built With Real Families</h3>
-        <p>Every feature is shaped by feedback from the families who use Forka every day.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- CTA BANNER -->
-<section class="cta-banner">
-  <svg class="cta-veg" viewBox="0 0 1440 300" xmlns="http://www.w3.org/2000/svg">
-    <g transform="translate(80,60) rotate(-20)"><ellipse cx="0" cy="20" rx="6" ry="18" stroke="white" fill="none" stroke-width="1.5"></ellipse><line x1="0" y1="2" x2="-10" y2="-14" stroke="white" stroke-width="1.5"></line><line x1="0" y1="2" x2="0" y2="-16" stroke="white" stroke-width="1.5"></line><line x1="0" y1="2" x2="10" y2="-14" stroke="white" stroke-width="1.5"></line></g>
-    <g transform="translate(300,80)"><rect x="-3" y="0" width="6" height="20" stroke="white" fill="none" stroke-width="1.5"></rect><circle cx="-12" cy="-5" r="10" stroke="white" fill="none" stroke-width="1.5"></circle><circle cx="0" cy="-10" r="12" stroke="white" fill="none" stroke-width="1.5"></circle><circle cx="12" cy="-5" r="10" stroke="white" fill="none" stroke-width="1.5"></circle></g>
-    <g transform="translate(700,40) rotate(30)"><path d="M0,0 Q20,-30 40,0 Q20,10 0,0Z" stroke="white" fill="none" stroke-width="1.5"></path><line x1="0" y1="0" x2="40" y2="0" stroke="white" stroke-width="1"></line></g>
-    <g transform="translate(1100,70) rotate(-10)"><ellipse cx="0" cy="0" rx="16" ry="20" stroke="white" fill="none" stroke-width="1.5"></ellipse><line x1="0" y1="-20" x2="0" y2="-30" stroke="white" stroke-width="1.5"></line></g>
-    <g transform="translate(1350,50) rotate(15)"><ellipse cx="0" cy="24" rx="8" ry="22" stroke="white" fill="none" stroke-width="2"></ellipse><line x1="0" y1="2" x2="-12" y2="-18" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="0" y2="-20" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="12" y2="-18" stroke="white" stroke-width="2"></line></g>
-  </svg>
-  <div style="position:relative;z-index:1;">
-    <h2>Ready to make dinner easy?</h2>
-    <p>Join 248+ families using Forka to plan smarter meals.</p>
-    <div class="cta-btns">
-      <a href="signup.html" class="btn btn-orange" style="padding:14px 32px;font-size:15px;">Try Forka Free</a>
-      <a href="features.html" class="btn btn-white-outline">See How It Works</a>
-    </div>
-  </div>
-</section>
-
-<!-- FOOTER -->
-<footer>
-  <svg class="footer-veg-bg" viewBox="0 0 1440 400" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-    <g transform="translate(80,80) rotate(-20)"><ellipse cx="0" cy="24" rx="8" ry="22" stroke="white" fill="none" stroke-width="2"></ellipse><line x1="0" y1="2" x2="-12" y2="-18" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="0" y2="-20" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="12" y2="-18" stroke="white" stroke-width="2"></line></g>
-    <g transform="translate(400,60)"><rect x="-3" y="0" width="6" height="22" stroke="white" fill="none" stroke-width="2"></rect><circle cx="-14" cy="-6" r="12" stroke="white" fill="none" stroke-width="2"></circle><circle cx="0" cy="-12" r="14" stroke="white" fill="none" stroke-width="2"></circle><circle cx="14" cy="-6" r="12" stroke="white" fill="none" stroke-width="2"></circle></g>
-    <g transform="translate(700,100) rotate(20)"><path d="M0,0 Q24,-36 48,0 Q24,12 0,0Z" stroke="white" fill="none" stroke-width="2"></path><line x1="0" y1="0" x2="48" y2="0" stroke="white" stroke-width="1.5"></line></g>
-    <g transform="translate(1050,60) rotate(-10)"><ellipse cx="0" cy="0" rx="18" ry="24" stroke="white" fill="none" stroke-width="2"></ellipse><line x1="0" y1="-24" x2="0" y2="-36" stroke="white" stroke-width="2"></line></g>
-    <g transform="translate(1380,100) rotate(15)"><ellipse cx="0" cy="24" rx="8" ry="22" stroke="white" fill="none" stroke-width="2"></ellipse><line x1="0" y1="2" x2="-12" y2="-18" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="0" y2="-20" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="12" y2="-18" stroke="white" stroke-width="2"></line></g>
-  </svg>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <div class="footer-logo-row">
-        <div class="footer-logo-icon">
-          <img src="uploads/pasted-1777438996972-0.png" alt="Forka logo" style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
-        </div>
-        <span class="footer-brand-name">Forka</span>
-      </div>
-      <p class="footer-brand-desc">Follow us and never miss an update on the latest meal planning tips, tools, and family recipes.</p>
-      <div class="social-icons">
-        
-        
-        <a href="https://www.instagram.com/tryforka/" target="_blank" rel="noopener noreferrer" class="social-icon" aria-label="Instagram"><svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"></path></svg></a>
-      </div>
-    </div>
-    <div>
-      <h4 class="footer-col-title">Learn</h4>
-      <ul class="footer-links">
-        <li><a href="about.html">About</a></li>
-        <li><a href="features.html">Features</a></li>
-        <li><a href="blog.html">Blog</a></li>
-        <li><a href="faq.html">FAQ</a></li>
-      </ul>
-    </div>
-    <div>
-      <h4 class="footer-col-title">Company</h4>
-      <ul class="footer-links">
-        <li><a href="#">Careers</a></li>
-      </ul>
-    </div>
-    <div>
-      <h4 class="footer-col-title">Contact</h4>
-      <p class="footer-contact-item">Frokabusiness@gmail.com</p>
-      <p class="footer-contact-item">Glenview, Illinois</p>
-    </div>
-  </div>
-  <div class="footer-bottom">
-    <div class="footer-bottom-inner">
-      <span class="footer-copy">© 2026 Forka. All rights reserved.</span>
-      <div class="footer-legal">
-        <a href="privacy.html">Privacy Policy</a>
-        <a href="terms.html">Terms of Use</a>
-      </div>
-    </div>
+<footer class="site-footer">
+  <div class="wrap">
+    <p>&copy; 2026 Forka LLC</p>
+    <nav aria-label="Footer">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="pricing.html" data-when-billing="on" hidden>Pricing</a>
+      <a href="faq.html">FAQ</a>
+      <a href="blog.html">Blog</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+    </nav>
   </div>
 </footer>
 
-<script>
-(function(){
-  var btn=document.getElementById('hamburgerBtn');
-  var menu=document.getElementById('mobileMenu');
-  var close=document.getElementById('mobileClose');
-  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');menu.inert=false;}
-  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');menu.inert=true;}
-  btn.addEventListener('click',function(){menu.classList.contains('open')?closeMenu():openMenu();});
-  close.addEventListener('click',closeMenu);
-})();
-</script>
+<script type="module" src="js/billing-switch.js"></script>
 <script type="module" src="js/nav-auth.js"></script>
 </body>
 </html>
