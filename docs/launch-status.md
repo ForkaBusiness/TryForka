@@ -176,7 +176,7 @@ Or open **Supabase > Edge Functions > (each function) > Logs** and filter by sta
 
 1. **Lawyer review** of [docs/legal/terms-draft.md](legal/terms-draft.md) and [docs/legal/privacy-draft.md](legal/privacy-draft.md). Then publish them (go-live step 9).
 2. **Live Stripe activation** (go-live step 1). Business details, representative, bank account, statement descriptor, two-step sign-in.
-3. **Resend domain** (go-live step 4). Verify tryforka.com in Resend. Then connect Resend as Supabase's email sender, which fixes item 1 at the top, and raise the email rate limit.
+3. **Resend domain** (go-live step 4). **Done** (21 November): Resend is Supabase's email sender, with the email rate limit raised.
 4. **Support inbox.** Create support@tryforka.com. Then set `EMAIL_REPLY_TO` to it (go-live note) and add it to Stripe's customer support details.
 
 Also on the go-live list: the Supabase paid plan (daily backups) and leaked-password protection (go-live steps 2 and 3).
