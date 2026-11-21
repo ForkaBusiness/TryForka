@@ -507,3 +507,74 @@ test('nothing on hand changes nothing', () => {
   const t = buildTaste(NO_SIGNALS, ALL, FAMILY, NOW, [], []);
   for (const r of ALL) assert.equal(scoreRecipe(r, t).onHand, 0);
 });
+
+// ── Pro: every meal ────────────────────────────────────────────────────────
+
+import { plannedSlots, schoolLunchShareFor } from '../src/lib/meals.ts';
+
+const wraps = recipe('Turkey wraps', 'Chicken', 'American', ['turkey', 'tortilla', 'lettuce']);
+const pinwheels = recipe('Cheese pinwheels', 'Side', 'British', ['puff pastry', 'cheddar'], { meal_role: 'side', allergens: ['dairy', 'gluten'] });
+const pastaSalad = recipe('Pasta salad', 'Pasta', 'Italian', ['fusilli', 'cucumber', 'olive oil'], { allergens: ['gluten'] });
+const spicyWrap = recipe('Spicy jerk chicken wrap', 'Chicken', 'Jamaican', ['chicken thigh', 'tortilla', 'scotch bonnet']);
+const peanutBars = recipe('Peanut butter bars', 'Dessert', 'American', ['peanut butter', 'oats'], { meal_role: 'dessert', total_minutes: 20, allergens: ['peanut'] });
+const appleDip = recipe('Apple slices with yogurt dip', 'Side', 'American', ['apple', 'yogurt'], { meal_role: 'side', total_minutes: 10, allergens: ['dairy'] });
+const hummusPlate = recipe('Hummus and veg sticks', 'Side', 'Greek', ['chickpea', 'carrot', 'cucumber'], { meal_role: 'side', total_minutes: 15 });
+const LUNCH_POOL = [...ALL, wraps, pinwheels, pastaSalad, spicyWrap, peanutBars, appleDip, hummusPlate];
+const poolTaste = buildTaste(NO_SIGNALS, LUNCH_POOL, FAMILY, NOW, []);
+const prefs = (p: Partial<{ plan_breakfast: boolean; plan_lunch: boolean; plan_dinner: boolean; plan_snacks: boolean }>) =>
+  ({ plan_breakfast: false, plan_lunch: false, plan_dinner: true, plan_snacks: false, ...p });
+
+test('Free plans dinner only, whatever is switched on', () => {
+  assert.deepEqual(plannedSlots(prefs({ plan_breakfast: true, plan_lunch: true, plan_snacks: true }), 'free', [{ kind: 'kid', school_lunch: true }]), ['dinner']);
+});
+
+test('Pro plans each meal switched on, in day order; school lunch only when a child takes one', () => {
+  const all = prefs({ plan_breakfast: true, plan_lunch: true, plan_snacks: true });
+  assert.deepEqual(plannedSlots(all, 'pro', [{ kind: 'kid', school_lunch: true }]), ['breakfast', 'school_lunch', 'lunch', 'snack', 'dinner']);
+  assert.deepEqual(plannedSlots(all, 'pro', [{ kind: 'kid', school_lunch: false }, { kind: 'adult', school_lunch: true }]), ['breakfast', 'lunch', 'snack', 'dinner']);
+  assert.deepEqual(plannedSlots(prefs({ plan_dinner: false }), 'pro'), ['dinner'], 'nothing switched on still plans dinner');
+});
+
+test('a school lunch buys one portion per child (a recipe serves 4)', () => {
+  assert.equal(schoolLunchShareFor([{ kind: 'kid', school_lunch: true }]), 0.25);
+  assert.equal(schoolLunchShareFor([{ kind: 'kid', school_lunch: true }, { kind: 'kid', school_lunch: true }, { kind: 'adult' }]), 0.5);
+});
+
+test('school lunches go on weekdays only, are packable and kid-friendly, and carry their share', () => {
+  const { plan } = planWeek({ candidates: LUNCH_POOL, taste: poolTaste, food: none, slots: ['school_lunch', 'dinner'], maxWeeknightMinutes: null, seed: 2, schoolLunchShare: 0.5 });
+  for (const day of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] as const) {
+    const lunch = plan[day].school_lunch;
+    assert.ok(lunch, `${day} has a school lunch`);
+    assert.ok(['Turkey wraps', 'Cheese pinwheels', 'Pasta salad', 'Chicken tacos', 'Chicken fajitas', 'Hummus and veg sticks'].includes(lunch.title), `${lunch.title} packs well`);
+    assert.notEqual(lunch.title, 'Spicy jerk chicken wrap');
+    assert.equal(lunch.share, 0.5);
+  }
+  assert.equal(plan.saturday.school_lunch, null);
+  assert.equal(plan.sunday.school_lunch, null);
+});
+
+test('allergies are hard rules for school lunches and snacks too', () => {
+  const food = { allergies: ['peanut', 'dairy', 'gluten'], skip_ingredients: [], diet: 'none' as const };
+  const { plan } = planWeek({ candidates: LUNCH_POOL, taste: poolTaste, food, slots: ['school_lunch', 'snack', 'dinner'], maxWeeknightMinutes: null, seed: 4, schoolLunchShare: 0.25 });
+  const unsafe = new Set(['Cheese pinwheels', 'Pasta salad', 'Peanut butter bars', 'Apple slices with yogurt dip', 'Tomato pasta', 'Peanut noodles', 'Fish pie']);
+  for (const day of Object.values(plan)) for (const meal of Object.values(day)) {
+    if (meal) assert.ok(!unsafe.has(meal.title), `${meal.title} is not safe for this family`);
+  }
+  assert.equal(plan.monday.snack?.title, 'Hummus and veg sticks', 'the one safe snack is used');
+});
+
+test('slots not asked for stay empty', () => {
+  const { plan } = planWeek({ candidates: LUNCH_POOL, taste: poolTaste, food: none, slots: ['dinner'], maxWeeknightMinutes: null, seed: 1 });
+  for (const day of Object.values(plan)) {
+    assert.equal(day.school_lunch, null);
+    assert.equal(day.snack, null);
+    assert.equal(day.breakfast, null);
+  }
+});
+
+test('school lunches are weekdays only: a weekend without one is not a gap', async () => {
+  const { slotOnDay } = await import('../src/lib/meals.ts');
+  assert.equal(slotOnDay('school_lunch', 'friday'), true);
+  assert.equal(slotOnDay('school_lunch', 'saturday'), false);
+  assert.equal(slotOnDay('snack', 'sunday'), true);
+});

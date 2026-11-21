@@ -16,6 +16,8 @@ export type ImportAnswer =
   | { status: 'no_recipe'; message: string; source: DraftSource | null; caption: string | null }
   | { status: 'failed'; message: string }
   | { status: 'capped'; message: string }
+  /** Free's smart imports are used up (everything imported stays). */
+  | { status: 'limit'; message: string }
   /** The photos show several recipes: the household picks one (importPickedRecipe). */
   | { status: 'choose'; recipes: Array<{ title: string; has_method: boolean }>; paths: string[] };
 

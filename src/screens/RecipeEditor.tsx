@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, CalendarPlus, Check, ExternalLink, ImagePlus, ListPlus, Plus, Trash2, X } from 'lucide-react';
 import { useApp } from '../app/AppContext';
+import { canSaveRecipe } from '../lib/usage';
 import { getRecipe, householdRecipeForEdit, isHouseholdRecipe } from '../lib/catalog';
 import { DAY_LONG, emptyPlan, findInPlan, nextOpenSlot, withSlot } from '../lib/plan';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
@@ -99,6 +100,7 @@ type EditorProps = Pick<ReturnType<typeof useApp>, 'userId' | 'prefs' | 'back' |
 };
 
 function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, prefs, back, replace, weekPlan, saveWeek }: EditorProps) {
+  const { billing } = useApp();
   const [title, setTitle] = useState(base.title);
   const [servings, setServings] = useState(base.servings ? String(base.servings) : '');
   const [prep, setPrep] = useState(base.prep_minutes ? String(base.prep_minutes) : '');
@@ -221,6 +223,13 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
     if (issue) { setProblem(issue); return; }
     setSaving(true);
     setProblem(null);
+    // A new recipe of your own: Free keeps 20 (editing one never counts). The database
+    // refuses a 21st too, so a stale check can't get past it.
+    if (!id && !(await canSaveRecipe(userId, null))) {
+      setSaving(false);
+      billing.upgrade('saved_recipes');
+      return;
+    }
     try {
       const savedId = await saveDraft(userId, draft, id);
       setDirty(false);
@@ -230,7 +239,8 @@ function Editor({ id, base, reviewing, duplicate, note, savedPhoto, userId, pref
       setStatus(blockedBy.length ? 'Saved. It stays hidden while your settings exclude it.' : 'Saved to your Library.');
       window.scrollTo(0, 0);
       document.querySelector('main')?.scrollTo(0, 0);
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && /free_limit_recipes/.test(err.message)) { billing.upgrade('saved_recipes'); return; }
       setProblem("Couldn't save. Check your connection and try again. Nothing you typed is lost.");
     } finally {
       setSaving(false);

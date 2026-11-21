@@ -1,17 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeftRight, BookOpen, Refrigerator, CalendarDays, CalendarPlus, ChefHat, ChevronRight, Clock, Lightbulb, Lock, LockOpen, MoreHorizontal, MoveRight, Plus, Trash2,
+  ArrowLeftRight, BookOpen, Refrigerator, CalendarDays, CalendarPlus, ChefHat, ChevronRight, Clock, CookingPot, Lightbulb, Lock, LockOpen, MoreHorizontal, MoveRight, Plus, Repeat2, Trash2,
   UtensilsCrossed, Zap,
 } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { minutesLabel, photo, recipeTitle, safeCardMap, type RecipeCard } from '../lib/catalog';
 import type { Preferences } from '../lib/preferences';
-import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, planEntries, slotKey, SLOT_LABEL, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
+import { DAYS, DAY_LONG, DAY_SHORT, emptyPlan, plannedSlots as planSlots, planEntries, slotKey, SLOT_LABEL, SLOTS, todayKey, withSlot, type Day, type PlanEntry, type Slot, type WeekPlan } from '../lib/plan';
+
+/** The meals around dinner, in the order a day runs. */
+const OTHER_SLOTS = SLOTS.filter((s): s is Exclude<Slot, 'dinner'> => s !== 'dinner');
 import { CheckIn } from '../components/CheckIn';
+import { slotOnDay } from '../lib/meals';
+import { allLinks, clearLeftovers, linkHolds, scheduleLeftovers, type LeftoverRecipe, type PlanEntryLike, type WeekPlanLike } from '../lib/leftovers';
+import { hasGoals, portionsForDay, type DayPortions } from '../lib/goals';
+import { ESTIMATE_NOTE, portionLabel, type PersonPortion } from '../lib/portions';
+import type { FamilyMember } from '../lib/familyPrefs';
+import { MealsCheckIn } from '../components/MealsCheckIn';
 import { activeOnHand } from '../lib/onHand';
 import { CHECK_INGREDIENTS } from '../lib/familyPrefs';
 import { ImportRows } from '../components/ImportEntry';
-import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton } from '../components/ds';
+import { BottomSheet, Button, Card, cx, EmptyState, GlassPill, IconButton, ListGroup, ListRow, PageContainer, Photo, recipeTags, shortMinutes, Skeleton, Tag } from '../components/ds';
 
 // Home: the week as a calendar. Tonight's dinner is the one raised card with the photo;
 // every other day is a row with its photo, name and time. Tapping a day opens its sheet:
@@ -44,7 +53,7 @@ function useCards(entries: PlanEntry[], prefs: Preferences): Map<number, RecipeC
  */
 function shownPlan(plan: WeekPlan, cards: Map<number, RecipeCard>): WeekPlan {
   const out = emptyPlan();
-  for (const d of DAYS) for (const s of ['breakfast', 'lunch', 'dinner'] as const) {
+  for (const d of DAYS) for (const s of SLOTS) {
     const entry = plan[d][s];
     out[d][s] = entry && cards.has(entry.id) ? entry : null;
   }
@@ -69,8 +78,8 @@ function OpenSlot({ size = 'size-14' }: { size?: string }) {
 }
 
 /** Tonight: the one raised card on the screen. */
-function Tonight({ entry, card, blocked, busy, onOpen, onCook, onMore, onBusy, onFind }: {
-  entry: PlanEntry | null; card?: RecipeCard; blocked: boolean; busy: boolean;
+function Tonight({ entry, card, note, blocked, busy, onOpen, onCook, onMore, onBusy, onFind }: {
+  entry: PlanEntry | null; card?: RecipeCard; note: string; blocked: boolean; busy: boolean;
   onOpen: () => void; onCook: () => void; onMore: () => void; onBusy: () => void; onFind: () => void;
 }) {
   if (!entry) {
@@ -94,6 +103,7 @@ function Tonight({ entry, card, blocked, busy, onOpen, onCook, onMore, onBusy, o
           <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap gap-2">
             {card?.total_minutes ? <GlassPill icon={Clock}>{shortMinutes(card.total_minutes)}</GlassPill> : null}
             {tags[0] && <GlassPill>{tags[0]}</GlassPill>}
+            {note && <GlassPill icon={Repeat2}>{note}</GlassPill>}
             {entry.locked && <GlassPill icon={Lock}>Locked</GlassPill>}
           </div>
         </div>
@@ -114,12 +124,21 @@ function Tonight({ entry, card, blocked, busy, onOpen, onCook, onMore, onBusy, o
   );
 }
 
+/** "Double batch" for a dinner cooked twice, "Leftovers from Monday" for the meal that eats it. */
+function batchNote(plan: WeekPlan, entry: PlanEntry | null | undefined): string {
+  if (!entry) return '';
+  if (entry.leftoverOf) return linkHolds(plan as unknown as WeekPlanLike, entry as PlanEntryLike) ? `Leftovers from ${DAY_LONG[entry.leftoverOf.day]}` : '';
+  return (entry.cookTimes ?? 1) >= 2 ? 'Double batch' : '';
+}
+const withNote = (label: string, note: string) => (note ? `${label}, ${note.toLowerCase()}` : label);
+
 /** One day of the week: day, photo, name, time. */
-function DayRow({ day, entry, card, others, blocked, past, onSelect }: {
-  day: Day; entry: PlanEntry | null; card?: RecipeCard; others: string[]; blocked: boolean; past?: boolean; onSelect: () => void;
+function DayRow({ day, entry, card, others, note, blocked, past, onSelect }: {
+  day: Day; entry: PlanEntry | null; card?: RecipeCard; others: string[]; note: string; blocked: boolean; past?: boolean; onSelect: () => void;
 }) {
   const title = entry ? (card ? recipeTitle(card) : entry.title) : blocked ? NO_SAFE_RECIPE : 'Nothing planned';
-  const time = entry ? shortMinutes(card?.total_minutes) : '';
+  // Leftovers are only reheated: the recipe's cook time doesn't apply.
+  const time = entry && !note.startsWith('Leftovers') ? shortMinutes(card?.total_minutes) : '';
   return (
     <li>
       <button type="button" onClick={onSelect} aria-label={`${DAY_LONG[day]}: ${title}${time ? `, ${time}` : ''}${entry?.locked ? ', locked' : ''}`}
@@ -132,8 +151,9 @@ function DayRow({ day, entry, card, others, blocked, past, onSelect }: {
             {entry ? (
               <>
                 {time && <span className="shrink-0">{time}</span>}
+                {note && <span className="shrink-0 font-semibold text-green">{note}</span>}
                 {entry.locked && <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-green"><Lock size={14} strokeWidth={2} aria-hidden />Locked</span>}
-                {others.length > 0 && <span className="truncate">{time || entry.locked ? 'plus ' : 'Plus '}{others.join(', ')}</span>}
+                {others.length > 0 && <span className="truncate">{time || entry.locked || note ? 'plus ' : 'Plus '}{others.join(', ')}</span>}
               </>
             ) : !blocked && <span>Add a dinner</span>}
           </span>
@@ -144,9 +164,66 @@ function DayRow({ day, entry, card, others, blocked, past, onSelect }: {
   );
 }
 
+/** " Goal for these meals: about 910 kcal." for adults with a goal; nothing for children. */
+function aimFor(p: PersonPortion, members: FamilyMember[]): string {
+  if (members.find(m => m.id === p.id)?.kind === 'kid') return '';
+  if (p.target.kcal != null) return ` Goal for these meals: about ${p.target.kcal.toLocaleString('en-US')} kcal.`;
+  if (p.target.protein != null) return ` Goal for these meals: about ${Math.round(p.target.protein)} g protein.`;
+  return '';
+}
+
+/** Each person's portion for the day and the estimated totals (Pro, when anyone has a goal). */
+function DayPortionsCard({ day, plan, members }: { day: Day; plan: WeekPlan; members: FamilyMember[] }) {
+  const [state, setState] = useState<DayPortions | 'loading' | 'error'>('loading');
+  const key = JSON.stringify(SLOTS.map(s => plan[day][s]?.id ?? null));
+  useEffect(() => {
+    let cancelled = false;
+    setState('loading');
+    portionsForDay(plan, day, members).then(r => { if (!cancelled) setState(r); }).catch(() => { if (!cancelled) setState('error'); });
+    return () => { cancelled = true; };
+    // The plan's meals for this day and the family are what the estimate depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, key, members]);
+  if (!planEntries(plan).some(e => e.day === day)) return null;
+  return (
+    <section aria-labelledby="portions" className="mt-5">
+      <p id="portions" className="label mb-2 px-1">Portions, estimated</p>
+      <Card className="p-4">
+        {state === 'loading' ? (
+          <p aria-busy className="text-small text-ink-muted">Working out portions…</p>
+        ) : state === 'error' ? (
+          <p className="text-small text-ink-muted">Couldn't work out portions right now. Check your connection.</p>
+        ) : (
+          <>
+            <ul className="divide-y divide-line">
+              {state.people.map(p => (
+                <li key={p.id} className="flex items-baseline justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                  <span className="min-w-0">
+                    <span className="block truncate text-body font-medium text-ink">{p.name}</span>
+                    <span className="block text-small text-ink-muted">
+                      {p.planned.kcal > 0 ? `About ${p.planned.kcal.toLocaleString('en-US')} kcal and ${Math.round(p.planned.protein)} g protein from these meals.` : 'No estimate for these meals.'}
+                      {/* Children have general goals only: no number aims are shown for them. */}
+                      {p.planned.kcal > 0 && aimFor(p, members)}
+                    </span>
+                  </span>
+                  <span className="tabular shrink-0 text-small font-semibold text-ink">{portionLabel(p.portion)}</span>
+                </li>
+              ))}
+            </ul>
+            {state.missing.length > 0 && <p className="mt-3 text-small text-ink-muted">Not counted: {state.missing.join(', ')}. Not enough is known about their ingredients.</p>}
+            <p className="mt-3 text-caption text-ink-muted">{ESTIMATE_NOTE} Totals cover the meals planned here.</p>
+          </>
+        )}
+      </Card>
+    </section>
+  );
+}
+
 /** What you can do with one day's dinner. */
-function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, message, onClose, act }: {
+function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, message, goals, onClose, act }: {
   day: Day | null; plan: WeekPlan; cards: Map<number, RecipeCard>; today: Day; blocked: (d: Day, s: Slot) => boolean; plannedSlots: Slot[]; busy: boolean;
+  /** The family, when anyone has a goal (Pro): the sheet shows each person's portion. */
+  goals: FamilyMember[] | null;
   /** What came of the last action, when the sheet stays open to say it. */
   message: string | null;
   onClose: () => void;
@@ -161,7 +238,8 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
   const ahead = DAYS.indexOf(day) >= DAYS.indexOf(today);
   // While a faster dinner is being looked for, the other actions wait: they'd change the plan under it.
   const unless = <T,>(fn: T) => (busy ? undefined : fn);
-  const otherSlots = (['breakfast', 'lunch'] as const).filter(s => plan[day][s] || plannedSlots.includes(s));
+  // School lunches are weekdays only.
+  const otherSlots = OTHER_SLOTS.filter(s => plan[day][s] || (plannedSlots.includes(s) && slotOnDay(s, day)));
   const green = 'text-green';
 
   return (
@@ -171,7 +249,7 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
           <Thumb src={card?.thumb_url ?? entry.image} size="size-16" />
           <div className="min-w-0 flex-1">
             <p className="line-clamp-2 text-body font-semibold text-ink">{card ? recipeTitle(card) : entry.title}</p>
-            <p className="text-small text-ink-muted">{[minutesLabel(card?.total_minutes), entry.locked ? 'Locked' : ''].filter(Boolean).join(', ')}</p>
+            <p className="text-small text-ink-muted">{[minutesLabel(card?.total_minutes), batchNote(plan, entry), entry.locked ? 'Locked' : ''].filter(Boolean).join(', ')}</p>
           </div>
         </div>
       ) : (
@@ -226,7 +304,7 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
             const otherCard = other ? cards.get(other.id) : undefined;
             return other ? (
               <ListRow key={slot} leading={<Thumb src={otherCard?.thumb_url ?? other.image} />} title={otherCard ? recipeTitle(otherCard) : other.title}
-                subtitle={SLOT_LABEL[slot]} chevron onClick={() => act.open(other.id)} />
+                subtitle={withNote(SLOT_LABEL[slot], batchNote(plan, other))} chevron onClick={() => act.open(other.id)} />
             ) : (
               <ListRow key={slot} leading={<OpenSlot size="size-12" />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`}
                 subtitle={blocked(day, slot) ? NO_SAFE_RECIPE : 'Nothing planned'} chevron onClick={() => act.swap(day, slot)} />
@@ -234,12 +312,13 @@ function DaySheet({ day, plan, cards, today, blocked, plannedSlots, busy, messag
           })}
         </ListGroup>
       )}
+      {!moving && goals && <DayPortionsCard day={day} plan={plan} members={goals} />}
     </BottomSheet>
   );
 }
 
 export function MealPlan() {
-  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions, onHand } = useApp();
+  const { weekPlan, prefs, saveWeek, planNewWeek, swapForBusyNight, planReview, undoPlanReview, go, openSuggestions, onHand, billing, members } = useApp();
   const usingUp = activeOnHand(onHand);
   const today = todayKey();
   const [sheetDay, setSheetDay] = useState<Day | null>(null);
@@ -303,7 +382,8 @@ export function MealPlan() {
   const plan = shownPlan(weekPlan?.plan ?? emptyPlan(), cards);
   const hasMeals = planEntries(plan).length > 0;
   const isBlocked = (d: Day, s: Slot) => planReview.blocked.includes(slotKey(d, s));
-  const plannedSlots: Slot[] = (['breakfast', 'lunch'] as const).filter(s => (s === 'breakfast' ? prefs.plan_breakfast : prefs.plan_lunch));
+  // The meals around dinner this household plans (Pro); whatever a week already holds still shows.
+  const plannedSlots: Slot[] = planSlots(prefs, billing.plan, members).filter(s => s !== 'dinner');
   const open = (id: number) => { setSheetDay(null); go({ name: 'recipe', id }); };
   const dinner = plan[today].dinner;
   const dinnerCard = dinner ? cards.get(dinner.id) : undefined;
@@ -372,6 +452,23 @@ export function MealPlan() {
   };
   const openSheet = (d: Day) => { setSheetMessage(null); setSheetDay(d); };
 
+  const isPro = billing.plan === 'pro';
+  const pairs = allLinks(plan as unknown as WeekPlanLike).length;
+  /** Cook once, eat twice: up to two dinners that keep well become double batches, eaten again a day or two later. */
+  const cookTwice = () => {
+    const recipes = new Map<number, LeftoverRecipe>([...cards.values()].map(c => [c.id, { id: c.id, name: recipeTitle(c), category: c.category, total_minutes: c.total_minutes }]));
+    const { links } = scheduleLeftovers(plan as unknown as WeekPlanLike, { recipes, slots: planSlots(prefs, billing.plan, members), fixedDays: new Set(earlier) });
+    if (!links.length) {
+      setInfo('No dinner this week keeps well enough to cook twice. Stews, curries, soups and bakes do: swap one in and try again.');
+      toTop();
+      return;
+    }
+    change(p => scheduleLeftovers(p as unknown as WeekPlanLike, { recipes, slots: planSlots(prefs, billing.plan, members), fixedDays: new Set(earlier) }).plan as unknown as WeekPlan);
+    // After change(), which clears the last note.
+    setInfo(`${links.map(l => `${DAY_LONG[l.from.day]}'s dinner`).join(' and ')} ${links.length === 1 ? 'is' : 'are'} now a double batch, eaten again ${links.map(l => `${DAY_LONG[l.to.day]} at ${l.to.slot === 'lunch' ? 'lunch' : 'dinner'}`).join(' and ')}. The grocery list buys enough.`);
+    toTop();
+  };
+
   const notice = planReview.notice && (
     <Card role="status" className="mb-4 flex items-center justify-between gap-3 px-4 py-3 text-small text-ink-muted">
       <p className="min-w-0">{planReview.notice}</p>
@@ -383,8 +480,8 @@ export function MealPlan() {
 
   const row = (d: Day, past?: boolean) => {
     const entry = plan[d].dinner;
-    const others = (['breakfast', 'lunch'] as const).map(s => plan[d][s]).filter((e): e is PlanEntry => !!e).map(o => (cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title));
-    return <DayRow key={d} day={d} entry={entry} card={entry ? cards.get(entry.id) : undefined} others={others} blocked={isBlocked(d, 'dinner')} past={past} onSelect={() => openSheet(d)} />;
+    const others = OTHER_SLOTS.map(s => plan[d][s]).filter((e): e is PlanEntry => !!e).map(o => (cards.get(o.id) ? recipeTitle(cards.get(o.id)!) : o.title));
+    return <DayRow key={d} day={d} entry={entry} card={entry ? cards.get(entry.id) : undefined} others={others} note={batchNote(plan, entry)} blocked={isBlocked(d, 'dinner')} past={past} onSelect={() => openSheet(d)} />;
   };
   const week = (days: Day[], label: string, id: string, past?: boolean) => days.length > 0 && (
     <section aria-labelledby={id} className="mb-6">
@@ -395,7 +492,8 @@ export function MealPlan() {
 
   const headline = !hasMeals ? 'This week' : dinner ? "Tonight's sorted." : 'Nothing planned tonight.';
   const intro = !hasMeals ? undefined : [DAY_LONG[today], dinner ? minutesLabel(dinnerCard?.total_minutes).toLowerCase() : ''].filter(Boolean).join(', ');
-  const otherToday = plannedSlots.filter(s => hasMeals || plan[today][s]);
+  // Meals already planned always show (nothing is taken away); open slots only for meals planned now.
+  const otherToday = OTHER_SLOTS.filter(s => plan[today][s] || (hasMeals && plannedSlots.includes(s) && slotOnDay(s, today)));
 
   return (
     <PageContainer wide title={headline} intro={intro}>
@@ -405,11 +503,13 @@ export function MealPlan() {
           {info && <p role="status" className="mb-4 text-small text-ink-muted">{info}</p>}
           {notice}
           {hasMeals && <CheckIn />}
+          {hasMeals && <MealsCheckIn />}
 
           {hasMeals ? (
             <Tonight
               entry={dinner}
               card={dinnerCard}
+              note={batchNote(plan, dinner)}
               blocked={isBlocked(today, 'dinner')}
               busy={busyDay === today}
               onOpen={() => dinner && open(dinner.id)}
@@ -442,7 +542,7 @@ export function MealPlan() {
                 const card = entry ? cards.get(entry.id) : undefined;
                 return entry ? (
                   <ListRow key={slot} leading={<Thumb src={card?.thumb_url ?? entry.image} />} title={card ? recipeTitle(card) : entry.title}
-                    subtitle={SLOT_LABEL[slot]} chevron onClick={() => open(entry.id)} />
+                    subtitle={withNote(SLOT_LABEL[slot], batchNote(plan, entry))} chevron onClick={() => open(entry.id)} />
                 ) : (
                   <ListRow key={slot} leading={<OpenSlot size="size-12" />} title={`Add ${SLOT_LABEL[slot].toLowerCase()}`} subtitle={isBlocked(today, slot) ? NO_SAFE_RECIPE : 'Nothing planned'}
                     chevron onClick={() => openSuggestions({ day: today, slot })} />
@@ -467,6 +567,15 @@ export function MealPlan() {
             subtitle={usingUp.length ? `Using up ${usingUp.length <= 1 ? usingUp.join('') : `${usingUp.slice(0, -1).join(', ')} and ${usingUp[usingUp.length - 1]}`}` : undefined} />
           <ListRow leading={<Lightbulb {...icon} className="text-green" />} title="Suggestions" chevron onClick={() => openSuggestions()} />
           <ImportRows iconClass="text-green" />
+          <ListRow leading={<ChefHat {...icon} className="text-green" />} title="Meal prep" subtitle="Get ahead on the week in about an hour"
+            trailing={isPro ? undefined : <Tag tone="green" size="sm">Pro</Tag>} chevron onClick={() => (isPro ? go({ name: 'prep' }) : billing.upgrade('meal_prep'))} />
+          {hasMeals && (pairs > 0 ? (
+            <ListRow leading={<CookingPot {...icon} className="text-green" />} title="Cook each meal fresh" subtitle={`Undo the ${pairs === 1 ? 'double batch' : `${pairs} double batches`} this week`}
+              onClick={() => change(p => clearLeftovers(p as unknown as WeekPlanLike) as unknown as WeekPlan)} />
+          ) : (
+            <ListRow leading={<Repeat2 {...icon} className="text-green" />} title="Cook once, eat twice" subtitle="Double a dinner that keeps, and eat it again a day or two later"
+              trailing={isPro ? undefined : <Tag tone="green" size="sm">Pro</Tag>} onClick={isPro ? cookTwice : () => billing.upgrade('leftovers')} />
+          ))}
           {hasMeals && weekPlan && (
             <ListRow leading={<CalendarPlus {...icon} className="text-green" />} title={planning ? 'Planning a new week…' : 'New week plan'}
               subtitle={`This one was planned ${plannedOn(weekPlan.createdAt)}`} chevron onClick={planning ? undefined : () => setConfirmReplace(true)} />
@@ -475,6 +584,7 @@ export function MealPlan() {
       </div>
 
       <DaySheet day={sheetDay} plan={plan} cards={cards} today={today} blocked={isBlocked} plannedSlots={plannedSlots} busy={busyDay !== null} message={sheetMessage}
+        goals={billing.plan === 'pro' && hasGoals(members) ? members : null}
         onClose={() => setSheetDay(null)} act={act} />
 
       <BottomSheet

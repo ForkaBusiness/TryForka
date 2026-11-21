@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { BottomSheet, Button, Skeleton, Tag, cx } from '../ds';
+import { useApp } from '../../app/AppContext';
 import { askSwaps, askVariations, localSwaps, type HelpAnswer, type Swap, type Variation } from '../../lib/cookingHelp';
 import type { FoodPrefs } from '../../lib/recipeFilter';
 import type { UnitSystem } from '../../../supabase/functions/_shared/catalog/units.ts';
@@ -27,11 +28,15 @@ function Loading({ text }: { text: string }) {
 }
 
 function Problem({ answer, onRetry, tableNote }: { answer: Exclude<HelpAnswer<object>, { status: 'ok' }>; onRetry: () => void; tableNote?: boolean }) {
+  const { billing } = useApp();
   return (
     <div role="alert" className="rounded-card border border-line bg-surface p-5">
       <p className="text-body font-semibold text-ink">{answer.message}</p>
       {answer.status === 'capped' ? (
-        tableNote && <p className="mt-2 text-small text-ink-muted">Swaps for buttermilk, eggs, butter, sour cream, wine and herbs still work any time.</p>
+        <>
+          {tableNote && <p className="mt-2 text-small text-ink-muted">Swaps for buttermilk, eggs, butter, sour cream, wine and herbs still work any time.</p>}
+          {billing.plan !== 'pro' && <Button variant="secondary" className="mt-4" onClick={() => billing.upgrade('cooking_help')}>See what Pro adds</Button>}
+        </>
       ) : (
         <Button variant="secondary" className="mt-4" onClick={onRetry}>Try again</Button>
       )}

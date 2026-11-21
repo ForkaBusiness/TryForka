@@ -9,7 +9,7 @@ import { fetchCollections, recipeCount, type CollectionRow } from '../lib/collec
 // Add a recipe to collections: tick the ones it belongs in, create new ones, Save.
 
 export function Collections({ id }: { id: number }) {
-  const { userId, back, prefs } = useApp();
+  const { userId, back, prefs, billing } = useApp();
   const [collections, setCollections] = useState<CollectionRow[] | null>(null);
   const [initial, setInitial] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -50,6 +50,7 @@ export function Collections({ id }: { id: number }) {
     try {
       const add = [...selected].filter(c => !initial.has(c));
       const remove = [...initial].filter(c => !selected.has(c));
+      // Collections of catalog recipes are never limited (Free's limit is on recipes of your own).
       if (add.length) {
         const { error: err } = await supabase.from('collection_recipes').insert(add.map(collection_id => ({ collection_id, recipe_id: id, recipe_title: title })));
         if (err) throw err;

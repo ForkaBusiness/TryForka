@@ -101,27 +101,64 @@ const TIME_OPTIONS: Array<{ value: number | null; label: string }> = [
   { value: 30, label: '30 min' }, { value: 45, label: '45 min' }, { value: 60, label: '1 hour' }, { value: null, label: 'No limit' },
 ];
 
-type Planning = Pick<Preferences, 'plan_breakfast' | 'plan_lunch' | 'plan_dinner' | 'max_weeknight_minutes'>;
+/** A setting that is part of Pro, shown to Free as an empty checkbox with a Pro tag; a tap explains Pro. */
+export function ProOption({ label, onPro }: { label: string; onPro: () => void }) {
+  return (
+    <button type="button" onClick={onPro}
+      className="inline-flex cursor-pointer items-center gap-3 rounded-input text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green">
+      <span aria-hidden className="size-6 shrink-0 rounded-full border-2 border-ink-muted/40 bg-surface" />
+      <span className="text-body text-ink-muted">{label}</span>
+      <span className="rounded-full bg-green-soft px-2 py-0.5 text-caption font-semibold text-green">Pro</span>
+    </button>
+  );
+}
 
-export function PlanningPicker({ value, onChange }: { value: Planning; onChange: (p: Partial<Planning>) => void }) {
-  const meals: Array<[keyof Planning, string]> = [['plan_breakfast', 'Breakfast'], ['plan_lunch', 'Lunch'], ['plan_dinner', 'Dinner']];
-  const onlyOne = [value.plan_breakfast, value.plan_lunch, value.plan_dinner].filter(Boolean).length === 1;
+type Planning = Pick<Preferences, 'plan_breakfast' | 'plan_lunch' | 'plan_dinner' | 'plan_snacks' | 'max_weeknight_minutes'>;
+type MealKey = 'plan_breakfast' | 'plan_lunch' | 'plan_snacks' | 'plan_dinner';
+
+/**
+ * Which meals to plan, and how long weeknight dinners may take. Free plans dinner; on Free
+ * the other meals show as part of Pro and a tap explains Pro (onPro). Without onPro (first
+ * run) Free shows only the cook time. School lunches are switched on per child, under Family.
+ */
+export function PlanningPicker({ value, onChange, pro = true, onPro }: {
+  value: Planning;
+  onChange: (p: Partial<Planning>) => void;
+  /** Whether this household has Pro (every meal). */
+  pro?: boolean;
+  onPro?: () => void;
+}) {
+  const meals: Array<[MealKey, string]> = [['plan_breakfast', 'Breakfast'], ['plan_lunch', 'Lunch'], ['plan_snacks', 'Snacks'], ['plan_dinner', 'Dinner']];
+  const onlyOne = meals.filter(([k]) => value[k]).length === 1;
   return (
     <div className="space-y-6">
-      <fieldset>
-        <legend className="mb-3 text-small font-semibold text-ink">Meals to plan</legend>
-        <div className="flex flex-wrap gap-6">
-          {meals.map(([key, label]) => (
-            <Checkbox
-              key={key}
-              checked={!!value[key]}
-              // At least one meal stays on.
-              onChange={checked => { if (checked || !onlyOne || !value[key]) onChange({ [key]: checked }); }}
-              label={label}
-            />
-          ))}
-        </div>
-      </fieldset>
+      {pro ? (
+        <fieldset>
+          <legend className="mb-3 text-small font-semibold text-ink">Meals to plan</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-4">
+            {meals.map(([key, label]) => (
+              <Checkbox
+                key={key}
+                checked={!!value[key]}
+                // At least one meal stays on.
+                onChange={checked => { if (checked || !onlyOne || !value[key]) onChange({ [key]: checked }); }}
+                label={label}
+              />
+            ))}
+          </div>
+          <p className="mt-3 text-small text-ink-muted">School lunches are set for each child under Family.</p>
+        </fieldset>
+      ) : onPro ? (
+        <fieldset>
+          <legend className="mb-3 text-small font-semibold text-ink">Meals to plan</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-4">
+            <Checkbox checked onChange={() => {}} label="Dinner" />
+            {meals.filter(([k]) => k !== 'plan_dinner').map(([key, label]) => (
+              <ProOption key={key} label={label} onPro={onPro} />
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
       <fieldset>
         <legend className="mb-3 text-small font-semibold text-ink">Weeknight dinners take at most</legend>
         <div role="radiogroup" aria-label="Weeknight cook time" className="flex flex-wrap gap-2">

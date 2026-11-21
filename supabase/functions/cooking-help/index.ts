@@ -1,5 +1,7 @@
 import { askJson } from '../_shared/claude.ts';
 import { AppError, claimRequest, serve, userClient } from '../_shared/http.ts';
+import { callerPlan } from '../_shared/billing/plan.ts';
+import { FREE_HELP_PER_DAY, PRO_HELP_CAP } from '../_shared/billing/limits.ts';
 import { familyFood } from '../_shared/household.ts';
 import { BASE_SERVINGS } from '../_shared/nutrition.ts';
 import { allergyLabel, recipeChecker, type FoodPrefs } from '../_shared/catalog/recipeFilter.ts';
@@ -18,7 +20,11 @@ import { safeSwaps, safeVariations, sentenceCase, tableSwaps, tidyText, type Swa
 // is counted with record_usage('recipe_variations') for Phase 4's plans. Nothing about the
 // recipe is logged.
 
-const RATE_LIMIT = { kind: 'cooking_help', perMinute: 6, perDay: 30, noun: 'cooking help' };
+// Pro: as much help as a family needs, under a server-side abuse cap. Free: a few model
+// answers a day for "Missing something?" (the built-in swaps never count), and "Make it
+// different" is part of Pro.
+const RATE_LIMIT = { kind: 'cooking_help', perMinute: PRO_HELP_CAP.perMinute, perDay: PRO_HELP_CAP.perDay, noun: 'cooking help' };
+const FREE_LIMIT = { kind: 'cooking_help_free', perMinute: 3, perDay: FREE_HELP_PER_DAY, noun: `${FREE_HELP_PER_DAY} ingredient answers on Free` };
 const MODEL = Deno.env.get('COOKING_HELP_MODEL') || 'claude-haiku-5-5';
 const MAX_STEPS_CHARS = 2500;
 const ON_HAND_DAYS = 7;
@@ -152,7 +158,8 @@ serve(async (body, req) => {
     const fromTable = table ? safeSwaps(table.swaps, prefs) : [];
     if (table && fromTable.length) return { missing: table.missing, swaps: fromTable, source: 'table' };
 
-    await claimRequest(db, RATE_LIMIT);
+    const { plan } = await callerPlan(db);
+    await claimRequest(db, plan === 'pro' ? RATE_LIMIT : FREE_LIMIT);
     const { onHand } = await pantry(db).catch(() => ({ onHand: [] as string[], likes: [] as string[] }));
     const missing = table?.missing ?? ingredientName(ing).toLowerCase();
     const out = await askJson<{ swaps: Swap[] }>({
@@ -171,6 +178,8 @@ serve(async (body, req) => {
     return { missing, swaps, source: 'model' };
   }
 
+  // Variations are part of Pro (the app shows the upgrade sheet before ever asking).
+  if ((await callerPlan(db)).plan !== 'pro') throw new AppError('Make it different is part of Pro.', 402);
   await claimRequest(db, RATE_LIMIT);
   const { onHand, likes } = await pantry(db).catch(() => ({ onHand: [] as string[], likes: [] as string[] }));
   const out = await askJson<{ variations: Variation[] }>({

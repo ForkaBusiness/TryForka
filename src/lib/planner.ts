@@ -10,10 +10,13 @@
 
 import { normalizeIngredient, pickReplacement, recipeChecker, type FoodPrefs } from '../../supabase/functions/_shared/catalog/recipeFilter.ts';
 import { usesIngredient } from './ingredientMatch.ts';
+import { isSchoolLunch, isSnack, SCHOOL_DAYS } from './meals.ts';
 
 export const PLAN_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 export type PlanDay = typeof PLAN_DAYS[number];
-export type PlanSlot = 'breakfast' | 'lunch' | 'dinner';
+/** Every meal a week can hold, in the order a day runs. Free plans dinner; Pro the rest. */
+export const PLAN_SLOTS = ['breakfast', 'school_lunch', 'lunch', 'snack', 'dinner'] as const;
+export type PlanSlot = typeof PLAN_SLOTS[number];
 const WEEKNIGHTS: ReadonlySet<string> = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
 const DAY_NAMES: Record<PlanDay, string> = { monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday' };
 
@@ -39,6 +42,12 @@ export interface PlannedMeal {
   locked?: boolean;
   /** The household put this meal here by hand: the daily update leaves it alone. */
   chosen?: boolean;
+  /** Share of the recipe to buy for: a school lunch for 2 children is 0.5 (default 1). */
+  share?: number;
+  /** Cook once, eat twice: cooked as a double batch (the grocery list buys twice). */
+  cookTimes?: number;
+  /** This meal is the leftovers of a double batch cooked earlier (nothing to buy). */
+  leftoverOf?: { day: PlanDay; slot: PlanSlot; id: number };
 }
 export type PlannerWeek = Record<PlanDay, Record<PlanSlot, PlannedMeal | null>>;
 
@@ -335,7 +344,7 @@ function jitter(seed: number, id: number): number {
 }
 
 export function emptyWeek(): PlannerWeek {
-  return Object.fromEntries(PLAN_DAYS.map(d => [d, { breakfast: null, lunch: null, dinner: null }])) as PlannerWeek;
+  return Object.fromEntries(PLAN_DAYS.map(d => [d, Object.fromEntries(PLAN_SLOTS.map(s => [s, null]))])) as PlannerWeek;
 }
 
 const asMeal = (r: PlannerRecipe): PlannedMeal => ({ id: r.id, title: title(r), image: r.thumb_url ?? '' });
@@ -354,6 +363,8 @@ export interface PlanWeekInput {
   /** Locked meals of the current plan stay where they are. */
   keep?: PlannerWeek | null;
   seed: number;
+  /** Share of a recipe a school lunch buys for (children taking one / 4). */
+  schoolLunchShare?: number;
 }
 
 /**
@@ -383,7 +394,7 @@ export function planWeek(input: PlanWeekInput): { plan: PlannerWeek; relaxed: Se
     if (r.area) areas.set(r.area, (areas.get(r.area) ?? 0) + 1);
   };
 
-  for (const day of PLAN_DAYS) for (const slot of ['breakfast', 'lunch', 'dinner'] as const) {
+  for (const day of PLAN_DAYS) for (const slot of PLAN_SLOTS) {
     const kept = input.keep?.[day]?.[slot];
     if (!kept?.locked) continue;
     plan[day][slot] = kept;
@@ -429,6 +440,29 @@ export function planWeek(input: PlanWeekInput): { plan: PlannerWeek; relaxed: Se
       if (!pick) continue;
       note(pick);
       plan[day][slot] = asMeal(pick);
+    }
+  }
+  // School lunches: packable and kid-friendly, Monday to Friday, different each day when
+  // there are enough; the same taste and allergy rules as everything else.
+  if (slots.includes('school_lunch')) {
+    const lunches = ranked.filter(c => isSchoolLunch(c.recipe));
+    const order = [...lunches].sort((a, b) => value(b) - value(a));
+    let i = 0;
+    for (const day of SCHOOL_DAYS) {
+      if (plan[day].school_lunch || !order.length) continue;
+      const fresh = order.find(c => !uses.has(c.recipe.id)) ?? order[i++ % order.length];
+      note(fresh.recipe);
+      plan[day].school_lunch = { ...asMeal(fresh.recipe), share: input.schoolLunchShare ?? 0.5 };
+    }
+  }
+  // Snacks: quick and light; a handful may rotate through the week.
+  if (slots.includes('snack')) {
+    const snacks = ranked.filter(c => isSnack(c.recipe));
+    const order = [...snacks].sort((a, b) => (b.score.total + JITTER * jitter(seed, b.recipe.id)) - (a.score.total + JITTER * jitter(seed, a.recipe.id))).slice(0, 4);
+    let i = 0;
+    for (const day of PLAN_DAYS) {
+      if (plan[day].snack || !order.length) continue;
+      plan[day].snack = asMeal(order[i++ % order.length].recipe);
     }
   }
   if (slots.includes('breakfast') && breakfasts.length) {
@@ -550,7 +584,7 @@ export function updatePlan(input: UpdateInput): { plan: PlannerWeek; changes: Pl
   let broughtIn = 0;
 
   while (changes.length < MAX_CHANGES_PER_UPDATE) {
-    const inPlan = new Set(PLAN_DAYS.flatMap(d => (['breakfast', 'lunch', 'dinner'] as const).map(s => plan[d][s]?.id)).filter((id): id is number => id !== undefined));
+    const inPlan = new Set(PLAN_DAYS.flatMap(d => PLAN_SLOTS.map(s => plan[d][s]?.id)).filter((id): id is number => id !== undefined));
     let best: { day: PlanDay; from: PlannedMeal; to: { recipe: PlannerRecipe; score: Score }; gain: number; fromScore: Score | null; weak: boolean } | null = null;
     for (const day of open) {
       const current = plan[day].dinner;
@@ -623,7 +657,7 @@ export function planEdits(before: PlannerWeek | null, after: PlannerWeek): PlanE
   const was = ids(before);
   const is = ids(after);
   const edits: PlanEdit[] = [];
-  for (const day of PLAN_DAYS) for (const slot of ['breakfast', 'lunch', 'dinner'] as const) {
+  for (const day of PLAN_DAYS) for (const slot of PLAN_SLOTS) {
     const old = before?.[day]?.[slot] ?? null;
     const now = after[day][slot];
     if (old && !is.has(old.id)) edits.push({ recipeId: old.id, kind: now ? 'swapped_out' : 'removed', day });
@@ -639,8 +673,8 @@ export function planEdits(before: PlannerWeek | null, after: PlannerWeek): PlanE
 /** The slots whose recipe the family can't eat, or that is no longer in the catalog. */
 export function planFailures(plan: PlannerWeek, cards: ReadonlyMap<number, PlannerRecipe>, food: FoodPrefs): Array<{ day: PlanDay; slot: PlanSlot }> {
   const check = recipeChecker(food);
-  return PLAN_DAYS.flatMap(day => (['breakfast', 'lunch', 'dinner'] as const).flatMap(slot => {
-    const meal = plan[day][slot];
+  return PLAN_DAYS.flatMap(day => PLAN_SLOTS.flatMap(slot => {
+    const meal = plan[day]?.[slot];
     if (!meal) return [];
     const card = cards.get(meal.id);
     return !card || !check(card).allowed ? [{ day, slot }] : [];
@@ -656,7 +690,7 @@ export interface PlanRepair { plan: PlannerWeek; changed: boolean; replaced: num
  */
 export function repairPlan(
   plan: PlannerWeek, cards: ReadonlyMap<number, PlannerRecipe>,
-  options: { mains: readonly PlannerRecipe[]; breakfasts: readonly PlannerRecipe[] }, food: FoodPrefs,
+  options: { mains: readonly PlannerRecipe[]; breakfasts: readonly PlannerRecipe[]; snacks?: readonly PlannerRecipe[] }, food: FoodPrefs,
 ): PlanRepair {
   const failed = planFailures(plan, cards, food);
   if (!failed.length) return { plan, changed: false, replaced: 0, blocked: [] };
@@ -666,12 +700,18 @@ export function repairPlan(
   let replaced = 0;
   const blocked: string[] = [];
   for (const { day, slot } of failed) {
-    // Same rule as the week planner: a breakfast may repeat, a main may not.
+    // Same rule as the week planner: breakfasts and snacks may repeat, a main may not; a
+    // school lunch is replaced by another packable, kid-friendly one.
+    const snacks = (options.snacks ?? []).filter(isSnack);
+    const lunchboxes = [...options.mains, ...(options.snacks ?? [])].filter(isSchoolLunch);
     const pick = slot === 'breakfast'
       ? pickReplacement(options.breakfasts, check, used) ?? pickReplacement(options.breakfasts, check, new Set())
+      : slot === 'snack' ? pickReplacement(snacks, check, used) ?? pickReplacement(snacks, check, new Set())
+      : slot === 'school_lunch' ? pickReplacement(lunchboxes, check, used)
       : pickReplacement(options.mains, check, used);
     if (pick) { used.add(pick.id); replaced++; } else blocked.push(`${day}:${slot}`);
-    next = { ...next, [day]: { ...next[day], [slot]: pick ? asMeal(pick) : null } };
+    const was = next[day][slot];
+    next = { ...next, [day]: { ...next[day], [slot]: pick ? { ...asMeal(pick), ...(was?.share ? { share: was.share } : {}) } : null } };
   }
   return { plan: next, changed: true, replaced, blocked };
 }
@@ -683,7 +723,7 @@ export function repairPlan(
  */
 export function markChosen(before: PlannerWeek | null, after: PlannerWeek): PlannerWeek {
   const out = { ...after };
-  for (const day of PLAN_DAYS) for (const slot of ['breakfast', 'lunch', 'dinner'] as const) {
+  for (const day of PLAN_DAYS) for (const slot of PLAN_SLOTS) {
     const meal = after[day][slot];
     if (meal && !meal.chosen && before?.[day]?.[slot]?.id !== meal.id) out[day] = { ...out[day], [slot]: { ...meal, chosen: true } };
   }

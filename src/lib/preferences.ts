@@ -18,6 +18,8 @@ export interface Preferences {
   plan_breakfast: boolean;
   plan_lunch: boolean;
   plan_dinner: boolean;
+  /** Pro: an afternoon snack each day. */
+  plan_snacks?: boolean;
   /** Max minutes for Monday-Friday dinners; null = no limit. */
   max_weeknight_minutes: number | null;
   units: UnitSystem;
@@ -35,7 +37,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   max_weeknight_minutes: null, units: 'us', onboarded_at: null,
 };
 
-const COLUMNS = 'diet, allergies, skip_ingredients, avoid_ingredients, plan_breakfast, plan_lunch, plan_dinner, max_weeknight_minutes, units, onboarded_at';
+const COLUMNS = 'diet, allergies, skip_ingredients, avoid_ingredients, plan_breakfast, plan_lunch, plan_dinner, plan_snacks, max_weeknight_minutes, units, onboarded_at';
 
 export async function fetchPreferences(userId: string): Promise<Preferences> {
   const { data, error } = await supabase.from('user_preferences').select(COLUMNS).eq('user_id', userId).maybeSingle();

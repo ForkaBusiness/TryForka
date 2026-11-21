@@ -1,9 +1,12 @@
 import { AppError, serve, serviceClient } from '../_shared/http.ts';
+import { stripe, StripeError } from '../_shared/billing/stripe.ts';
 
 // Deletes the signed-in user. Every user table references auth.users with
 // ON DELETE CASCADE, so removing the auth user removes their rows too (their own recipes
 // included); their files are removed first because storage objects don't cascade: the
 // avatar, and every recipe photo (dish photos, imported pages and screenshots, covers).
+// A Forka Pro subscription is cancelled first, and the Stripe customer removed, so a
+// deleted account is never charged again.
 
 /** Every file under a folder, at any depth (storage lists one level at a time). */
 async function listAll(admin: ReturnType<typeof serviceClient>, bucket: string, folder: string): Promise<string[]> {
@@ -27,6 +30,23 @@ serve(async (body, req) => {
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) throw new AppError('Sign in again to continue.', 401);
   const userId = data.user.id;
+
+  // Billing first: if Stripe can't be reached, the account stays, so nobody is charged for an account that's gone.
+  const { data: plan } = await admin.from('user_plans').select('stripe_customer_id').eq('user_id', userId).maybeSingle();
+  if (plan?.stripe_customer_id) {
+    try {
+      // Deleting the customer cancels its subscriptions at once, with no further invoices.
+      await stripe('DELETE', `/customers/${plan.stripe_customer_id}`);
+    } catch (err) {
+      // Already gone (an earlier attempt that stopped later on, or removed in Stripe): nothing left to cancel.
+      if (!(err instanceof StripeError && err.missing)) {
+        console.error('[delete-account] Stripe customer not removed for', userId, err);
+        throw new AppError("Couldn't cancel your Pro plan. Try again in a minute.", 502);
+      }
+    }
+    // Forget it now, so a retry after a later step fails doesn't ask Stripe again.
+    await admin.from('user_plans').update({ stripe_customer_id: null, stripe_subscription_id: null }).eq('user_id', userId);
+  }
 
   const { data: files } = await admin.storage.from('avatars').list(userId);
   if (files?.length) await admin.storage.from('avatars').remove(files.map(f => `${userId}/${f.name}`));

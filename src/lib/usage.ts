@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { checkLimit, FREE_AND_UNUSED, savedRecipeCount, type LimitCheck, type LimitKind, type PlanTier, type Usage } from './limits';
+import { checkLimit, FREE_AND_UNUSED, PLAN_LIMITS, savedRecipeCount, type LimitCheck, type LimitKind, type PlanTier, type Usage } from './limits';
+import { addsSavedRecipe, gate } from './limitGate';
 import { fetchCollectionRecipes } from './collections';
 import { householdRecipeIds } from './catalog';
 
@@ -27,12 +28,36 @@ export async function fetchUsage(userId: string): Promise<Usage> {
 
 /**
  * The one check every limited feature asks before it adds something:
- * `const { allowed } = await checkUsage(userId, 'smart_imports')`.
- * Nothing calls it to block anything yet.
+ * `const { allowed } = await checkUsage(userId, 'smart_imports')`. Only adding is ever
+ * stopped (limitGate.ts): what a household has stays visible, usable and removable.
  */
 export async function checkUsage(userId: string, kind: LimitKind, adding = 1): Promise<LimitCheck & { plan: PlanTier }> {
   const usage = await fetchUsage(userId);
   return { ...checkLimit(usage, kind, adding), plan: usage.plan };
+}
+
+/**
+ * Whether one more recipe can be saved (hearted, put in a collection, written or imported).
+ * A recipe that's already saved some other way doesn't count again. If usage can't be read,
+ * saving goes ahead: a failed read never blocks the household.
+ */
+export async function canSaveRecipe(userId: string, recipeId: number | null): Promise<boolean> {
+  let usage: Usage;
+  try { usage = await fetchUsage(userId); } catch { return true; }
+  if (usage.plan === 'pro' || usage.saved_recipes < PLAN_LIMITS.free.saved_recipes) return true;
+  if (recipeId === null) return false;
+  if (recipeId >= 1_000_000_000) return true; // the household's own recipe is already counted
+  const [{ data: fav }, memberships] = await Promise.all([
+    supabase.from('favorites').select('recipe_id').eq('user_id', userId).eq('recipe_id', recipeId).limit(1),
+    fetchCollectionRecipes().catch(() => []),
+  ]);
+  const already = new Set<number>([...(fav ?? []).map(f => f.recipe_id as number), ...memberships.map(m => m.recipe_id)]);
+  return gate(usage, 'saved_recipes', 'add', addsSavedRecipe(recipeId, already)).allowed;
+}
+
+/** Whether another smart import fits the plan. Unreadable usage never blocks (the server checks too). */
+export async function canImport(userId: string): Promise<boolean> {
+  try { return (await checkUsage(userId, 'smart_imports')).allowed; } catch { return true; }
 }
 
 /** Counts one smart import. Never blocks or fails the import. Saved recipes and saved lists are counted live. */

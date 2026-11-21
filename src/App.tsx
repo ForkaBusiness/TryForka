@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { isLeaving, OPENED_FROM_RECOVERY_LINK, signOutToWebsite, supabase, WEBSITE_LOGIN, WEBSITE_RESET_PASSWORD } from './lib/supabase';
 import { useMediaQuery } from './lib/useMediaQuery';
 import { DEFAULT_PREFERENCES, fetchPreferences, fetchProfile, foodSettings, savePreferences, type FoodSettings, type Preferences, type Profile } from './lib/preferences';
-import { enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type Day, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
+import { DAYS, enforcePlan, fetchWeekPlan, planNotice, saveWeekPlan, type Day, type PlanEntry, type PlanReview, type SavedWeekPlan, type WeekPlan } from './lib/plan';
 import { fetchMembers, removeMember, saveMember, withFamilyAllergies, type FamilyMember, type MemberDraft } from './lib/family';
 import { busyNightSwap, generateWeekPlan, updateAfterCheckin, type Family } from './lib/learning';
 import { markChosen, planEdits } from './lib/planner';
@@ -16,6 +16,7 @@ import type { NavId } from './components/nav';
 import { TimerTray } from './components/Timers';
 import { Button, PageContainer, Skeleton } from './components/ds';
 import { Onboarding } from './screens/Onboarding';
+import { MealPrep } from './screens/MealPrep';
 import { MealPlan } from './screens/MealPlan';
 import { BrowseRecipes } from './screens/BrowseRecipes';
 import { RecipeDetail } from './screens/RecipeDetail';
@@ -23,6 +24,12 @@ import { Favorites } from './screens/Favorites';
 import { Groceries } from './screens/Groceries';
 import { Settings } from './screens/Settings';
 import { handleIncomingShare, readPendingShare } from './lib/incomingShare';
+import { appPlan, billingView, effectivePlan, loadPlanRow, openPortal, readBillingReturn, type BillingReturn, type PlanRow } from './lib/billing';
+import { FREE_ROW } from '../supabase/functions/_shared/billing/state.ts';
+import { UpgradeSheet } from './components/UpgradeSheet';
+import { CheckoutSheet, TrialStart } from './components/CheckoutSheet';
+import { Pro } from './screens/Pro';
+import type { UpgradeReason } from './app/AppContext';
 
 // Screens not needed on first load come in their own files, fetched when first opened
 // (cooking mode is fetched ahead while a recipe is open: see RecipeDetail).
@@ -99,6 +106,12 @@ function SignedIn({ session }: { session: Session }) {
   useEffect(() => { if (suggestions.open) setPanelsOpened(p => (p.suggestions ? p : { ...p, suggestions: true })); }, [suggestions.open]);
   useEffect(() => { if (photoOpen) setPanelsOpened(p => (p.photo ? p : { ...p, photo: true })); }, [photoOpen]);
   const [loadError, setLoadError] = useState(false);
+  // Forka Pro: the plan as the Stripe webhook wrote it, the upgrade sheet, and Stripe's return.
+  const [planRow, setPlanRow] = useState<PlanRow>(FREE_ROW);
+  // Until the plan is read, nothing claims Free and no upgrade prompt shows.
+  const [planState, setPlanState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeReason | null>(null);
+  const [billingReturn, setBillingReturn] = useState<BillingReturn>(null);
   const mainRef = useRef<HTMLElement>(null);
   const planRef = useRef<SavedWeekPlan | null | undefined>(undefined);
   planRef.current = weekPlan;
@@ -116,6 +129,8 @@ function SignedIn({ session }: { session: Session }) {
     fetchOnHand(userId).then(o => { if (!cancelled) setOnHand(o); }).catch(() => {});
     fetchProfile(userId).then(p => { if (!cancelled) setProfile({ ...p, full_name: p.full_name || metaName }); }).catch(() => {});
     fetchWeekPlan(userId).then(p => { if (!cancelled) setWeekPlan(p); }).catch(() => { if (!cancelled) setWeekPlan(null); });
+    // Unreadable reads as Free: nothing the household saved depends on it.
+    loadPlanRow(userId).then(r => { if (!cancelled) { setPlanRow(r); setPlanState('ready'); } }).catch(() => { if (!cancelled) setPlanState('failed'); });
     supabase.from('favorites').select('recipe_id, recipe_title, recipe_image').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => {
         if (cancelled) return;
@@ -140,6 +155,21 @@ function SignedIn({ session }: { session: Session }) {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [ready]);
+
+  // Coming back from Stripe (Checkout, the Customer Portal) or from the trial email's link.
+  useEffect(() => {
+    if (!ready) return;
+    const ret = readBillingReturn();
+    if (ret === 'manage') { void openPortal().catch(() => setStack(prev => [...prev, { name: 'settings' }])); return; }
+    if (ret === 'portal_returned') { void loadPlanRow(userId).then(r => { setPlanRow(r); setPlanState('ready'); }).catch(() => {}); return; }
+    if (ret) setBillingReturn(ret);
+  }, [ready, userId]);
+
+  const refreshPlan = useCallback(async () => { const r = await loadPlanRow(userId); setPlanRow(r); setPlanState('ready'); return r; }, [userId]);
+  const billing = useMemo(() => {
+    const now = new Date();
+    return { row: planRow, plan: appPlan(planRow, now), enabled: !!planRow?.billing_on, view: billingView(planRow, now), status: planState, refresh: refreshPlan, upgrade: (reason: UpgradeReason) => setUpgradeReason(reason) };
+  }, [planRow, planState, refreshPlan]);
 
   // Each screen opens at the top.
   useEffect(() => { mainRef.current?.scrollTo(0, 0); window.scrollTo(0, 0); }, [stack]);
@@ -279,17 +309,38 @@ function SignedIn({ session }: { session: Session }) {
   }, [userId]);
 
   const family: Family | null = useMemo(
-    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand) } : null),
-    [userId, shownPrefs, members, favorites, onHand],
+    () => (shownPrefs && members ? { userId, prefs: shownPrefs, members, favorites: [...favorites.keys()], onHand: activeOnHand(onHand), plan: appPlan(planRow, new Date()) } : null),
+    [userId, shownPrefs, members, favorites, onHand, planRow],
   );
+
+  /**
+   * The trial's first offer: lunches for this week, added around what's already planned.
+   * Every meal already in the week stays where it is; only the lunches are new.
+   */
+  const planLunches = useCallback(async () => {
+    if (!family) throw new Error("Couldn't plan lunches yet. Try again in a moment.");
+    await updatePrefs({ plan_lunch: true });
+    const current = planRef.current?.plan ?? null;
+    // Held in place while the planner fills the lunches around them.
+    const held = current ? (Object.fromEntries(DAYS.map(d => [d, Object.fromEntries(Object.entries(current[d]).map(([s, e]) => [s, e ? { ...e, locked: true } : e]))])) as unknown as WeekPlan) : null;
+    const week = await generateWeekPlan({ ...family, prefs: { ...family.prefs, plan_lunch: true }, plan: 'pro' }, held);
+    const plan = Object.fromEntries(DAYS.map(d => [d, Object.fromEntries((Object.entries(week.plan[d]) as Array<[string, PlanEntry | null]>).map(([s, e]) => {
+      const was = current?.[d]?.[s as keyof WeekPlan[Day]] as PlanEntry | null | undefined;
+      return [s, e && was && was.id === e.id ? { ...e, locked: was.locked } : e];
+    }))])) as unknown as WeekPlan;
+    await saveWeek(plan, !current, { quiet: true });
+    setPlanReview({ notice: week.notice, blocked: week.blocked });
+  }, [family, updatePrefs, saveWeek]);
 
   const planNewWeek = useCallback(async () => {
     if (!family) return null;
-    const week = await generateWeekPlan(family, planRef.current?.plan ?? null);
+    // The family's plan decides which meals get planned: read it first if it hasn't loaded.
+    const plan = planState === 'ready' ? family.plan : appPlan(await refreshPlan().catch(() => planRow), new Date());
+    const week = await generateWeekPlan({ ...family, plan }, planRef.current?.plan ?? null);
     await saveWeek(week.plan, true, { quiet: true });
     setPlanReview({ notice: week.notice, blocked: week.blocked });
     return week.notice;
-  }, [family, saveWeek]);
+  }, [family, saveWeek, planState, refreshPlan, planRow]);
 
   // A busy night says nothing about taste, so the swap is saved quietly. Undo puts the
   // dinner back, and that does say something: the faster dinner was turned down, so it
@@ -351,6 +402,7 @@ function SignedIn({ session }: { session: Session }) {
 
   const toggleFavorite = useCallback(async (entry: FavoriteEntry) => {
     const has = favorites.has(entry.id);
+    // Hearting a catalog recipe is never limited (Free's limit is on recipes of your own).
     setFavorites(prev => { const next = new Map(prev); if (has) next.delete(entry.id); else next.set(entry.id, entry); return next; });
     const { error } = has
       ? await supabase.from('favorites').delete().eq('user_id', userId).eq('recipe_id', entry.id)
@@ -367,7 +419,8 @@ function SignedIn({ session }: { session: Session }) {
     weekPlan: planChecked ? weekPlan : undefined, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, setPlanReview, undoPlanReview,
     openSuggestions: (target?: SuggestionsTarget) => setSuggestions({ open: true, target: target ?? null }),
     openPhotoSearch: () => setPhotoOpen(true),
-  } : null), [session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
+    billing,
+  } : null), [billing, session, userId, prefs, shownPrefs, members, familyAvailable, updatePrefs, saveFamilyMember, removeFamilyMember, profile, weekPlan, planChecked, saveWeek, planNewWeek, swapForBusyNight, submitCheckin, onHand, planAroundOnHand, planReview, undoPlanReview, favorites, toggleFavorite, go, replace, back, isPhone]);
 
   if (prefs === undefined || members === undefined) return <Loading />;
   if (loadError || !prefs || !ctx) {
@@ -380,7 +433,7 @@ function SignedIn({ session }: { session: Session }) {
     );
   }
   if (!prefs.onboarded_at) {
-    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
+    return <Onboarding userId={userId} initial={prefs} askFamily={familyAvailable} pro={appPlan(planRow, new Date()) === 'pro'} onDone={(p, added) => { setPrefs(p); if (added.length) setMembers(list => [...(list ?? []), ...added]); }} onSignOut={() => void signOutToWebsite()} />;
   }
 
   let content: React.ReactNode;
@@ -397,6 +450,8 @@ function SignedIn({ session }: { session: Session }) {
     case 'rate': content = <RateRecipe id={screen.id} />; break;
     case 'collections': content = <Collections id={screen.id} />; break;
     case 'pantry': content = <CookWithWhatYouHave />; break;
+    case 'pro': content = <Pro />; break;
+    case 'prep': content = <MealPrep />; break;
     case 'editor': content = <RecipeEditor key={screen.id ?? `new:${stack.length}`} id={screen.id} draft={screen.draft} duplicate={screen.duplicate ?? undefined} note={screen.note} />; break;
     case 'import': content = <ImportRecipe key={`import:${stack.length}`} {...screen} />; break;
   }
@@ -420,6 +475,15 @@ function SignedIn({ session }: { session: Session }) {
               {(photoOpen || panelsOpened.photo) && <PhotoSearch open={photoOpen} onClose={() => setPhotoOpen(false)} />}
             </Suspense>
             <TimerTray />
+            <UpgradeSheet reason={!billing.enabled || billing.plan === 'pro' || planState !== 'ready' ? null : upgradeReason} onClose={() => setUpgradeReason(null)} onSeePro={() => { setUpgradeReason(null); go({ name: 'pro' }); }} />
+            <CheckoutSheet ret={billingReturn} onClose={() => setBillingReturn(null)}>
+              {(row, close) => row.billing_status === 'trialing' && (
+                <TrialStart
+                  onLunches={async () => { await planLunches(); close(); go({ name: 'mealplan' }); }}
+                  onGoals={() => { close(); go({ name: 'settings' }); window.setTimeout(() => document.getElementById('family')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300); }}
+                />
+              )}
+            </CheckoutSheet>
           </>}
         >
           <Suspense fallback={<ScreenLoading />}>{content}</Suspense>

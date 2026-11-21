@@ -10,7 +10,7 @@ export { allAllergies, memberSummary, withFamilyAllergies, type FamilyMember, ty
 
 export type MemberDraft = Omit<FamilyMember, 'id' | 'position'> & { id?: string };
 
-const COLUMNS = 'id, name, kind, likes, dislikes, allergies, position';
+const COLUMNS = 'id, name, kind, likes, dislikes, allergies, position, school_lunch, goal, goal_calories, goal_protein';
 
 /** True when the table isn't there yet (the app is ahead of the database). */
 const missingTable = (error: { code?: string; message?: string }) =>
@@ -35,6 +35,9 @@ export async function saveMember(userId: string, draft: MemberDraft, position: n
   const row = {
     user_id: userId, name: draft.name.trim(), kind: draft.kind, likes: draft.likes, dislikes: draft.dislikes,
     allergies: [...new Set(draft.allergies.map(canonicalAllergy))], updated_at: new Date().toISOString(),
+    // Pro settings: only sent when set (a child can't have numbers; the database checks too).
+    ...(draft.school_lunch !== undefined ? { school_lunch: draft.kind === 'kid' && draft.school_lunch } : {}),
+    ...(draft.goal !== undefined ? { goal: draft.goal, goal_calories: draft.goal_calories ?? null, goal_protein: draft.goal_protein ?? null } : {}),
   };
   const query = draft.id
     ? supabase.from('family_members').update(row).eq('id', draft.id).eq('user_id', userId)

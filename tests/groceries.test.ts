@@ -3,7 +3,7 @@
 // "Blackberries" with nothing, "Basil, small pack").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { amountLines, combine, itemKey, listText, type MergeIngredient, type MergeRecipe } from '../src/lib/groceryMerge.ts';
+import { amountLines, combine, entryMultiplier, itemKey, listText, type MergeIngredient, type MergeRecipe } from '../src/lib/groceryMerge.ts';
 import { parseMeasure } from '../supabase/functions/_shared/catalog/units.ts';
 import { usIngredientName } from '../supabase/functions/_shared/catalog/names.ts';
 
@@ -293,4 +293,37 @@ test('re-planning in the same week keeps the shop; a new week starts fresh', () 
   // The next Monday: a new shop.
   assert.ok(!sameShop('2026-11-19T20:00:00', '2026-11-23T08:00:00'));
   assert.ok(sameShop(null, '2026-11-23T08:00:00'), 'a list from before plans were recorded');
+});
+
+test('every meal on one list: breakfast, a school lunch for 2 children, a snack and dinner merge correctly', () => {
+  const times = entryMultiplier;
+  const week = [
+    { ...recipe(1, 'Scrambled eggs', ing('Eggs', '4'), ing('Milk', '1/4 cup'), ing('Butter', '1 tbsp')), multiplier: times({}) },
+    { ...recipe(2, 'Egg muffins', ing('Eggs', '8'), ing('Cheddar Cheese', '1 cup'), ing('Spinach', '2 cups')), multiplier: times({ share: 0.5 }) },
+    { ...recipe(3, 'Apple slices', ing('Apples', '2'), ing('Peanut Butter', '4 tbsp')), multiplier: times({}) },
+    { ...recipe(4, 'Spinach frittata', ing('Eggs', '6'), ing('Spinach', '4 cups'), ing('Milk', '1/2 cup'), ing('Salt', 'to taste')), multiplier: times({}) },
+  ];
+  const items = combine(week, aisle);
+  const eggs = find(items, 'egg');
+  // 4 + 8 x 0.5 + 6 = 14 eggs, one line, with every meal that uses them.
+  assert.deepEqual(amountLines(eggs, 'us'), ['14 whole']);
+  assert.deepEqual(new Set(eggs.meals), new Set(['Scrambled eggs', 'Egg muffins', 'Spinach frittata']));
+  // Spinach: 2 cups x 0.5 + 4 cups = 5 cups. Milk: 1/4 + 1/2 = 3/4 cup.
+  assert.deepEqual(amountLines(find(items, 'spinach'), 'us'), ['5 cups']);
+  assert.deepEqual(amountLines(find(items, 'milk'), 'us'), ['3/4 cup']);
+  // Cheese only in the half-batch school lunch: half the amount.
+  assert.deepEqual(amountLines(find(items, 'cheddar cheese'), 'us'), ['1/2 cup']);
+  // An amount nobody can add up is still listed, with its meal.
+  assert.ok(find(items, 'salt').notes.some(n => n.recipe === 'Spinach frittata'));
+});
+
+test('cook once, eat twice: a double batch buys twice, its leftovers buy nothing', () => {
+  const times = entryMultiplier;
+  const chili = (multiplier: number) => ({ ...recipe(9, 'Bean chili', ing('Kidney Beans', '2 cans'), ing('Onion', '1'), ing('Cumin', '1 tsp')), multiplier });
+  const items = combine([chili(times({ cookTimes: 2 })), chili(times({ leftoverOf: { day: 'monday', slot: 'dinner', id: 9 } }))], aisle);
+  assert.deepEqual(amountLines(find(items, 'kidney bean'), 'us'), ['4 cans']);
+  assert.deepEqual(amountLines(find(items, 'onion'), 'us'), ['2 whole']);
+  assert.equal(find(items, 'onion').meals.length, 1, 'the leftover meal adds no line of its own');
+  // Nothing at all to buy for a meal with multiplier 0.
+  assert.equal(combine([chili(0)], aisle).length, 0);
 });
