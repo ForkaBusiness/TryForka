@@ -75,7 +75,7 @@ export function readBillingReturn(): BillingReturn {
     params.delete('checkout');
     params.delete('billing');
     const rest = params.toString();
-    window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
   }
   return ret;
 }
