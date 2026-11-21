@@ -30,6 +30,7 @@ import { UpgradeSheet } from './components/UpgradeSheet';
 import { CheckoutSheet, TrialStart } from './components/CheckoutSheet';
 import { Pro } from './screens/Pro';
 import type { UpgradeReason } from './app/AppContext';
+import { createHistorySync, type HistorySync } from './lib/historySync';
 
 // Screens not needed on first load come in their own files, fetched when first opened
 // (cooking mode is fetched ahead while a recipe is open: see RecipeDetail).
@@ -173,6 +174,17 @@ function SignedIn({ session }: { session: Session }) {
 
   // Each screen opens at the top.
   useEffect(() => { mainRef.current?.scrollTo(0, 0); window.scrollTo(0, 0); }, [stack]);
+
+  // The phone's Back steps back one screen instead of leaving the app (src/lib/historySync.ts).
+  const historySync = useRef<HistorySync | null>(null);
+  useEffect(() => {
+    const sync = createHistorySync(window.history, depth => setStack(prev => prev.slice(0, Math.max(1, depth))));
+    historySync.current = sync;
+    const onPop = (e: PopStateEvent) => sync.popped(e.state);
+    window.addEventListener('popstate', onPop);
+    return () => { window.removeEventListener('popstate', onPop); historySync.current = null; };
+  }, []);
+  useEffect(() => { historySync.current?.sync(stack.length); }, [stack]);
 
   const go = useCallback((s: Screen) => {
     if ((TABS as string[]).includes(s.name)) setStack([s]);

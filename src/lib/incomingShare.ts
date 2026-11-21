@@ -24,7 +24,7 @@ export function notePendingShare(): void {
   try { localStorage.setItem(PENDING_KEY, id); } catch { /* read straight from the address below */ }
   params.delete('share');
   const rest = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
   (window as unknown as { __forkaShare?: string }).__forkaShare = id;
 }
 
