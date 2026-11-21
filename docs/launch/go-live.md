@@ -33,12 +33,13 @@ In the [Supabase dashboard](https://supabase.com/dashboard), open the Forka proj
 In the Supabase dashboard, go to **Authentication**:
 
 - **Leaked password protection.** Under **Sign In / Providers > Email** (or **Attack Protection**, depending on the dashboard version), turn on **Prevent use of leaked passwords**. Passwords found in known breaches are then refused. This needs the Pro plan from step 2.
-- **Email confirmation.** Under **Sign In / Providers > Email**, turn on **Confirm email**, so every account proves it owns its address. Paid plans and trial reminders go to that address.
-  - Do this after step 4. Supabase's built-in email service only sends a handful of emails an hour; with Resend connected as the sender (step 4c), confirmations arrive reliably.
+- **Email confirmation. Done** (confirmed by the owner, 21 November 2026): **Confirm email** is on, Resend sends the confirmation emails (step 4), the email rate limit is raised, and confirmation emails arrive.
 
 **It worked when:** a new test sign-up gets a confirmation email, and signing up with a well-known leaked password such as `password123` is refused.
 
-### 4. Send email from tryforka.com (Resend)
+### 4. Send email from tryforka.com (Resend). Done
+
+**Done** (confirmed by the owner, 21 November 2026): Resend is connected as Supabase's email sender (custom SMTP), the email rate limit is raised, and sign-up confirmation emails arrive. Kept below for reference.
 
 Trial reminders and receipts should come from `@tryforka.com`, not Resend's test address.
 
@@ -47,6 +48,26 @@ Trial reminders and receipts should come from `@tryforka.com`, not Resend's test
 3. Optional, recommended for step 3: in Supabase, under **Authentication > Emails > SMTP Settings**, turn on custom SMTP with Resend's SMTP details. Sender `hello@tryforka.com`, name `Forka`.
 
 **It worked when:** Resend shows tryforka.com as **Verified**.
+
+### 4b. Turn on error reports (Sentry)
+
+So you hear about errors before families do. Everything is built and tested; it stays off until it has an address to send to.
+
+1. At [sentry.io](https://sentry.io), sign up (the free plan is enough to start) and create a project. Platform: **React**. Name: `forka`.
+2. Sentry shows a **DSN**, an address that looks like `https://abc123@o456.ingest.us.sentry.io/789`. It isn't a secret: it only lets things send reports to your project.
+3. **The app:** in **Vercel > the project > Settings > Environment Variables**, add `VITE_SENTRY_DSN` with the DSN, for **Production** (and Preview if you want reports from previews too). Then redeploy: **Deployments > the latest production one > Redeploy**.
+4. **The server functions (Terminal):**
+
+```bash
+supabase secrets set SENTRY_DSN=https://abc123@o456.ingest.us.sentry.io/789
+for f in ai-suggestions analyze-dish billing cooking-help delete-account import-recipe meal-prep nutrition; do supabase functions deploy $f; done
+for f in stripe-webhook billing-reconcile sync-recipes; do supabase functions deploy $f --no-verify-jwt; done
+```
+
+5. In Sentry, **Settings > Projects > forka > Security & Privacy**: turn on **Data Scrubber** and **Use Default Scrubbers**, and turn on **Prevent Storing of IP Addresses**. Forka already strips personal details before sending; this is a second line.
+6. In **Alerts**, keep the default "new issue" email alert, sent to the business inbox.
+
+**It worked when:** a few minutes after the redeploy, open tryforka.com/app/, open the browser's developer console and type `setTimeout(() => { throw new Error('Sentry test') })`. Within a minute, **Issues** in Sentry shows "Sentry test", with the app's address and no personal details.
 
 ---
 

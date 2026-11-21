@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.103.3';
+import { functionName, reportError } from './monitoring.ts';
 
 // Request plumbing shared by the user-facing Edge Functions: CORS, JSON responses,
 // user-scoped Supabase clients and the per-user, per-kind rate limit.
@@ -73,9 +74,12 @@ export function serve(handler: (body: Record<string, unknown>, req: Request) => 
       return json(await handler(body, req), 200);
     } catch (err) {
       if (err instanceof AppError) {
+        // A 5xx AppError is a known failure (a service down, a check that couldn't run): worth seeing.
+        if (err.status >= 500) await reportError(functionName(req), err, { status: err.status });
         return json({ error: err.message }, err.status, err.retryAfter ? { 'Retry-After': String(err.retryAfter) } : {});
       }
       console.error('[function] unexpected error:', err);
+      await reportError(functionName(req), err);
       return json({ error: 'Something went wrong. Try again.' }, 500);
     }
   });

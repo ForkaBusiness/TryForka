@@ -2,6 +2,7 @@ import { deriveRecipe, type MealDbMeal } from '../_shared/catalog/derive.ts';
 import { usIngredientName, usKitchenText } from '../_shared/catalog/names.ts';
 import { askJson } from '../_shared/claude.ts';
 import { AppError, json, serviceClient } from '../_shared/http.ts';
+import { reportError } from '../_shared/monitoring.ts';
 
 // Keeps public.recipes and public.ingredient_meta in sync with TheMealDB.
 //   step "fetch"    : every meal (search.php?f=a..z), deterministic columns upserted
@@ -303,6 +304,7 @@ Deno.serve(async (req: Request) => {
     return json(result, 200);
   } catch (err) {
     console.error('[sync] failed:', err);
+    await reportError('sync-recipes', err);
     return json({ error: err instanceof AppError || err instanceof Error ? err.message : 'Sync failed' }, 500);
   }
 });

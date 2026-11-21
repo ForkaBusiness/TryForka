@@ -4,14 +4,11 @@
 
 The app on tryforka.com works end to end, and Forka Pro is merged with billing off. Before you turn billing on, these are left, in order:
 
-1. **Confirmation emails (do this first; it affects people today).** Email confirmation is on, but Supabase Auth has no email sender of its own set up. It uses Supabase's built-in mailer, which is limited to **2 emails an hour** (confirmed in the project's settings). In any hour, only the first two new families get their confirmation email. Anyone after that can't log in, and during testing a sign-up was refused with "email rate limit exceeded". Fix: connect Resend as the sender in Supabase (go-live checklist, step 4.3), then raise **Rate limit for sending emails** under Authentication > Rate Limits, for example to 100 an hour. If Resend can't be set up soon, turn **Confirm email** off until it is. I didn't change these production settings myself.
-2. **Look at the two previews and merge them** (your approval; commands below):
-   - `launch-fixes`: the phone's Back button no longer leaves Forka.
-   - `site-refresh`: the new tryforka.com.
+1. **Confirmation emails. Done** (21 November): Resend is connected as Supabase's email sender, the email rate limit is raised, and confirmation emails arrive.
+2. **The two previews. Done** (21 November): `launch-fixes` (PR #9) and `site-refresh` (PR #10) are merged and checked on production.
 3. **Outside steps**, in this order:
    - lawyer review of the Terms and Privacy drafts;
    - live Stripe activation;
-   - the Resend domain (which also fixes item 1);
    - a support inbox.
 4. Then follow [docs/launch/go-live.md](launch/go-live.md) to the end, which turns billing on.
 
@@ -179,7 +176,7 @@ Or open **Supabase > Edge Functions > (each function) > Logs** and filter by sta
 
 1. **Lawyer review** of [docs/legal/terms-draft.md](legal/terms-draft.md) and [docs/legal/privacy-draft.md](legal/privacy-draft.md). Then publish them (go-live step 9).
 2. **Live Stripe activation** (go-live step 1). Business details, representative, bank account, statement descriptor, two-step sign-in.
-3. **Resend domain** (go-live step 4). Verify tryforka.com in Resend. Then connect Resend as Supabase's email sender, which fixes item 1 at the top, and raise the email rate limit.
+3. **Resend domain** (go-live step 4). **Done** (21 November): Resend is Supabase's email sender, with the email rate limit raised.
 4. **Support inbox.** Create support@tryforka.com. Then set `EMAIL_REPLY_TO` to it (go-live note) and add it to Stripe's customer support details.
 
 Also on the go-live list: the Supabase paid plan (daily backups) and leaked-password protection (go-live steps 2 and 3).

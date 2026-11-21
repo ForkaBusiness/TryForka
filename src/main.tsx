@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { startMonitoring } from './lib/monitoring';
 import { notePendingShare, registerShareWorker } from './lib/incomingShare';
 
 // A recipe shared into the installed app: note it before anything else (it has to survive a
@@ -32,6 +34,11 @@ window.addEventListener('vite:preloadError', event => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );
+
+// Error reports (Sentry), when VITE_SENTRY_DSN is set; loaded once the page is idle.
+startMonitoring();

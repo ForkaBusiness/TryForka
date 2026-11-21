@@ -1,4 +1,5 @@
 import { serviceClient } from '../_shared/http.ts';
+import { reportError } from '../_shared/monitoring.ts';
 import { verifyStripeSignature } from '../_shared/billing/state.ts';
 import { processEvent, type StripeEvent } from '../_shared/billing/webhook.ts';
 import { billingDeps } from '../_shared/billing/deps.ts';
@@ -37,6 +38,7 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     // Not handled: stored as failed; Stripe retries with backoff, and the daily reconciliation redoes it.
     console.error(`[stripe] ${event.type} ${event.id} failed:`, err instanceof Error ? err.message : err);
+    await reportError('stripe-webhook', err, { event_type: event.type, event_id: event.id });
     return reply(500, { error: 'Not processed, will retry' });
   }
 });
