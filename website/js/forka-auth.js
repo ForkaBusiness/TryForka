@@ -3,10 +3,8 @@
 // session the app sees (both run on tryforka.com, one origin).
 // Pinned to the version in the app's package-lock.json; bump both together.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.103.3/+esm';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-const SUPABASE_URL = 'https://akufkhzzqwjhssmegvof.supabase.co';
-// Public anon key: safe in the browser by design (row level security protects the data).
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrdWZraHp6cXdqaHNzbWVndm9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MjQ3MjIsImV4cCI6MjA5MjIwMDcyMn0.LpJsswYx5QP1enauFpjLwjHWPOuzxRtDoqcoPFe-ghg';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 

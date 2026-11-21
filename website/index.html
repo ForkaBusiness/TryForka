@@ -2,476 +2,189 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forka — Smart Meal Planning for Families</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-html{scroll-behavior:smooth;}
-body{font-family:'DM Sans',sans-serif;color:#0A2533;overflow-x:hidden;}
-nav{background:#fff;height:72px;display:flex;align-items:center;box-shadow:0 1px 0 rgba(0,0,0,.07);position:sticky;top:0;z-index:100;}
-.nav-inner{max-width:1180px;margin:0 auto;padding:0 24px;width:100%;display:flex;align-items:center;justify-content:space-between;}
-.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none;}
-.logo-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-.nav-links{display:flex;align-items:center;gap:32px;list-style:none;}
-.nav-links a{text-decoration:none;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:500;color:#5A6B73;transition:color .2s;}
-.nav-links a.active,.nav-links a:hover{color:#0A2533;}
-.nav-links a.active{font-weight:700;}
-.nav-actions{display:flex;align-items:center;gap:12px;}
-.nav-search{background:none;border:none;cursor:pointer;padding:6px;color:#5A6B73;display:flex;align-items:center;}
-.btn{font-family:'Poppins',sans-serif;font-weight:700;font-size:14px;padding:10px 22px;border-radius:8px;border:none;cursor:pointer;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;}
-.btn-outline{background:#fff;border:1.5px solid #0A2533;color:#0A2533;}
-.btn-outline:hover{background:#f5f7f8;}
-.btn-green{background:#1F8F63;color:#fff;}
-.btn-green:hover{background:#166b4a;}
-.btn-orange{background:#CC4A15;color:#fff;}
-.btn-orange:hover{background:#B33F10;transform:translateY(-1px);}
-.hero{background:#fff;position:relative;overflow:hidden;padding-top:64px;min-height:680px;}
-.hero-wave{position:absolute;bottom:0;left:0;width:100%;height:300px;z-index:1;}
-.hero-inner{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:58% 42%;gap:0;position:relative;z-index:2;}
-.hero-left{padding-bottom:240px;}
-.hero-label{font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#0A2533;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
-.hero-label::before{content:'';display:inline-block;width:8px;height:8px;background:#1F8F63;border-radius:50%;}
-.hero-headline{font-family:'Poppins',sans-serif;font-weight:800;font-size:82px;line-height:0.95;letter-spacing:-2px;text-transform:uppercase;margin-bottom:20px;}
-.hero-headline .green{color:#1F8F63;display:block;}
-.hero-headline .dark{color:#0A2533;display:block;}
-.hero-body{font-size:14px;color:#5A6B73;line-height:1.7;max-width:380px;margin-bottom:28px;}
-.hero-btns{display:flex;gap:12px;margin-bottom:36px;}
-.hero-btns .btn{padding:13px 28px;font-size:14px;}
-.testimonial-card{background:#0A2533;border-radius:14px;padding:16px 18px;max-width:290px;position:relative;z-index:5;}
-.testi-row1{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
-.testi-name{font-family:'Poppins',sans-serif;font-weight:700;color:#fff;font-size:13px;}
-.testi-stars{color:#FFB800;font-size:13px;margin-top:2px;}
-.testi-quote{font-size:12px;color:rgba(255,255,255,.8);font-style:italic;line-height:1.5;margin-bottom:6px;}
-.testi-source{font-size:11px;color:rgba(255,255,255,.5);margin-bottom:10px;}
-.testi-dots{display:flex;gap:5px;}
-.testi-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.3);}
-.testi-dot.active{background:#1F8F63;}
-.hero-right{position:relative;}
-.hero-img-wrap{position:relative;width:100%;height:520px;}
-.hero-ring{position:absolute;top:0;left:10px;width:340px;height:340px;border-radius:50%;border:2px dashed rgba(31,143,99,.35);}
-.hero-food-img{width:380px;height:380px;position:absolute;top:0;left:0;overflow:visible;background:transparent;}
-.hero-food-img img{width:100%;height:100%;object-fit:contain;}
-.stats-banner{background:#1F8F63;padding:40px 24px;position:relative;overflow:hidden;}
-.stats-bg{position:absolute;inset:0;width:100%;height:100%;opacity:.12;}
-.stats-inner{max-width:1180px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1;}
-.stat-item{text-align:center;flex:1;border-right:1px solid rgba(255,255,255,.2);padding:0 24px;}
-.stat-item:last-child{border-right:none;}
-.stat-num{font-family:'Poppins',sans-serif;font-weight:900;font-size:36px;color:#fff;}
-.stat-label{font-size:13px;color:rgba(255,255,255,.8);margin-top:4px;}
-.how-section{background:#fff;padding:96px 0;}
-.how-inner{max-width:1180px;margin:0 auto;padding:0 24px;}
-.section-header{text-align:center;margin-bottom:56px;}
-.eyebrow{font-family:'Poppins',sans-serif;font-weight:700;font-size:13px;color:#1F8F63;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;display:block;}
-.section-header h2{font-family:'Poppins',sans-serif;font-weight:800;font-size:36px;color:#0A2533;}
-.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:32px;}
-.step-card{background:#F5F7F8;border-radius:20px;padding:32px;}
-.step-num{font-family:'Poppins',sans-serif;font-weight:900;font-size:64px;color:rgba(31,143,99,.12);line-height:1;margin-bottom:12px;}
-.step-card h3{font-family:'Poppins',sans-serif;font-weight:700;font-size:18px;color:#0A2533;margin-bottom:10px;}
-.step-card p{font-size:14px;color:#5A6B73;line-height:1.7;}
-.smart-section{background:#F5F7F8;padding:96px 0;}
-.smart-inner{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:center;}
-.smart-inner h2{font-family:'Poppins',sans-serif;font-weight:800;font-size:36px;color:#0A2533;line-height:1.2;margin-bottom:16px;}
-.smart-inner p{font-size:15px;color:#5A6B73;line-height:1.75;margin-bottom:28px;}
-.green{color:#1F8F63;}
-.check-list{list-style:none;display:flex;flex-direction:column;gap:12px;margin-bottom:32px;}
-.check-list li{display:flex;align-items:center;gap:10px;font-size:14px;color:#0A2533;}
-.check-list li::before{content:'';width:20px;height:20px;border-radius:50%;background:#1F8F63;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6l3 3 5-5' stroke='white' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:center;flex-shrink:0;}
-.smart-img{border-radius:20px;overflow:hidden;}
-.smart-img img{width:100%;height:360px;object-fit:cover;display:block;}
-.categories-section{background:#fff;padding:96px 0;}
-.categories-inner{max-width:1180px;margin:0 auto;padding:0 24px;}
-.categories-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
-.category-card{border-radius:16px;overflow:hidden;position:relative;aspect-ratio:3/4;cursor:pointer;}
-.category-card img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s;}
-.category-card:hover img{transform:scale(1.05);}
-.category-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(10,37,51,.75) 0%,transparent 55%);}
-.category-label{position:absolute;bottom:18px;left:18px;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;}
-.testimonials-section{background:#F5F7F8;padding:96px 0;}
-.testimonials-inner{max-width:1180px;margin:0 auto;padding:0 24px;}
-.testimonials-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
-.tcard{background:#fff;border-radius:16px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.05);}
-.tcard-stars{color:#FFB800;font-size:14px;margin-bottom:12px;}
-.tcard-quote{font-size:15px;color:#0A2533;line-height:1.65;margin-bottom:20px;font-style:italic;}
-.tcard-author{display:flex;align-items:center;gap:10px;}
-.tcard-avatar{width:38px;height:38px;border-radius:50%;background:#e8f5ee;display:flex;align-items:center;justify-content:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:14px;color:#1F8F63;flex-shrink:0;}
-.tcard-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:13px;color:#0A2533;}
-.tcard-meta{font-size:12px;color:#5A6B73;}
-.newsletter-wave{background:#1F8F63;position:relative;overflow:hidden;min-height:300px;display:flex;align-items:stretch;}
-.nl-veg-bg{position:absolute;inset:0;opacity:.1;pointer-events:none;}
-.nl-inner{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:42% 58%;align-items:center;position:relative;z-index:1;width:100%;}
-.nl-img{height:300px;position:relative;overflow:visible;}
-.nl-img img{position:absolute;bottom:0;left:-24px;width:420px;height:320px;object-fit:cover;border-radius:24px 24px 0 0;}
-.nl-form-wrap{padding:48px 0 48px 48px;}
-.nl-form-wrap h2{font-family:'Poppins',sans-serif;font-weight:800;font-size:28px;color:#fff;margin-bottom:8px;}
-.nl-form-wrap p{font-size:14px;color:rgba(255,255,255,.8);margin-bottom:20px;}
-.nl-form{display:flex;border-radius:10px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.12);}
-.nl-input{flex:1;padding:16px 20px;font-family:'DM Sans',sans-serif;font-size:14px;border:none;outline:none;color:#0A2533;}
-.nl-submit{background:#CC4A15;color:#fff;border:none;padding:16px 28px;font-family:'Poppins',sans-serif;font-weight:700;font-size:14px;cursor:pointer;transition:background .2s;white-space:nowrap;}
-.nl-submit:hover{background:#B33F10;}
-footer{background:#1F8F63;position:relative;overflow:hidden;padding:64px 0 0;}
-.footer-veg-bg{position:absolute;inset:0;opacity:.08;pointer-events:none;}
-.footer-inner{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1.6fr 1fr 1fr 1.4fr;gap:48px;position:relative;z-index:1;}
-.footer-logo-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
-.footer-logo-icon{width:36px;height:36px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;}
-.footer-brand-name{font-family:'Poppins',sans-serif;font-weight:700;font-size:18px;color:#fff;}
-.footer-brand-desc{font-size:13px;color:rgba(255,255,255,.75);line-height:1.65;margin-bottom:20px;}
-.social-icons{display:flex;gap:10px;}
-.social-icon{width:34px;height:34px;border:1.5px solid rgba(255,255,255,.4);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;transition:background .2s;text-decoration:none;}
-.social-icon:hover{background:rgba(255,255,255,.15);}
-.social-icon svg{width:16px;height:16px;fill:#fff;}
-.footer-col-title{font-family:'Poppins',sans-serif;font-weight:700;font-size:14px;color:#fff;margin-bottom:16px;}
-.footer-links{list-style:none;display:flex;flex-direction:column;gap:10px;}
-.footer-links a{font-size:13px;color:rgba(255,255,255,.75);text-decoration:none;transition:color .2s;}
-.footer-links a:hover{color:#fff;}
-.footer-contact-item{font-size:13px;color:rgba(255,255,255,.75);margin-bottom:8px;line-height:1.5;}
-.footer-bottom{border-top:1px solid rgba(255,255,255,.15);margin-top:48px;padding:18px 0;position:relative;z-index:1;}
-.footer-bottom-inner{max-width:1180px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;}
-.footer-copy{font-size:12px;color:rgba(255,255,255,.65);}
-.footer-legal{display:flex;gap:20px;}
-.footer-legal a{font-size:12px;color:rgba(255,255,255,.65);text-decoration:none;}
-.footer-legal a:hover{color:#fff;}
-@media(max-width:900px){
-  .hero-inner,.smart-inner,.nl-inner{grid-template-columns:1fr;}
-  .hero-headline{font-size:42px;}
-  .hero-left{padding-bottom:300px;}
-  .nav-links{display:none;}
-  .categories-grid{grid-template-columns:1fr 1fr;}
-  .footer-inner{grid-template-columns:1fr;}
-  .stats-inner{flex-direction:column;gap:32px;}
-  .stat-item{border-right:none!important;border-bottom:1px solid rgba(255,255,255,.2);padding:0 0 24px;}
-  .stat-item:last-child{border-bottom:none;padding-bottom:0;}
-  .testimonials-grid,.steps-grid{grid-template-columns:1fr;}
-}
-/* === HAMBURGER + MOBILE OVERLAY === */
-.hamburger{display:none;background:none;border:none;cursor:pointer;padding:8px;flex-direction:column;justify-content:center;align-items:center;gap:5px;width:44px;height:44px;flex-shrink:0;}
-.ham-bar{display:block;width:24px;height:2px;background:#0A2533;border-radius:2px;transition:transform .25s ease,opacity .25s ease;transform-origin:center;}
-.mobile-menu{position:fixed;inset:0;background:#fff;z-index:9999;transform:translateX(100%);transition:transform .25s ease-out;display:flex;flex-direction:column;overflow-y:auto;}
-.mobile-menu.open{transform:translateX(0);}
-.mobile-menu-header{display:flex;align-items:center;justify-content:space-between;padding:15px 24px;height:72px;border-bottom:1px solid #f0f0f0;flex-shrink:0;}
-.mobile-close{background:none;border:none;cursor:pointer;padding:8px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;}
-.mobile-nav{display:flex;flex-direction:column;align-items:center;padding:32px 24px 0;gap:8px;height:auto!important;position:static!important;box-shadow:none!important;background:transparent!important;z-index:auto!important;}
-.mobile-nav-link{font-family:'Poppins',sans-serif;font-weight:600;font-size:24px;color:#0A2533;text-decoration:none;padding:16px 0;width:100%;text-align:center;}
-.mobile-nav-link.active{font-weight:800;}
-.mobile-menu-btns{display:flex;flex-direction:column;gap:12px;padding:32px 24px;}
-.mobile-btn-login{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:600;font-size:16px;color:#0A2533;background:#fff;border:1.5px solid #0A2533;border-radius:12px;text-decoration:none;}
-.mobile-btn-waitlist{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#CC4A15;border-radius:12px;text-decoration:none;}.mobile-btn-signup{display:block;width:100%;padding:16px;text-align:center;font-family:'Poppins',sans-serif;font-weight:700;font-size:16px;color:#fff;background:#1F8F63;border-radius:12px;text-decoration:none;}
-@media(max-width:767px){
-  .hamburger{display:flex;}
-  .nav-links{display:none!important;}
-  .nav-search{display:none!important;}
-  .nav-actions .btn{display:none!important;}
-  body.menu-open{overflow:hidden;}
-  body.menu-open .ham-bar:nth-child(1){transform:translateY(7px) rotate(45deg);}
-  body.menu-open .ham-bar:nth-child(2){opacity:0;}
-  body.menu-open .ham-bar:nth-child(3){transform:translateY(-7px) rotate(-45deg);}
-  /* Containers */
-  .hero-inner,.how-inner,.smart-inner,.categories-inner,.testimonials-inner{padding-left:20px;padding-right:20px;}
-  /* Hero */
-  .hero{padding-top:40px;}
-  .hero-inner{grid-template-columns:1fr;gap:24px;}
-  .hero-headline{font-size:52px!important;}
-  .hero-left{padding-bottom:0;}
-  .hero-right{display:none;}
-  .hero-btns{flex-direction:column;gap:12px;}
-  .hero-btns .btn{width:100%;justify-content:center;padding:14px 20px;}
-  .testimonial-card{max-width:100%;}
-  /* Stats -- 2x2 grid */
-  .stats-banner{padding:28px 20px;}
-  .stats-inner{display:grid!important;grid-template-columns:1fr 1fr;flex-direction:unset;gap:0;}
-  .stat-item{border-right:1px solid rgba(255,255,255,.2)!important;border-bottom:1px solid rgba(255,255,255,.2)!important;padding:20px!important;}
-  .stat-item:nth-child(2n){border-right:none!important;}
-  .stat-item:nth-child(3),.stat-item:nth-child(4){border-bottom:none!important;padding-bottom:20px!important;}
-  /* How */
-  .how-section{padding:64px 0;}
-  .steps-grid{grid-template-columns:1fr;}
-  .section-header h2{font-size:28px;}
-  /* Smart */
-  .smart-section{padding:64px 0;}
-  .smart-inner{grid-template-columns:1fr;gap:32px;}
-  /* Categories */
-  .categories-section{padding:64px 0;}
-  .categories-grid{grid-template-columns:1fr 1fr;}
-  /* Testimonials */
-  .testimonials-section{padding:64px 0;}
-  .testimonials-grid{grid-template-columns:1fr;}
-  /* Newsletter */
-  .newsletter-wave{min-height:auto;}
-  .nl-inner{grid-template-columns:1fr!important;padding-left:20px;padding-right:20px;}
-  .nl-img{display:none;}
-  .nl-form-wrap{padding:40px 0;}
-  .nl-form{flex-direction:column;border-radius:0;overflow:visible;box-shadow:none;gap:10px;}
-  .nl-input{border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.1);}
-  .nl-submit{border-radius:10px;padding:14px 20px;}
-  /* Footer */
-  .footer-inner{grid-template-columns:1fr!important;gap:32px;padding-left:20px;padding-right:20px;}
-  .footer-bottom-inner{flex-direction:column;text-align:center;gap:12px;padding-left:20px;padding-right:20px;}
-}
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forka: dinner, planned around your family</title>
+<meta name="description" content="Forka plans your family's week of dinners around who's at the table, builds the grocery list, and walks you through cooking, hands-free if you like.">
+<link rel="icon" type="image/png" href="/app/icon-192.png">
+<link rel="apple-touch-icon" href="/app/icon-192.png">
+<link rel="preload" href="fonts/fraunces-latin-opsz.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/figtree-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/site.css">
+<meta property="og:title" content="Forka: dinner, planned around your family">
+<meta property="og:description" content="A week of dinners planned around your family, the grocery list built for you, and cooking made calm.">
+<meta property="og:image" content="https://tryforka.com/images/plan.jpg">
 </head>
 <body>
-<nav>
-  <div class="nav-inner">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon" style="background:transparent;">
-        <img src="uploads/pasted-1777438996972-0.png" alt="Forka" style="width:100%;height:100%;object-fit:contain;border-radius:10px;">
-      </div>
-    </a>
-    <ul class="nav-links">
-      <li><a href="index.html" class="active">Home</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="features.html">Features</a></li>
-      <li><a href="blog.html">Blog</a></li>
-      <li><a href="pricing.html">Pricing</a></li>
-    </ul>
-    <div class="nav-actions">
-      <button class="nav-search" aria-label="Search">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      </button>
-      <a href="login.html" class="btn btn-outline">Log in</a>
-      <!-- WAITLIST START: to remove, change href back to "signup.html", class back to "btn btn-green", text back to "Try Forka" --><a href="waitlist.html" class="btn btn-orange">Join Waitlist</a><!-- WAITLIST END -->
-      <button class="hamburger" id="hamburgerBtn" aria-label="Open menu" aria-expanded="false">
-        <span class="ham-bar"></span>
-        <span class="ham-bar"></span>
-        <span class="ham-bar"></span>
-      </button>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Forka home"><img src="/app/forka-logo.png" alt="" width="36" height="36">Forka</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="features.html">Features</a>
+      <a href="pricing.html" data-when-billing="on" hidden>Pricing</a>
+      <a href="faq.html">FAQ</a>
+      <a href="about.html">About</a>
+    </nav>
+    <div class="header-actions">
+      <a class="login" href="login.html">Log in</a>
+      <a class="btn btn-primary btn-small" href="signup.html">Get started free</a>
     </div>
   </div>
-</nav>
+</header>
 
-<div class="mobile-menu" id="mobileMenu" aria-hidden="true" inert>
-  <div class="mobile-menu-header">
-    <a href="index.html" class="nav-logo">
-      <div class="logo-icon" style="background:transparent;">
-        <img src="uploads/pasted-1777438996972-0.png" alt="Forka" style="width:100%;height:100%;object-fit:contain;border-radius:10px;">
+<main id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <p class="label">Meal planning for families</p>
+        <h1 id="hero-title" style="margin-top:14px">Dinner, planned around <em>your</em> family.</h1>
+        <p class="lede">Forka plans the week's dinners around who's at your table: their allergies, what they love and what they won't touch. Then it builds the grocery list and walks you through cooking.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="signup.html">Get started free</a>
+          <a class="btn btn-secondary" href="features.html">See how it works</a>
+        </div>
+        <p class="hero-note">Works in your phone's browser. Add it to your home screen like an app.</p>
       </div>
-    </a>
-    <button class="mobile-close" id="mobileClose" aria-label="Close menu">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0A2533" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-  <nav class="mobile-nav">
-    <a href="index.html" class="mobile-nav-link active">Home</a>
-    <a href="about.html" class="mobile-nav-link">About</a>
-    <a href="features.html" class="mobile-nav-link">Features</a>
-    <a href="blog.html" class="mobile-nav-link">Blog</a>
-    <a href="pricing.html" class="mobile-nav-link">Pricing</a>
-  </nav>
-  <div class="mobile-menu-btns">
-    <a href="login.html" class="mobile-btn-login">Log in</a>
-    <a href="signup.html" class="mobile-btn-signup">Try Forka</a>
-    <!-- WAITLIST START: remove this link when waitlist page is removed -->
-    <a href="waitlist.html" class="mobile-btn-waitlist">Join Waitlist</a>
-    <!-- WAITLIST END -->
-  </div>
-</div>
+      <div class="phone"><img src="images/plan.jpg" width="390" height="844" alt="Forka's meal plan on a phone: tonight's dinner with a photo, how long it takes, and the rest of the week below."></div>
+    </div>
+  </section>
 
-<section class="hero">
-  <div class="hero-wave">
-    <svg viewBox="0 0 1440 300" preserveAspectRatio="none" style="width:100%;height:100%;">
-      <path d="M0,220 C200,120 400,260 700,180 C900,120 1200,230 1440,140 L1440,300 L0,300 Z" fill="#3aab78" opacity="0.65"></path>
-      <path d="M0,260 C200,160 500,300 800,220 C1000,160 1280,270 1440,180 L1440,300 L0,300 Z" fill="#1F8F63"></path>
-    </svg>
-  </div>
-  <div class="hero-inner">
-    <div class="hero-left">
-      <p class="hero-label">100% Healthy &amp; Tasty</p>
-      <h1 class="hero-headline">
-        <span class="green">Meet</span>
-        <span class="dark">Forka</span>
-      </h1>
-      <p class="hero-body">Forka builds your weekly meal plan using LLMs - then auto-generates your grocery list and sends it straight to your selected store. Dinner solved.</p>
-      <div class="hero-btns">
-        <a href="signup.html" class="btn btn-orange">Try Forka Free</a>
-        <a href="features.html" class="btn btn-outline">See How It Works</a>
+  <section id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="label">What Forka does</p>
+        <h2 id="features-title" style="margin-top:10px">The weeknight dinner question, answered.</h2>
       </div>
-      <div class="testimonial-card">
-        <div class="testi-row1">
-          <div>
-            <div class="testi-name">Marina S</div>
-            <div class="testi-stars">&#9733;&#9733;&#9733;&#9733;<span style="opacity:.45">&#9733;</span></div>
+
+      <article class="feature">
+        <div class="copy">
+          <h3>A plan that learns your family</h3>
+          <p>Add the people at your table, with their allergies, likes and dislikes. Forka plans a week of dinners that fit all of them. After dinner, one tap per person says who ate it, and next week leans toward what they did.</p>
+          <ul>
+            <li>Lock the nights you've already decided, swap any dinner in a tap</li>
+            <li>A busy night? Swap for something faster that uses what's on your list</li>
+            <li>Tell it what's in the fridge and it plans around it</li>
+          </ul>
+        </div>
+        <div class="phone"><img src="images/checkin.jpg" width="390" height="844" loading="lazy" alt="The after-dinner check-in: did everyone eat it? Loved it, it was fine, or didn't eat it, for each person."></div>
+      </article>
+
+      <article class="feature flip">
+        <div class="copy">
+          <h3>Allergies are a hard line</h3>
+          <p>Recipes with an ingredient anyone at your table is allergic to never show up, in the plan, in search or in suggestions. Each person's allergies count, not just the household's.</p>
+          <ul>
+            <li>Peanut, tree nut, dairy, egg, gluten, soy, sesame, fish and shellfish</li>
+            <li>Diets too: vegetarian, vegan, pescatarian</li>
+            <li>Any other ingredient you name: never shown, or just shown last</li>
+          </ul>
+          <p class="fine" style="margin-top:14px">Always check ingredient labels yourself. Forka filters recipes; it can't see what's in the packet.</p>
+        </div>
+        <div class="phone"><img src="images/family.jpg" width="390" height="844" loading="lazy" alt="A family member's settings: name, adult or kid, packed school lunch, a goal and allergies."></div>
+      </article>
+
+      <article class="feature">
+        <div class="copy">
+          <h3>Groceries built around the week</h3>
+          <p>One list for every meal you've planned, amounts added up and sorted by aisle. Tick things off in the store and add what isn't in a recipe. Change the plan and the list follows.</p>
+          <ul>
+            <li>Two onions for Monday and one for Thursday becomes three onions</li>
+            <li>Each item shows which meals it's for</li>
+            <li>Nutrition for every recipe, per serving</li>
+          </ul>
+        </div>
+        <div class="phone"><img src="images/groceries.jpg" width="390" height="844" loading="lazy" alt="The grocery list sorted by aisle, with amounts and checkboxes."></div>
+      </article>
+
+      <article class="feature flip">
+        <div class="copy">
+          <h3>Your recipes, from anywhere</h3>
+          <p>Bring in the recipes your family already loves. Forka reads them and keeps them with the rest, checked against your family's allergies like everything else.</p>
+          <ul>
+            <li>A link to any recipe site</li>
+            <li>An Instagram, TikTok, YouTube, Pinterest or Facebook post</li>
+            <li>A photo of a cookbook page or a handwritten card</li>
+            <li>Text you paste, or a recipe you type in</li>
+          </ul>
+        </div>
+        <div class="phone"><img src="images/import.jpg" width="390" height="844" loading="lazy" alt="Adding a recipe: paste a link, take a photo, or write it yourself."></div>
+      </article>
+
+      <article class="feature">
+        <div class="copy">
+          <h3>Cooking, one calm step at a time</h3>
+          <p>Cooking mode shows one step at a time in large text, with the ingredients for that step and timers that keep running. It can read each step aloud. Hands messy? Turn on hands-free and wave to move between steps.</p>
+          <ul>
+            <li>Missing an ingredient? Swaps that work in that recipe</li>
+            <li>The screen stays on while you cook</li>
+            <li>Print or save any recipe as a PDF</li>
+          </ul>
+          <div class="privacy-note">
+            <span aria-hidden="true" style="flex:none;width:10px;height:10px;margin-top:8px;border-radius:50%;background:var(--green)"></span>
+            <p><strong>Hands-free stays on your phone.</strong> The camera only looks for your hand, on the device itself. Nothing is recorded, saved or sent.</p>
           </div>
         </div>
-        <p class="testi-quote">"Finally a meal planner that actually understands my family's needs."</p>
-        <p class="testi-source">- Marina S., Chicago Mom of 3</p>
-        <div class="testi-dots">
-          <div class="testi-dot active"></div>
-          <div class="testi-dot"></div>
-          <div class="testi-dot"></div>
+        <div class="phone"><img src="images/cooking.jpg" width="390" height="844" loading="lazy" alt="Cooking mode: a step in large text, a timer, and the hands-free toggle."></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="pro" id="pro" data-when-billing="on" hidden aria-labelledby="pro-title">
+    <div class="wrap">
+      <p class="label">Forka Pro</p>
+      <h2 id="pro-title" class="story" style="margin-top:12px">Free plans your family's dinners. Pro plans your family's whole week.</h2>
+      <div class="cards" style="margin-top:32px">
+        <div class="card">
+          <h3>Every meal, not just dinner</h3>
+          <p>Breakfasts, lunches and snacks, planned with the same care, and a packable school lunch for each child who needs one. All on one grocery list.</p>
+          <p class="example">Tuesday: yogurt with berries, turkey roll-ups in the lunchbox, apple slices after school, chicken traybake for dinner.</p>
+        </div>
+        <div class="card">
+          <h3>A goal for each person</h3>
+          <p>More protein, lighter, or growing well. Meals stay shared; Forka sizes each person's portion and shows estimated daily totals.</p>
+          <p class="example">Same lasagna for everyone: a larger plate toward more protein, a lighter one, a full growing-kid plate.</p>
+        </div>
+        <div class="card">
+          <h3>An hour of prep, a calmer week</h3>
+          <p>The week's plan as one prep session of about an hour, in the right order, with timers and storage notes. Cook once, eat twice.</p>
+          <p class="example">The rice simmers while you chop peppers for two dinners, and Monday's chili comes back for Tuesday's lunch.</p>
         </div>
       </div>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="pricing.html">See plans and prices</a>
+      </div>
+      <p class="fine" style="margin-top:12px">$4.99 a month, or $39.99 a year with a 14-day free trial. Full refund within 14 days of any payment, no questions asked.</p>
     </div>
-    <div class="hero-right">
-      <div class="hero-img-wrap">
-        <div class="hero-ring"></div>
-        <div class="hero-food-img">
-          <img src="uploads/pasted-1777438674104-0.png" alt="App screens">
-        </div>
+  </section>
+
+  <section class="cta-end" aria-labelledby="end-title">
+    <div class="wrap">
+      <h2 id="end-title">Tonight's dinner, sorted.</h2>
+      <p class="lede">Set up your family in a few minutes, and your first week is planned before you've put the kettle on.</p>
+      <div class="hero-actions" style="margin-top:24px">
+        <a class="btn btn-primary" href="signup.html">Get started free</a>
       </div>
     </div>
-  </div>
-</section>
+  </section>
+</main>
 
-<section class="stats-banner">
-  <svg class="stats-bg" viewBox="0 0 1440 140" preserveAspectRatio="xMidYMid slice">
-    <g transform="translate(80,30) rotate(-20)"><ellipse cx="0" cy="20" rx="6" ry="18" stroke="white" fill="none" stroke-width="1.5"></ellipse><line x1="0" y1="2" x2="-10" y2="-14" stroke="white" stroke-width="1.5"></line><line x1="0" y1="2" x2="0" y2="-16" stroke="white" stroke-width="1.5"></line><line x1="0" y1="2" x2="10" y2="-14" stroke="white" stroke-width="1.5"></line></g>
-    <g transform="translate(680,70) rotate(30)"><path d="M0,0 Q20,-30 40,0 Q20,10 0,0Z" stroke="white" fill="none" stroke-width="1.5"></path><line x1="0" y1="0" x2="40" y2="0" stroke="white" stroke-width="1"></line></g>
-    <g transform="translate(1280,55)"><rect x="-3" y="0" width="6" height="20" stroke="white" fill="none" stroke-width="1.5"></rect><circle cx="-12" cy="-5" r="10" stroke="white" fill="none" stroke-width="1.5"></circle><circle cx="0" cy="-10" r="12" stroke="white" fill="none" stroke-width="1.5"></circle><circle cx="12" cy="-5" r="10" stroke="white" fill="none" stroke-width="1.5"></circle></g>
-  </svg>
-  <div class="stats-inner">
-    <div class="stat-item"><div class="stat-num">50,000+</div><div class="stat-label">Recipes Available</div></div>
-    <div class="stat-item"><div class="stat-num">248+</div><div class="stat-label">Satisfied Families</div></div>
-    <div class="stat-item"><div class="stat-num">1-Tap</div><div class="stat-label">Shopping Integrations</div></div>
-    <div class="stat-item"><div class="stat-num">100%</div><div class="stat-label">Personalized</div></div>
-  </div>
-</section>
-
-<section class="how-section">
-  <div class="how-inner">
-    <div class="section-header">
-      <span class="eyebrow">HOW IT WORKS</span>
-      <h2>Dinner in 3 simple steps</h2>
-    </div>
-    <div class="steps-grid">
-      <div class="step-card"><div class="step-num">01</div><h3>Tell us your preferences</h3><p>Set your dietary needs, allergies, family size, and weekly schedule. Takes under 1 minute.</p></div>
-      <div class="step-card"><div class="step-num">02</div><h3>Get your meal plan</h3><p>Forka generates a personalized 7-day plan in under 20 seconds with a full grocery list ready to go.</p></div>
-      <div class="step-card"><div class="step-num">03</div><h3>Shop and cook effortlessly</h3><p>Send your list to your grocery store with one tap, then follow step-by-step guided recipes.</p></div>
-    </div>
-  </div>
-</section>
-
-<section class="smart-section">
-  <div class="smart-inner">
-    <div>
-      <span class="eyebrow">SMART FEATURES</span>
-      <h2>Built for real families, not food bloggers</h2>
-      <p>Forka handles picky eaters, dietary restrictions, and budget constraints so you don't have to. Every week, automatically.</p>
-      <ul class="check-list">
-        <li>Forka meal plans tailored to your family</li>
-        <li>Auto-generated, portioned grocery lists</li>
-        <li>One-tap integration with major grocery stores</li>
-        <li>Step-by-step cooking with built-in timers</li>
-      </ul>
-      <a href="features.html" class="btn btn-green" style="padding:13px 28px;">See All Features</a>
-    </div>
-    <div class="smart-img">
-      <img src="https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Family cooking">
-    </div>
-  </div>
-</section>
-
-<section class="categories-section">
-  <div class="categories-inner">
-    <div class="section-header">
-      <span class="eyebrow">RECIPE LIBRARY</span>
-      <h2>50,000+ recipes for every craving</h2>
-    </div>
-    <div class="categories-grid">
-      <div class="category-card"><img src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=600&fit=crop" alt="Healthy"><div class="category-overlay"></div><div class="category-label">Healthy</div></div>
-      <div class="category-card"><img src="https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400&h=600&fit=crop" alt="Quick"><div class="category-overlay"></div><div class="category-label">Quick &amp; Easy</div></div>
-      <div class="category-card"><img src="https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=400&h=600&fit=crop" alt="Family"><div class="category-overlay"></div><div class="category-label">Family Friendly</div></div>
-      <div class="category-card"><img src="https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=600&fit=crop" alt="Vegetarian"><div class="category-overlay"></div><div class="category-label">Vegetarian</div></div>
-    </div>
-  </div>
-</section>
-
-<section class="testimonials-section">
-  <div class="testimonials-inner">
-    <div class="section-header">
-      <span class="eyebrow">WHAT FAMILIES SAY</span>
-      <h2>Real families, real results</h2>
-    </div>
-    <div class="testimonials-grid">
-      <div class="tcard"><div class="tcard-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><blockquote class="tcard-quote">"Finally a meal planner that actually understands my family's needs. Forka saves me at least 3 hours every week."</blockquote><div class="tcard-author"><div class="tcard-avatar">MS</div><div><div class="tcard-name">Marina S.</div><div class="tcard-meta">Chicago Mom of 3</div></div></div></div>
-      <div class="tcard"><div class="tcard-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><blockquote class="tcard-quote">"Our grocery bill dropped by almost $200 a month. The planning just eliminates so much food waste."</blockquote><div class="tcard-author"><div class="tcard-avatar">JK</div><div><div class="tcard-name">James K.</div><div class="tcard-meta">Dad of 2, Seattle</div></div></div></div>
-      <div class="tcard"><div class="tcard-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div><blockquote class="tcard-quote">"I was skeptical at first, but Forka actually nails what my kids will eat. No more dinner battles."</blockquote><div class="tcard-author"><div class="tcard-avatar">AL</div><div><div class="tcard-name">Amy L.</div><div class="tcard-meta">Mom of 4, Austin</div></div></div></div>
-    </div>
-  </div>
-</section>
-
-<section class="newsletter-wave">
-  <svg class="nl-veg-bg" viewBox="0 0 1440 300">
-    <g transform="translate(80,60) rotate(-20)"><ellipse cx="0" cy="20" rx="6" ry="18" stroke="white" fill="none" stroke-width="1.5"></ellipse><line x1="0" y1="2" x2="-10" y2="-14" stroke="white" stroke-width="1.5"></line><line x1="0" y1="2" x2="0" y2="-16" stroke="white" stroke-width="1.5"></line><line x1="0" y1="2" x2="10" y2="-14" stroke="white" stroke-width="1.5"></line></g>
-    <g transform="translate(700,40) rotate(30)"><path d="M0,0 Q20,-30 40,0 Q20,10 0,0Z" stroke="white" fill="none" stroke-width="1.5"></path><line x1="0" y1="0" x2="40" y2="0" stroke="white" stroke-width="1"></line></g>
-  </svg>
-  <div class="nl-inner">
-    <div class="nl-img">
-      <img src="uploads/pasted-1777560152058-0.png" alt="Fresh food">
-    </div>
-    <div class="nl-form-wrap">
-      <h2>Get smarter dinners in your inbox</h2>
-      <p>Weekly meal planning tips, new recipes, and family-tested strategies.</p>
-      <form class="nl-form" onsubmit="return false;">
-        <input class="nl-input" type="email" placeholder="Your email address">
-        <button class="nl-submit" type="submit">SUBSCRIBE</button>
-      </form>
-    </div>
-  </div>
-</section>
-
-<footer>
-  <svg class="footer-veg-bg" viewBox="0 0 1440 400" preserveAspectRatio="xMidYMid slice">
-    <g transform="translate(100,80) rotate(-15)"><ellipse cx="0" cy="24" rx="8" ry="22" stroke="white" fill="none" stroke-width="2"></ellipse><line x1="0" y1="2" x2="-12" y2="-18" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="0" y2="-20" stroke="white" stroke-width="2"></line><line x1="0" y1="2" x2="12" y2="-18" stroke="white" stroke-width="2"></line></g>
-    <g transform="translate(400,120)"><rect x="-3" y="0" width="6" height="22" stroke="white" fill="none" stroke-width="2"></rect><circle cx="-14" cy="-6" r="12" stroke="white" fill="none" stroke-width="2"></circle><circle cx="0" cy="-12" r="14" stroke="white" fill="none" stroke-width="2"></circle><circle cx="14" cy="-6" r="12" stroke="white" fill="none" stroke-width="2"></circle></g>
-    <g transform="translate(1050,60) rotate(-10)"><ellipse cx="0" cy="0" rx="18" ry="24" stroke="white" fill="none" stroke-width="2"></ellipse><line x1="0" y1="-24" x2="0" y2="-36" stroke="white" stroke-width="2"></line></g>
-  </svg>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <div class="footer-logo-row">
-        <div class="footer-logo-icon"><img src="uploads/pasted-1777438996972-0.png" alt="Forka" style="width:100%;height:100%;object-fit:contain;border-radius:6px;"></div>
-        <span class="footer-brand-name">Forka</span>
-      </div>
-      <p class="footer-brand-desc">Follow us and never miss an update on the latest meal planning tips, tools, and insights.</p>
-      <div class="social-icons">
-        
-        <a href="https://www.instagram.com/tryforka/" target="_blank" rel="noopener noreferrer" class="social-icon" aria-label="Instagram"><svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"></path></svg></a>
-      </div>
-    </div>
-    <div>
-      <h4 class="footer-col-title">Learn</h4>
-      <ul class="footer-links">
-        <li><a href="about.html">About</a></li>
-        <li><a href="features.html">Features</a></li>
-        <li><a href="blog.html">Blog</a></li>
-        <li><a href="faq.html">FAQ</a></li>
-      </ul>
-    </div>
-    <div>
-      <h4 class="footer-col-title">Company</h4>
-      <ul class="footer-links">
-        <li><a href="#">Careers</a></li>
-      </ul>
-    </div>
-    <div>
-      <h4 class="footer-col-title">Contact</h4>
-      <p class="footer-contact-item">Frokabusiness@gmail.com</p>
-      <p class="footer-contact-item">Glenview, Illinois</p>
-    </div>
-  </div>
-  <div class="footer-bottom">
-    <div class="footer-bottom-inner">
-      <span class="footer-copy">&#169; 2026 Forka. All rights reserved.</span>
-      <div class="footer-legal">
-        <a href="privacy.html">Privacy Policy</a>
-        <a href="terms.html">Terms of Use</a>
-      </div>
-    </div>
+<footer class="site-footer">
+  <div class="wrap">
+    <p>&copy; 2026 Forka LLC</p>
+    <nav aria-label="Footer">
+      <a href="features.html">Features</a>
+      <a href="pricing.html" data-when-billing="on" hidden>Pricing</a>
+      <a href="faq.html">FAQ</a>
+      <a href="about.html">About</a>
+      <a href="blog.html">Blog</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+    </nav>
   </div>
 </footer>
-<script>
-(function(){
-  var btn=document.getElementById('hamburgerBtn');
-  var menu=document.getElementById('mobileMenu');
-  var close=document.getElementById('mobileClose');
-  function openMenu(){menu.classList.add('open');document.body.classList.add('menu-open');btn.setAttribute('aria-expanded','true');btn.setAttribute('aria-label','Close menu');menu.setAttribute('aria-hidden','false');menu.inert=false;}
-  function closeMenu(){menu.classList.remove('open');document.body.classList.remove('menu-open');btn.setAttribute('aria-expanded','false');btn.setAttribute('aria-label','Open menu');menu.setAttribute('aria-hidden','true');menu.inert=true;}
-  btn.addEventListener('click',function(){menu.classList.contains('open')?closeMenu():openMenu();});
-  close.addEventListener('click',closeMenu);
-})();
-</script>
+
+<script type="module" src="js/billing-switch.js"></script>
 <script type="module" src="js/nav-auth.js"></script>
 </body>
 </html>

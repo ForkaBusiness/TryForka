@@ -4,7 +4,7 @@ import { getSession, APP_PATH } from './forka-auth.js';
 
 const session = await getSession();
 if (session) {
-  document.querySelectorAll('.nav-actions a[href="login.html"], .mobile-menu-btns a[href="login.html"]').forEach(a => {
+  document.querySelectorAll('.nav-actions a[href="login.html"], .mobile-menu-btns a[href="login.html"], .header-actions a[href="login.html"]').forEach(a => {
     a.textContent = 'Open app';
     a.setAttribute('href', APP_PATH);
   });
