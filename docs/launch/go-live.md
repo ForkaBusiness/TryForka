@@ -33,12 +33,13 @@ In the [Supabase dashboard](https://supabase.com/dashboard), open the Forka proj
 In the Supabase dashboard, go to **Authentication**:
 
 - **Leaked password protection.** Under **Sign In / Providers > Email** (or **Attack Protection**, depending on the dashboard version), turn on **Prevent use of leaked passwords**. Passwords found in known breaches are then refused. This needs the Pro plan from step 2.
-- **Email confirmation.** Under **Sign In / Providers > Email**, turn on **Confirm email**, so every account proves it owns its address. Paid plans and trial reminders go to that address.
-  - Do this after step 4. Supabase's built-in email service only sends a handful of emails an hour; with Resend connected as the sender (step 4c), confirmations arrive reliably.
+- **Email confirmation. Done** (confirmed by the owner, 21 November 2026): **Confirm email** is on, Resend sends the confirmation emails (step 4), the email rate limit is raised, and confirmation emails arrive.
 
 **It worked when:** a new test sign-up gets a confirmation email, and signing up with a well-known leaked password such as `password123` is refused.
 
-### 4. Send email from tryforka.com (Resend)
+### 4. Send email from tryforka.com (Resend). Done
+
+**Done** (confirmed by the owner, 21 November 2026): Resend is connected as Supabase's email sender (custom SMTP), the email rate limit is raised, and sign-up confirmation emails arrive. Kept below for reference.
 
 Trial reminders and receipts should come from `@tryforka.com`, not Resend's test address.
 
