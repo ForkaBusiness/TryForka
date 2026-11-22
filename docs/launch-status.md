@@ -1,20 +1,60 @@
-# Launch status, 21 November 2026
+# Launch status, 21 November 2026 (updated in the evening)
 
 ## Ready to launch? Not yet. Close.
 
-The app on tryforka.com works end to end, and Forka Pro is merged with billing off. Before you turn billing on, these are left, in order:
+The app on tryforka.com works end to end, Forka Pro is merged with billing off, error reporting is live, and the website shows bright, real screenshots. What's left, in order:
 
-1. **Confirmation emails. Done** (21 November): Resend is connected as Supabase's email sender, the email rate limit is raised, and confirmation emails arrive.
-2. **The two previews. Done** (21 November): `launch-fixes` (PR #9) and `site-refresh` (PR #10) are merged and checked on production.
+1. **Two settings in Sentry (2 minutes, yours).** In Sentry, open **Settings > Projects > forka > Security & Privacy** and turn on **Prevent Storing of IP Addresses**, **Data Scrubber** and **Use Default Scrubbers** (go-live step 4b, item 5). Forka already sends no IP address, but Sentry still works out a city from where an app report came from. I couldn't change this myself: this session's permission check refused it.
+2. **Check TheMealDB's terms (with the lawyer).** The app's catalog recipes and photos, and now the website's screenshots, come from TheMealDB. Before taking money, confirm its terms allow commercial use, or take its paid supporter plan if that's what it requires. The site and the app both credit it.
 3. **Outside steps**, in this order:
-   - lawyer review of the Terms and Privacy drafts;
+   - lawyer review of the Terms and Privacy drafts (Sentry is now listed in the Privacy draft);
    - live Stripe activation;
    - a support inbox.
-4. Then follow [docs/launch/go-live.md](launch/go-live.md) to the end, which turns billing on.
+4. **Still on the go-live list:** the Supabase paid plan (daily backups) and leaked-password protection (go-live steps 2 and 3).
+5. Then follow [docs/launch/go-live.md](launch/go-live.md) to the end, which turns billing on.
 
-Nothing else is blocking. The database records for the last 7 days show no errors for real people. Forka has no error reporting from phones yet, and I couldn't read the function logs, so that isn't the whole picture (details under item 6).
+Done today: confirmation emails through Resend (you), the Back button fix and the new website (PRs #9, #10), error reporting with Sentry (PR #11, live), and brighter website photos (PR #12). Details in the section just below.
 
 ---
+
+## 21 November, evening: Sentry live and new website photos
+
+### Sentry (error reports): live
+
+| Check | Result |
+|---|---|
+| The live app carries the DSN, and its connection rule allows exactly one Sentry address | Yes (`o4512471438327808.ingest.us.sentry.io`) |
+| A test error raised in the live app reached Sentry | Yes (FORKA-1). Its fake email and fake sign-in token arrived blanked as `[email]` and `[token]`. No account id, share link or query string. |
+| A test failure in the nutrition function reached Sentry | Yes (FORKA-2), tagged `function: nutrition`, with no request data. The IP stored on it is the Supabase server's own (AWS, Ashburn), not a family's. |
+| The app kept working after the test errors | Yes |
+| Cleanup | Both test issues resolved; the project's open list is empty. The Sentry command line has no delete, so they stay in Sentry's history marked resolved. |
+
+How it was set up: your organization (Forka) had no projects, so with your OK I created the project `forka` (React, team forka). The `SENTRY_DSN` secret is set in Supabase and all 11 functions were redeployed with their sign-in settings unchanged. You set `VITE_SENTRY_DSN` in Vercel. The Sentry command line is installed at `~/.local/bin/sentry`, signed in as you. I installed it without its shell-profile, completion and agent-skill extras and didn't run its setup wizard.
+
+### Website photos (PR #12, merged)
+
+- **The hero** now shows **spaghetti bolognese**: a bright, sunlit plate, instantly recognizable, 50 minutes, instead of Irish stew.
+- **The rest of the week**, for every screenshot that shows recipe photos: chicken fried rice, sweet and sour chicken, teriyaki chicken casserole, spaghetti carbonara, chicken enchilada casserole, sticky chicken. I picked them from a contact sheet of about 60 nut-free catalog photos, checked by eye and by brightness and color measurements. Anything brown or dull (lasagne's crust, Irish stew, beef roasts) was left out.
+- **The Pro day:** pancakes with berries, creamy tomato soup and a mango smoothie.
+- **The blog:** three photos failed the same standard (raw potatoes, shopping bags on black, a kitten). They're now real Forka screenshots: the grocery list, the after-dinner check-in and the mango smoothie recipe. The other four blog photos are bright food photos and stay.
+- **Credit:** TheMealDB is now credited in the footer of the pages whose screenshots show its photos.
+- **Review:** a reviewer with no context from this session judged the new hero a clear improvement. It flagged Sunday's slow-cooker tacos ("4.7 hr"), a pale pizza and an off-topic blog image. All three are fixed.
+- **The QA account** was staged for a few minutes (a three-person family and the curated week), then restored exactly: the same family, meal settings, week plan with its original timestamp, grocery list and check-ins.
+
+### Production checks after both changes
+
+| Check | After Sentry went live | After the new photos |
+|---|---|---|
+| Billing off: nothing limited, no prices, Pro tags, trial or Plan section, checkout refused (403), meal prep opens directly, all 13 founding families keep Pro | 17/17 | 17/17 |
+| The Back button, phone and desktop | 22/22 | 22/22 (the phone half timed out once on a slow page load, then passed on a rerun) |
+| The website at phone and desktop size: accessibility (axe, WCAG 2.2 AA), no horizontal scroll, no missing files, pricing hidden while billing is off, the Google button hidden | 118/118 | 118/118 |
+
+The new photos are live on tryforka.com, byte-for-byte the merged files.
+
+### Noticed, not changed
+
+- **The blog's posts look like placeholders.** They carry made-up author names (Amy Lee, Sarah Mitchell, James Kim) and dates. Consider removing the blog page, or the bylines, before launch.
+- **Catalog wording shows in the app:** "Spaghetti with seasoned ground beef tomato sauce" as a subtitle, "mince" in a step where the description says ground beef, and preparation notes like "Peeled and Sliced" in the grocery amount column for some recipes.
 
 ## Part 1: Phase 4 merged (done)
 
@@ -78,7 +118,7 @@ How the sign-up test avoids emailing anyone: the real sign-up form is filled in 
 
 ### 6. Sentry and function logs
 
-- **Sentry isn't set up.** Forka has no error reporting from people's phones. This is a decision for you (approval list, item C).
+- **Sentry:** set up and live since the evening of 21 November (see the section at the top).
 - **Supabase function logs:** my query was refused by this session's permission check. The exact command is under approval item D.
 - **What I checked instead:** the last 7 days of database records for imports, Stripe events and the daily billing check. None showed a real error. In the last 30 days there were 2 new sign-ups, one of them your own test alias. Both confirmed their email and signed in.
 
@@ -137,13 +177,16 @@ How the sign-up test avoids emailing anyone: the real sign-up form is filled in 
 4. **Website color.** The older pages' green moved from #1F8F63 to #1A7552, so small text passes contrast. The new pages use the app's own green.
 5. **Screenshot household.** The QA family was staged as Maya, Sam and Leo, then restored from a snapshot. The QA account's week plan was replanned while the Pro shot was taken. It's a test account, and its settings are back to dinner only.
 6. **Branch base.** `site-refresh` was moved onto the current main. Phase 4 didn't touch the website.
-7. **Report location.** This report was committed straight to main, as you asked. It's a document only; no code changed on main after Part 1.
+7. **Report location.** This report was committed straight to main, as you asked. It's a document only.
+8. **Sentry project.** I created `forka` in your Forka organization (you said yes), and resolved the two test issues, since the command line can't delete them.
+9. **Blog images.** The three failing blog photos became real Forka screenshots rather than new stock photos. Unsplash's search was off limits to this session, and the screenshots need no license.
+10. **Website week.** Sunday is sticky chicken and Wednesday teriyaki chicken casserole, after the review flagged the 4.7-hour slow-cooker tacos and a pale pizza.
 
 ## Approvals needed, with exact commands
 
 Run these in the Terminal, in the `TryForkaMAIN` folder.
 
-**A. Merge the two branches, after you've looked at the previews:**
+**A. Merge the two branches. Done** (PRs #9 and #10, 21 November). Kept for reference:
 
 ```bash
 gh pr create --base main --head launch-fixes --title "Launch fixes: Back steps back one screen" --body "See docs/launch-status.md"
@@ -152,9 +195,9 @@ gh pr create --base main --head site-refresh --title "Website for launch" --body
 gh pr merge site-refresh --squash --delete-branch
 ```
 
-**B. Google sign-in (optional).** Turn it on in **Supabase > Authentication > Sign In / Providers > Google**. You'll need a Google Cloud OAuth client. The website shows the button by itself once the provider is on. If you'd rather not offer it, nothing needs doing.
+**B. Google sign-in (optional; skipped for now, as you asked).** Turn it on in **Supabase > Authentication > Sign In / Providers > Google**. You'll need a Google Cloud OAuth client. The website shows the button by itself once the provider is on. If you'd rather not offer it, nothing needs doing.
 
-**C. Error reporting (recommended before real traffic).** Create a free Sentry project for a React app and send me its DSN. I'll add it on a branch.
+**C. Error reporting. Done** (21 November): Sentry is live for the app and the functions. One setting is left for you, item 1 at the top.
 
 **D. Function logs for the last 7 days.** I read the project's auth settings with your Supabase CLI token. That confirmed the email sender facts above, and that leaked-password protection is still off. My query of the function logs was refused by this session's permission check, so here is the command to run yourself. It lists every Edge Function response of 400 or above, per function, for each of the last 7 days:
 
