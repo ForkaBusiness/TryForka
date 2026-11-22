@@ -53,7 +53,7 @@ The new photos are live on tryforka.com, byte-for-byte the merged files.
 
 ### Noticed, not changed
 
-- **The blog's posts look like placeholders.** They carry made-up author names (Amy Lee, Sarah Mitchell, James Kim) and dates. Consider removing the blog page, or the bylines, before launch.
+- **The blog's made-up author names. Fixed** (PR #13, 21 November): every post is now credited to Forka. The posts' dates are unchanged.
 - **Catalog wording shows in the app:** "Spaghetti with seasoned ground beef tomato sauce" as a subtitle, "mince" in a step where the description says ground beef, and preparation notes like "Peeled and Sliced" in the grocery amount column for some recipes.
 
 ## Part 1: Phase 4 merged (done)
